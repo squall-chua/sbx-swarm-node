@@ -75,12 +75,12 @@ One process per host, all components in-process:
 | **Coordinator** | Runs filter→score for incoming provisions; forwards to target; retries on NACK |
 | **Sandbox Manager** | Owns local sandboxes; drives `SandboxBackend`; reconciles SDK truth ↔ store |
 | **Scheduler** | Pure filter→score over the gossiped view; pluggable strategies |
-| **Membership** | `hashicorp/memberlist`: gossip, SWIM failure detection, encrypted wire + join secret; broadcasts node state via a delegate |
+| **Membership** | `hashicorp/memberlist`: gossip, SWIM failure detection, encrypted wire + join secret; disseminates node state in three tiers (tiny `NodeMeta` / TCP push-pull / delta broadcasts — ADR-0005) |
 | **Metrics Collector** | Polls `exec.Stats` per running sandbox; caches; aggregates `actual_util` |
 | **Network Log Collector** | Polls `policy.Log`; diffs; accumulates blocked-egress events |
 | **Event Bus** | In-process pub/sub of all domain events; backs SSE + gRPC `WatchEvents` |
 | **Git Lifecycle** | Pre-fetch / publish for clone-mode workspaces; host-side credentialed git |
-| **Reaper** | Enforces TTL + idle timeout; cleans up |
+| **Reaper** | Enforces absolute **TTL**; optional **activity-based idle** (opt-in): idle = no in-flight op + `last_activity_at` past `idle_timeout` ⇒ **stop** (triggers auto-publish), removed later by retention. Never CPU-based, never while an op is active |
 | **State Store** | `bbolt` — node identity, sandbox records, operations, blocked-egress, audit |
 | **Peer Client** | gRPC client to peers: provision RPC, request/stream forwarding, `WatchEvents` |
 
@@ -89,27 +89,48 @@ One process per host, all components in-process:
 ## 4. Data model
 
 **Node config** (file + env + flags; precedence flags > env > file):
-`node_id` (generated once, persisted), `node_name`, REST/gRPC bind addr (one TLS port), gossip bind
+**node keypair** (generated + persisted on first run; `node_id = short-hash(pubkey)`, self-certifying —
+ADR-0004), `node_name`, REST/gRPC bind addr (one TLS port), gossip bind
 addr, `join` seed peers (empty ⇒ standalone), `cluster_secret` (memberlist keyring key),
-`provision_limits {cpu_cores, memory_bytes}`, `workspaces [{name, host_path, read_only, git?{remote,
-default_branch, auth_secret_ref, allow_push}}]`, node `labels`, `api_keys`, TLS cert/key + CA (node
-mTLS), default strategy, persistence path, poll intervals (stats, network), reaper config.
+`provision_limits {cpu_cores, memory_bytes}`, `workspaces [{name, host_path, read_only,
+git?{bare:true, remote, default_branch, auth_secret_ref, allow_push, pre_steps[[argv]],
+publish_steps[[argv]], exec_allowlist}}]`, `swarm_id`/`swarm_name`, `cluster_secret`, node `labels`,
+`api_keys` (each with a role: `admin` | `read-only`), TLS server cert/key (no CA — ADR-0004), default
+strategy, persistence path, poll intervals (stats,
+network), reaper config. **Git pre/publish pipelines live here (node-local) — never in API requests
+(ADR-0003).**
 
-**Gossiped node state** (memberlist delegate; small): `node_id`, `node_name`, **REST address**
-(for proxy/forward), liveness, `provision_limits`, `allocated {cpu, mem}`, `actual_util {cpu, mem}`
-(secondary), available **workspace names** (+ ro/rw, git-enabled), labels, **owned sandbox IDs**
-(for `sandbox_id → owner` routing map), `blocked_egress_count`, `cordoned` flag, state version.
+**Disseminated node state** (split across `memberlist` channels by size — ADR-0005: tiny `NodeMeta`
+over UDP = `node_id`/REST address/`cordoned`/`state_version`; everything bulky below over TCP
+push/pull; per-change deltas via broadcast): `node_id`, **`node_pubkey`** (pinned TOFU for peer auth —
+ADR-0004), `node_name`, **REST address** (for proxy/forward), liveness, `provision_limits`, `allocated {cpu, mem}`, `actual_util {cpu, mem}`
+(secondary), available **workspace names** (+ ro/rw, git-enabled), available **template names**,
+labels, **owned sandbox IDs**
+(for `sandbox_id → owner` routing map), `blocked_egress_distinct_count`, `cordoned` flag, state
+version.
 
-**Sandbox record** (authoritative on owner, persisted): swarm `id`, `owner_node_id`, SDK ref/name,
+**Sandbox record** (authoritative on owner, persisted): swarm `id` = `<owner_node_id>.<ulid>`
+(self-routing — see ADR-0002), `owner_node_id`, SDK ref/name,
 spec `{template, agent, cpu, memory, workspaces[], clone bool, env_keys[] (values NOT stored), labels,
-ttl, idle_timeout}`, `status` (`requested→placing→provisioning→running→stopped→failed→lost`),
-published ports, `last_stats {usage, sampled_at}`, git `{branch, last_publish}`, timestamps.
+ttl, idle_timeout, idle_reap bool (opt-in)}`, `status`
+(`requested→placing→provisioning→running→stopped→failed`, plus `unreachable` = owner suspect/dead per
+gossip [peer guess], and `lost` = owner-confirmed gone [terminal, owner-declared only]),
+published ports, `last_stats {usage, sampled_at}`, **`last_activity_at`** (bumped on any swarm-side
+touch — drives idle), git `{branch, last_publish}`, timestamps.
 
-**Operation record** (async): `op_id`, type (`provision|stop|remove|publish|…`), `state`
-(`pending→running→done|error`), target node, sandbox id, error, timestamps.
+**Operation record** (async): `op_id` = `<coordinator_node_id>.<ulid>` (self-routing; operations are
+**not** gossiped — a poll routes to the coordinator via the prefix), type
+(`provision|stop|remove|publish|…`), optional **`idempotency_key`**, `state`
+(`pending→running→done|error`), target node, sandbox id, error, timestamps. Provision idempotency: the
+coordinator persists `idempotency_key → op_id` (TTL'd ~1h) and is authoritative; the mapping is also
+delta-broadcast so peers dedupe a failover retry within propagation time (narrow residual race
+accepted). Clients should retry the same endpoint, then poll the op (self-routing) rather than
+re-POSTing.
 
-**Blocked-egress event** (per node, persisted): `{host, sandbox_id, node_id, first_seen, last_seen,
-count}` — synthesized timestamps (SDK provides none), attributed via `VMName`.
+**Blocked-egress pair** (per node, persisted): `{host, sandbox_id, node_id, first_seen, last_seen}` —
+distinct `(host, sandbox)` pairs only; timestamps synthesized by us (the SDK provides none); attributed
+via `VMName`. **No attempt/frequency count** — `policy.Log` returns presence, not occurrences. A
+`distinct_count` (number of distinct pairs) is the only derivable aggregate.
 
 **Domain event** (event bus / SSE): `{id (per-node monotonic + node_id), ts, type, node_id,
 sandbox_id?, payload}`. Types: membership (up/suspect/down), sandbox lifecycle, scheduling
@@ -128,7 +149,8 @@ application/grpc` → gRPC server; other HTTP → grpc-gateway (REST/JSON, **una
 handlers; unmatched paths → embedded SPA static file server. TLS with ALPN negotiates h2/http1.1
 (h2c in dev).
 
-**Node↔node = native gRPC** (mTLS via cluster CA): provision RPC, transparent request/stream
+**Node↔node = native gRPC** (TLS + shared-secret + per-node-key auth, no CA — ADR-0004): provision RPC,
+transparent request/stream
 forwarding to a sandbox's owner, and `WatchEvents` for the swarm-wide event merge. Replaces any HTTP
 reverse-proxy.
 
@@ -145,7 +167,8 @@ SSE: `GET /v1/events?types=&node=&sandbox=` (+ per-sandbox `/stats`, `/logs`, `/
 
 **API surface** (`/v1`, bearer-auth, TLS; every call auto-routes to the owning node):
 
-- **Sandboxes:** `POST /sandboxes` (→`202 {op_id}`), `GET /sandboxes` (filter label/node/status/
+- **Sandboxes:** `POST /sandboxes` (→`202 {op_id}`; accepts an **`Idempotency-Key`** header — a repeat
+  returns the same op, see §Operations), `GET /sandboxes` (filter label/node/status/
   workspace), `GET|DELETE /sandboxes/{id}`, `POST /sandboxes/{id}/{start|stop}`,
   `POST /sandboxes/{id}/exec`, `GET /sandboxes/{id}/stats?fresh=`, ports (`GET/POST/DELETE`), files
   (CopyTo/From), `POST /sandboxes/{id}/template`, `POST /sandboxes/{id}/git/publish`.
@@ -157,6 +180,8 @@ SSE: `GET /v1/events?types=&node=&sandbox=` (+ per-sandbox `/stats`, `/logs`, `/
   node-level policy/secrets, `GET /cluster`, `PUT /cluster/policy/default` (fan-out),
   `POST /cluster/{join|leave}`, `GET /events` (SSE firehose).
 - **Operations:** `GET /operations[/{id}]`; SSE via the events firehose (filter by type).
+- **Auth:** `POST /auth/session` (exchange an API key for a browser session cookie), `DELETE
+  /auth/session` (logout) — see ADR-0006.
 - **Ops:** `GET /healthz`, `/readyz`, `/metrics` (Prometheus). OpenAPI spec generated from gateway
   annotations.
 
@@ -167,10 +192,13 @@ SSE: `GET /v1/events?types=&node=&sandbox=` (+ per-sandbox `/stats`, `/logs`, `/
 **Constraint-based placement** over the gossiped view:
 
 1. **Filter (hard predicates):** keep nodes that (a) advertise **every** requested workspace by name,
-   (b) have remaining capacity within `provision_limit` for requested cpu/mem, (c) are not
-   `cordoned`, (d) satisfy label affinity/anti-affinity.
+   (b) advertise the requested **template** (if any), (c) have remaining capacity within
+   `provision_limit` for requested cpu/mem, (d) are not `cordoned`, (e) satisfy label
+   affinity/anti-affinity.
 2. **Score (strategy, tiebreak):** `least-loaded` (default, by reservation), `bin-pack`, `spread`,
-   `round-robin`, `label-affinity`; optional `least-actual-load` using gossiped `actual_util`.
+   `label-affinity`/`anti-affinity`; optional `least-actual-load` using gossiped `actual_util`.
+   (`round-robin` intentionally omitted — it has no honest semantics without a shared cursor in a
+   leaderless swarm; `least-loaded` is the self-balancing "spread evenly" choice.)
 3. No node passes filter ⇒ **reject** (`no eligible node`).
 
 **Workspace model:** logical name → local host path per node (operator-managed; the swarm does **not**
@@ -182,8 +210,13 @@ availability; on success it reserves capacity, calls `Create`, persists the reco
 NACKs. Coordinator tries the next candidate; exhausted ⇒ operation fails. This tolerates stale gossip:
 brief double-picks self-heal because the target enforces truth.
 
-**Capacity accounting:** `allocated` = Σ requested cpu/mem of non-terminal local sandboxes; reserve
-on provision, release on stop/remove/fail.
+**Capacity accounting:** `allocated` = Σ requested cpu/mem of non-terminal local sandboxes. Reservations
+are **soft (in-memory)**, held on the target from admission until `Create` resolves; `Create` runs under
+a timeout and on failure/timeout releases the reservation + best-effort removes any partial sandbox +
+errors the op. The **durable source of truth is `SandboxBackend.List()`** — a periodic reconcile loop
+(and restart/rejoin reconcile) recomputes `allocated` from it, so any leaked reservation self-heals and
+a crash can't leak (in-memory holds vanish and are rebuilt). Orphaned sandboxes (coordinator died
+mid-placement) stay discoverable via `GET /sandboxes` by their stamped `idempotency_key`/labels.
 
 **Primary signal = reservation** (deterministic, cheap). **Secondary = actual utilization** from
 `exec.Stats` (observability + optional strategy). Host-OS metrics are out of scope for v1.
@@ -194,9 +227,13 @@ on provision, release on stop/remove/fail.
 
 - `memberlist` keyring = `cluster_secret`: encrypted gossip **and** join gate in one. `join` seeds at
   startup; runtime `POST /cluster/{join,leave}`.
-- SWIM failure detection. On a peer → `dead`: mark its sandboxes `lost`, emit alert events. **No
-  auto-reschedule** in v1 (sandbox in-VM state and node-local workspace data can't be recovered
-  remotely).
+- SWIM failure detection. On a peer → suspect/`dead`: peers mark its sandboxes **`unreachable`** (a
+  guess — they may be alive behind a partition) and emit alert events. Only the **owner** ever
+  declares a sandbox **`lost`**, and only during reconcile when it confirms the sandbox is absent from
+  its own daemon; `lost` is terminal and triggers capacity reclaim + cleanup (routing map, ports,
+  clone-mode `sandbox-<name>` remote/instance dir) + a `sandbox.lost` event. **No auto-reschedule** and
+  **no auto-escalation** `unreachable→lost` in v1 (an unreachable node's capacity is unusable by the
+  swarm anyway); `unreachable` clears when the owner returns or an operator purges the node.
 - **Run-solo:** a node that loses all peers keeps serving its own sandboxes — it is authoritative for
   them (AP).
 - **Rejoin:** stable persisted `node_id`; re-advertise state; **reconcile** by diffing
@@ -208,9 +245,12 @@ on provision, release on stop/remove/fail.
 
 ## 8. Cross-node routing & event fan-out
 
-- Each node gossips its **owned sandbox IDs**; peers maintain a `sandbox_id → owner` map. A request
-  for a non-local sandbox is forwarded via the gRPC Peer Client to the owner (unary and streams
-  relayed). On unknown id ⇒ 404.
+- **Self-routing IDs (ADR-0002):** a sandbox/op ID's `<nodeID>` prefix names the owner/coordinator;
+  any node forwards via the membership address table with no lookup, which also closes the post-create
+  race. The gossiped `sandbox_id → owner` map (each node gossips its owned IDs) remains the authority
+  and the `lost`-cleanup index. Operations are not gossiped — a poll routes to the coordinator by
+  prefix. Unary and streams are relayed to the owner; unknown/forgotten id ⇒ 404, terminal `lost` ⇒
+  410 Gone.
 - **Swarm-wide events:** a client on node A merges A's local event bus with peer `WatchEvents` gRPC
   streams (de-duped by event id) → one SSE/gRPC feed from any node. Membership events are already
   known locally everywhere via gossip.
@@ -224,9 +264,11 @@ on provision, release on stop/remove/fail.
   Never called on a request hot path (~200 ms in-VM probe).
 - **Logs:** `exec.Logs(path)` continuous follow → streamed (gRPC / SSE). Client specifies the file
   path; default per template.
-- **Blocked egress:** Network Log Collector polls `policy.Log`, diffs against the last snapshot,
-  accumulates events with synthesized timestamps + counts, attributed by `VMName`. Handle
-  `ErrUnexpectedFormat` by falling back to `ListRaw` and emitting a warning event.
+- **Blocked egress:** Network Log Collector polls `policy.Log`, maps `VMName → sandbox_id`, dedupes to
+  distinct `(host, sandbox)` pairs, and stamps `first_seen`/`last_seen`. Surfaced as a **security audit
+  view** (which blocked hosts a sandbox tried to reach), **not** a rate/frequency — the SDK exposes
+  presence only. Only aggregate is `distinct_count`. Handle `ErrUnexpectedFormat` by falling back to
+  `ListRaw` and emitting a warning event. (Reframe when the SDK exposes timestamps/counts.)
 - **Metrics:** Prometheus `/metrics` (sandbox counts by state, allocation vs limit, scheduling
   outcomes, gossip health, op latencies). **Logging:** `slog` structured.
 - **Event bus + SSE firehose** (§8) for live UI and external subscribers.
@@ -265,29 +307,46 @@ git clone**; the host working tree is never touched; sbx auto-configures `origin
 `sandbox-<name>` remote; a single clone-mode sandbox can hold many branches. This gives concurrency
 isolation for free — no worktrees, no `--shared` plumbing.
 
+A git-backed workspace's `host_path` is a **bare/mirror repo** owned exclusively by the swarm (no
+working tree ⇒ no merge/dirt hazards; clone-from-bare works fine). All operations on it are serialized
+by a **per-workspace lock** so concurrent provisions of the same workspace don't race PRE updates
+against clone-sourcing.
+
 Lifecycle (workspace must be configured `git`-enabled with `allow_push`):
-1. **PRE (optional, declarative):** node freshens the host workspace repo from upstream
-   (`git -C <host_path> fetch origin && merge --ff-only`).
+1. **PRE:** node freshens the base from upstream — refs only:
+   `git -C <host_path> fetch origin '+refs/heads/*:refs/heads/*'`.
 2. **PROVISION:** `Create(WithWorkspace(name), WithClone())`.
 3. **AGENT WORKS:** branches/commits in its private clone; no credentials in the agent sandbox.
 4. **PUBLISH** (explicit `POST /sandboxes/{id}/git/publish` **and** auto on graceful stop): node runs
    `git -C <host_path> fetch sandbox-<name> <branch>` (local, no creds) then
    `git -C <host_path> push origin <branch>` (upstream, creds).
 
-**Security:** no shell — typed verbs only; the node builds `argv`; branch/ref names validated (reject
-leading `-`, etc.). **Credentialed upstream ops run host-side on the node** using a per-workspace
+**Customizable, per-repo:** `pre_steps`/`publish_steps` are operator-defined **argv-array** pipelines in
+each node's **local workspace config** (ADR-0003), run **without a shell** — covering LFS, submodules,
+tags, sparse-checkout, etc. The PRE refs-only fetch and the default fetch-from-sandbox + push shown
+above are the built-in defaults a workspace inherits unless it overrides them. The API/swarm protocol
+**never carries commands**: a request references the workspace by name and supplies only validated
+*values* (`{branch}`, `{base_ref}`, `{remote}`, `{sandbox_remote}`, `{commit_message}`) bound as
+discrete argv. An `exec_allowlist` (default `git`, `git-lfs`) is defense-in-depth.
+
+**Security:** no shell — argv steps only; the node builds `argv`; request-supplied values validated
+(reject leading `-`, control chars). No API-key holder or peer can induce arbitrary execution on a node
+(ADR-0003). **Credentialed upstream ops run host-side on the node** using a per-workspace
 credential from config (secret-managed, scoped to the remote, not gossiped/logged). Every git op is
-audited (workspace/branch/ref/outcome — never secrets) and gated by `allow_push`. The Reaper must not
-`gc`/prune a base repo while shared clones depend on it.
+audited (workspace/branch/ref/outcome — never secrets) and gated by `allow_push`. (Native `WithClone()`
+clones are self-contained inside the sandbox VM — no object dependency on the host base — so no gc/prune
+coordination is required.)
 
 ---
 
 ## 13. Templates catalog
 
-A **swarm-wide template catalog** layered over per-host `sandbox.SaveTemplate` / `template.List/Load`.
-Register a template once; the node propagates it (or its build recipe) so any eligible node can
-provision from the same base. Catalog entries gossiped (names/metadata); contents propagated on demand
-to the placement target before `Create`.
+Templates are an **advertised node capability + scheduler constraint**, exactly like workspaces (no
+propagation in v1). Each node gossips the template names it holds (via per-host `sandbox.SaveTemplate`
+/ `template.List`); a request with `WithTemplate(name)` is **filtered** to nodes that advertise it. The
+"catalog" is just the gossiped union of names + metadata. Operators are responsible for getting a
+template onto the nodes that should run it. **Recipe-based auto-build / image shipping is deferred to
+vNext.**
 
 ---
 
@@ -310,8 +369,15 @@ Topology graph via Vue Flow; terminal via xterm.js; charts via a Vue charts lib 
 
 ## 15. Security model (consolidated)
 
-- TLS on the single port; **bearer/API-key auth** on all `/v1` endpoints (except health).
-- **Node↔node mTLS** via a cluster CA; gossip encrypted + gated by `cluster_secret`.
+- TLS on the single port; two auth paths resolving to a key + role (ADR-0006): **`Authorization:
+  Bearer`** for API clients, **httpOnly session cookie** (via `POST /auth/session`) for the browser
+  console — because `EventSource` can't set headers. CSRF protection (double-submit / custom header) on
+  cookie mutations. Two v1 roles: **`admin`** (full) and **`read-only`** (GET + SSE subscribe only; no
+  mutations, exec/terminal, publish, or secret reads). Finer per-resource/tenant RBAC deferred.
+- **Node↔node trust (ADR-0004):** TLS for encryption; `cluster_secret` gates gossip + bootstraps
+  trust; per-node self-generated key (`node_id = hash(pubkey)`) pinned TOFU via gossip for
+  spoof-resistant identity; revocation via gossiped key denylist. CA-issued mTLS deferred to vNext
+  behind the gRPC-auth interface.
 - Sensitive-data rule (§11): write-only secrets/env, masked, never logged/gossiped/persisted.
 - Git: typed verbs, validated argv, host-side credentials scoped per workspace, audited, `allow_push`
   gate; agent sandbox credential-free.
@@ -321,7 +387,17 @@ Topology graph via Vue Flow; terminal via xterm.js; charts via a Vue charts lib 
 
 ## 16. Configuration & project layout
 
-- Config via file + env + flags (flags > env > file). Stable `node_id` persisted on first run.
+- Config via file + env + flags (flags > env > file). `node_id` derived from the persisted node key on
+  first run.
+- **Hot-reload** via SIGHUP + admin-only `POST /v1/admin/reload` (validate-before-apply, then re-gossip
+  changed advertised state) for the mutable subset: `workspaces`, `provision_limits`, default strategy,
+  `api_keys`, `labels`, git pre/publish pipelines, poll/reaper settings, TLS server cert. **Restart
+  required** (reload warns + ignores) for: node keypair/`node_id`, bind addresses,
+  `cluster_secret`/swarm membership, persistence path.
+- **Config changes never evict running sandboxes.** Removing a workspace or lowering `provision_limits`
+  affects only *future* admissions (a lowered limit can leave the node transiently over-committed; it
+  admits nothing new until `allocated` drops below the new ceiling). Revoking an API key invalidates
+  that key and its sessions immediately.
 - Standard Go layout: `cmd/sbx-swarm-node`, `internal/{config,api,grpc,gateway,sse,scheduler,
   membership,sandboxd (SandboxBackend + SDK adapter + fake),store,events,metrics,netlog,git,reaper,
   templates,proxy}`, `proto/`, `web/` (Nuxt app + `embed.go`), `docs/`.
@@ -347,11 +423,13 @@ Topology graph via Vue Flow; terminal via xterm.js; charts via a Vue charts lib 
 SSE + WS terminal on one port; sandbox lifecycle/exec/ports/files/template-snapshot/labels/TTL+idle;
 stats + logs + Prometheus + event bus; blocked-egress visibility + policy management; secrets
 (env + experimental API, safeguarded); git clone-mode lifecycle; template catalog; failure
-detect/mark-lost/alert + cordon/drain; auth + TLS + node mTLS; embedded Nuxt UI 4 console.
+detect/mark-(un)reachable/lost + cordon/drain; auth (bearer + cookie sessions, two roles) + TLS +
+node-key trust; embedded Nuxt UI 4 console.
 
 **Deferred:** multi-tenancy/RBAC, webhooks, pre-warmed pools, scheduled provisioning, OTel,
 published CLI/generated SDKs, host-OS metrics, CRDT registry, auto-reschedule, raw host exec,
-workspace data replication.
+workspace data replication, **template propagation (recipe-build / image-ship / registry)**,
+**CA-issued node mTLS**.
 
 **Milestones (each → its own implementation plan):**
 1. **Standalone foundation** — layout, config, `bbolt`, `SandboxBackend` (+adapter+fake), one-port
@@ -363,9 +441,10 @@ workspace data replication.
 4. **Swarm** — memberlist gossip, node-state delegate, `sandbox_id→owner` index, cross-node gRPC
    forwarding + stream relay, **peer event fan-out (swarm-wide SSE)**, join/leave, rejoin reconcile,
    failure detect, cordon/drain.
-5. **Scheduling** — filter→score, strategies, admission/retry, capacity accounting.
+5. **Scheduling** — filter→score (workspace + **template** + capacity + label constraints),
+   strategies, admission/retry, capacity accounting, template advertise/filter.
 6. **Git workspaces** — clone-mode pre/publish lifecycle, host-side creds, audit.
-7. **Templates catalog + propagation; TTL/idle reaper.**
+7. **TTL/idle reaper.**
 8. **Nuxt UI 4 console** — embed, overview/topology, sandbox drill-down, nodes, templates,
    network/security, operations, settings, terminal bridge.
 
@@ -374,10 +453,17 @@ workspace data replication.
 ## 19. Open questions / risks
 
 - **`policy.Log` cost & dedup** at scale (one-shot, daemon-wide, no timestamps) — tune poll interval;
-  watch for table-format drift (`ErrUnexpectedFormat`).
+  watch for table-format drift (`ErrUnexpectedFormat`). Confirm against a live daemon whether the list
+  is **cumulative** (since startup) or **rolling** — `last_seen` is only informative if rolling.
+  Attempt-frequency awaits richer SDK support.
 - **`exec.Stats` overhead** (~200 ms in-VM probe, running-only) — interval + caching; never on hot
   path.
 - **Stale-gossip placement races** — mitigated by target admission + retry; quantify retry bounds.
 - **Secret exposure** via `SetCustom` process-listing leak — labeled experimental; prefer env.
 - **Template propagation mechanism** (ship image vs build recipe) — to be detailed in M7.
 - **`Last-Event-ID` resume** across a distributed merge is best-effort (bounded per-node buffer).
+- **Stats poller backpressure** — many running sandboxes × ~200 ms `exec.Stats` can exceed the poll
+  interval; use a bounded-concurrency pool, per-sandbox jitter, skip-if-in-flight, error backoff.
+- **SSE fan-out at scale** — a node maintains one shared `WatchEvents` stream per peer (N−1 per node),
+  fanned to local SSE subscribers; fine for small/medium swarms, a gossiped event digest is the
+  large-swarm escape hatch.
