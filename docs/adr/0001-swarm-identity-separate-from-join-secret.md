@@ -11,5 +11,10 @@ same swarm. The first node mints the Swarm ID; joiners adopt and persist it. A p
 different Swarm ID under the same secret is refused with a misconfiguration alert. Adopting a new
 Swarm ID requires explicit operator intent.
 
+Startup corollary: a node **never auto-mints** a Swarm ID when seeds are configured — if seeds are
+unreachable it runs **pending-join** (locally functional, no ID) and adopts the swarm's ID on contact,
+rather than minting its own and causing a later refuse-to-merge. Minting happens only with no persisted
+ID and no seeds.
+
 Considered: secret-only identity — simpler, but leaves "previous vs new swarm" ambiguous and risks a
 silent merge of unrelated swarms.
