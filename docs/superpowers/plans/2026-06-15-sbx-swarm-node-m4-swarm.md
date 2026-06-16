@@ -32,7 +32,7 @@
 
 **Files:** `internal/membership/identity.go`, test `internal/membership/identity_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package membership
@@ -73,9 +73,9 @@ func TestSwarmIdentity_JoinGuardRejectsMismatch(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/membership/ -run TestSwarmIdentity -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/membership/ -run TestSwarmIdentity -v`
 
-- [ ] **Step 3: Implement `identity.go`**
+- [x] **Step 3: Implement `identity.go`**
 
 ```go
 // Package membership manages swarm membership: identity, gossip, and failure
@@ -160,7 +160,7 @@ func persist(path string, si *SwarmIdentity) error {
 }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/membership/ -v
@@ -174,7 +174,7 @@ git commit -m "feat(membership): swarm identity, startup modes, join guard (ADR-
 
 **Files:** `internal/membership/state.go`, test `internal/membership/state_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package membership
@@ -207,9 +207,9 @@ func TestNodeState_MetaTinyAndBulkRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/membership/ -run TestNodeState -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/membership/ -run TestNodeState -v`
 
-- [ ] **Step 3: Implement `state.go`**
+- [x] **Step 3: Implement `state.go`**
 
 ```go
 package membership
@@ -268,7 +268,7 @@ func DecodeBulk(b []byte) (NodeState, error) {
 }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/membership/ -v
@@ -282,7 +282,7 @@ git commit -m "feat(membership): tiered node-state encode/decode (ADR-0005)"
 
 **Files:** `internal/routing/table.go`, test `internal/routing/table_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package routing
@@ -314,9 +314,9 @@ func TestTable_OwnerByPrefixAndAddr(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/routing/ -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/routing/ -v`
 
-- [ ] **Step 3: Implement `table.go`**
+- [x] **Step 3: Implement `table.go`**
 
 ```go
 // Package routing resolves which node owns a sandbox (by its self-routing id
@@ -397,7 +397,7 @@ func (t *Table) Peers() []string {
 }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/routing/ -v
@@ -410,7 +410,7 @@ git add internal/routing/ && git commit -m "feat(routing): node directory + owne
 
 **Files:** `internal/peer/client.go`, test `internal/peer/client_test.go` (dial a local in-process server)
 
-- [ ] **Step 1: Failing test** — start an in-process gRPC server exposing `NodeService`, dial it via `peer.Pool.Conn(addr)`, call `GetNodeInfo`, assert the cached conn is reused.
+- [x] **Step 1: Failing test** — start an in-process gRPC server exposing `NodeService`, dial it via `peer.Pool.Conn(addr)`, call `GetNodeInfo`, assert the cached conn is reused.
 
 ```go
 package peer
@@ -455,9 +455,9 @@ func TestPool_DialAndReuse(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/peer/ -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/peer/ -v`
 
-- [ ] **Step 3: Implement `client.go`**
+- [x] **Step 3: Implement `client.go`**
 
 ```go
 // Package peer maintains cached gRPC connections to other nodes.
@@ -534,7 +534,7 @@ func (p *Pool) Close() {
 }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/peer/ -v
@@ -549,13 +549,13 @@ git add internal/peer/ && git commit -m "feat(peer): cached gRPC connection pool
 
 **Files:** `internal/apiserver/forward.go`, test `internal/apiserver/forward_test.go` (two in-process servers; a request for a non-local sandbox id is relayed)
 
-- [ ] **Step 1: Failing test** — stand up server B with a fake-backed `SandboxService` holding sandbox `nB.x`; stand up server A with the forwarding interceptor and a routing table pointing `nB`→B's bufconn; call `GetSandbox(nB.x)` on A and assert it returns B's data.
+- [x] **Step 1: Failing test** — stand up server B with a fake-backed `SandboxService` holding sandbox `nB.x`; stand up server A with the forwarding interceptor and a routing table pointing `nB`→B's bufconn; call `GetSandbox(nB.x)` on A and assert it returns B's data.
 
 (Full server harness mirrors M1c `server_test.go`; the assertion is that A returns the sandbox owned by B.)
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/apiserver/ -run TestForward -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/apiserver/ -run TestForward -v`
 
-- [ ] **Step 3: Implement `forward.go`**
+- [x] **Step 3: Implement `forward.go`**
 
 ```go
 package apiserver
@@ -620,7 +620,7 @@ func routableID(req any) (string, bool) {
 
 > Stream relay (terminal/logs SSE) uses the same owner resolution: the SSE handlers, on a remote id, dial the owner and copy its stream to the client (lossless for logs/terminal, lossy-coalesce for stats — spec §8). Implement in the observe/SSE handlers by checking `tbl.IsLocal(id)` and, if remote, proxying to `https://<ownerAddr>/v1/sandboxes/{id}/...` with the caller's credentials.
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/apiserver/ -run TestForward -v
@@ -634,9 +634,9 @@ git commit -m "feat(apiserver): cross-node unary forwarding by sandbox owner"
 
 **Files:** `proto/sbxswarm/v1/events.proto`, `internal/apiserver/watchevents.go`, test `internal/apiserver/watchevents_test.go`
 
-- [ ] **Step 1: Proto** — `service EventService { rpc WatchEvents(WatchRequest) returns (stream EventMsg); }` with `EventMsg{id,seq,type,node_id,sandbox_id,payload}` and `WatchRequest{types,sandbox,since_seq}`. Regenerate.
+- [x] **Step 1: Proto** — `service EventService { rpc WatchEvents(WatchRequest) returns (stream EventMsg); }` with `EventMsg{id,seq,type,node_id,sandbox_id,payload}` and `WatchRequest{types,sandbox,since_seq}`. Regenerate.
 
-- [ ] **Step 2: Failing test (merge dedup, pure)** — a `Merger` that consumes two channels of `events.Event` and emits a single stream deduped by `ID`:
+- [x] **Step 2: Failing test (merge dedup, pure)** — a `Merger` that consumes two channels of `events.Event` and emits a single stream deduped by `ID`:
 
 ```go
 func TestMerger_DedupsByID(t *testing.T) {
@@ -659,9 +659,9 @@ func TestMerger_DedupsByID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Implement** the `EventService.WatchEvents` server (streams the local bus, M1d) and a `Merger` (dedup by ID via a bounded seen-set). The SSE handler (M1d) gains peer-merge: on connect it subscribes locally **and** opens `WatchEvents` to each peer (`tbl.Peers()` → `pool.Conn`), feeding all into the `Merger` whose output writes SSE frames. One shared peer subscription per node is fine for v1 (spec §19 SSE-fan-out note).
+- [x] **Step 3: Implement** the `EventService.WatchEvents` server (streams the local bus, M1d) and a `Merger` (dedup by ID via a bounded seen-set). The SSE handler (M1d) gains peer-merge: on connect it subscribes locally **and** opens `WatchEvents` to each peer (`tbl.Peers()` → `pool.Conn`), feeding all into the `Merger` whose output writes SSE frames. One shared peer subscription per node is fine for v1 (spec §19 SSE-fan-out note).
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/apiserver/ -run "TestMerger|TestWatch" -v
@@ -675,16 +675,16 @@ git commit -m "feat(events): WatchEvents stream + swarm-wide SSE merge"
 
 **Files:** `internal/membership/cluster.go`, `internal/config/config.go`, `internal/node/node.go`, test `internal/membership/cluster_integration_test.go`
 
-- [ ] **Step 1: Extend config** — add `ClusterSecret string`, `Join []string`, `SwarmName string`, `Labels map[string]string`, `ProvisionLimits struct{CPUCores float64; MemoryBytes int64}`; extend `Validate`.
+- [x] **Step 1: Extend config** — add `ClusterSecret string`, `Join []string`, `SwarmName string`, `Labels map[string]string`, `ProvisionLimits struct{CPUCores float64; MemoryBytes int64}`; extend `Validate`.
 
-- [ ] **Step 2: Implement `cluster.go`** — wrap `memberlist`:
+- [x] **Step 2: Implement `cluster.go`** — wrap `memberlist`:
   - `Delegate.NodeMeta(limit)` → `state.EncodeMeta()` of the local `NodeState` (must fit `limit`; if over, log + truncate owned-ids out of meta — they live in bulk anyway).
   - `Delegate.LocalState(join)`/`MergeRemoteState(buf, join)` → exchange `state.EncodeBulk()`; on merge, `GuardJoin(local.SwarmID, remote.SwarmID)` and reject (leave) on mismatch; update `routing.Table` + a `peerStates` map (caps, owned ids, limits, util); on pending-join, `Adopt` the remote swarm id.
   - `Delegate.GetBroadcasts` / `NotifyMsg` → delta broadcasts (e.g. "sandbox created/removed", "node cordoned") with a `memberlist.TransmitLimitedQueue`.
   - `EventDelegate.NotifyJoin/Update/Leave` → `tbl.Upsert`/`tbl.Remove`; on Leave/dead, call back into the node to mark that node's sandboxes `unreachable`.
   - Methods: `Join(seeds)`, `Leave(timeout)`, `LocalNodeState()`, `SetCordoned(bool)`, `BumpStateVersion()`.
 
-- [ ] **Step 3: Node wiring + lifecycle (`node.New`/`Start`/`Stop`)**
+- [x] **Step 3: Node wiring + lifecycle (`node.New`/`Start`/`Stop`)**
   - Build `SwarmIdentity` via `membership.LoadOrInit(dataDir/swarm.json, cfg.Join)`.
   - Build `routing.Table(nodeID)`, `peer.Pool` (TLS creds), `Forwarder`, register `Forwarder.UnaryInterceptor()` on the grpc server (via `apiserver.Options`).
   - Start `membership.Cluster` with the local `NodeState` (caps from sbx/SDK version, owned ids from `mgr.List`, limits from cfg); `Join(cfg.Join)` if seeds (non-blocking, retry in background per startup modes).
@@ -692,13 +692,13 @@ git commit -m "feat(events): WatchEvents stream + swarm-wide SSE merge"
   - Add cordon/drain RPCs to `NodeService` (`Cordon`/`Uncordon`/`Drain`) → `cluster.SetCordoned`; `Drain` also stops accepting placements (M5 scheduler reads `tbl.IsCordoned`).
   - On rejoin, call `mgr.Reconcile(ctx)` (M1c) to heal local records and re-advertise.
 
-- [ ] **Step 4: Integration test (`cluster_integration_test.go`, tag `integration`)** — start two `node.Node`s on loopback, node B joins node A; assert: A sees B in `routing.Table`; a sandbox created on B is reachable via A's REST (forwarding); stopping B marks its sandboxes view `unreachable`; restarting B + rejoin clears it.
+- [x] **Step 4: Integration test (`cluster_integration_test.go`, tag `integration`)** — start two `node.Node`s on loopback, node B joins node A; assert: A sees B in `routing.Table`; a sandbox created on B is reachable via A's REST (forwarding); stopping B marks its sandboxes view `unreachable`; restarting B + rejoin clears it.
 
 ```bash
 go test -tags integration ./internal/membership/ -v
 ```
 
-- [ ] **Step 5: Run all + commit**
+- [x] **Step 5: Run all + commit**
 
 ```bash
 go test ./...
