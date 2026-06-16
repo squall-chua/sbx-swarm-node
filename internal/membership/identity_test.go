@@ -32,5 +32,7 @@ func TestSwarmIdentity_PendingJoinWhenSeedsButNoID(t *testing.T) {
 func TestSwarmIdentity_JoinGuardRejectsMismatch(t *testing.T) {
 	require.Error(t, GuardJoin("swarm-A", "swarm-B"))  // different id, same secret -> refuse
 	require.NoError(t, GuardJoin("swarm-A", "swarm-A"))
-	require.NoError(t, GuardJoin("", "swarm-A"))        // pending-join adopts
+	require.NoError(t, GuardJoin("", "swarm-A"))        // local pending-join adopts peer id
+	require.NoError(t, GuardJoin("swarm-A", ""))        // remote is pending-join; accept (it adopts our id)
+	require.NoError(t, GuardJoin("", ""))               // both pending; accept
 }

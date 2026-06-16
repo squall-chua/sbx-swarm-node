@@ -57,9 +57,11 @@ func (si *SwarmIdentity) Adopt(path, swarmID, swarmName string) error {
 }
 
 // GuardJoin refuses to merge with a peer presenting a different swarm id under
-// the same secret (ADR-0001). An empty local id means pending-join (adopt).
+// the same secret (ADR-0001). An empty id on EITHER side is a pending-join node
+// that will adopt the other's swarm id, so it is always accepted; only two
+// distinct non-empty ids are a true mismatch.
 func GuardJoin(localID, peerID string) error {
-	if localID == "" || localID == peerID {
+	if localID == "" || peerID == "" || localID == peerID {
 		return nil
 	}
 	return errors.New("refusing to join: peer swarm id differs from ours under the same cluster secret")

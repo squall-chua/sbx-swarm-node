@@ -22,16 +22,17 @@ import (
 //     state propagates through push/pull).
 //   - Encrypted gossip via sha256(ClusterSecret) as AES-256 key (ADR-0004).
 type Cluster struct {
-	mu          sync.RWMutex
-	local       NodeState
-	peerStates  map[string]NodeState // nodeID → latest received bulk state
-	ml          *memberlist.Memberlist
-	bcast       *memberlist.TransmitLimitedQueue
-	tbl         *routing.Table
-	si          *SwarmIdentity
-	siPath      string // path to persist swarm.json on Adopt
-	onNodeDead  func(nodeID string)
-	log         *slog.Logger
+	mu         sync.RWMutex
+	local      NodeState
+	peerStates map[string]NodeState // nodeID → latest received bulk state
+	ml         *memberlist.Memberlist
+	bcast      *memberlist.TransmitLimitedQueue
+	tbl        *routing.Table
+	si         *SwarmIdentity
+	siPath     string // path to persist swarm.json on Adopt
+	onNodeDead func(nodeID string)
+	log        *slog.Logger
+	shutdown   bool // guards Leave/Shutdown idempotency (memberlist.Leave panics after Shutdown)
 }
 
 // NewCluster constructs a Cluster. It does NOT join; call Join separately.
@@ -105,13 +106,28 @@ func (c *Cluster) Join(seeds []string) (int, error) {
 	return c.ml.Join(seeds)
 }
 
-// Leave gracefully notifies peers before shutting down.
+// Leave gracefully notifies peers before shutting down. It is idempotent: once
+// the cluster has been shut down, Leave is a no-op (memberlist.Leave panics if
+// called after Shutdown).
 func (c *Cluster) Leave(timeout time.Duration) error {
+	c.mu.Lock()
+	if c.shutdown {
+		c.mu.Unlock()
+		return nil
+	}
+	c.mu.Unlock()
 	return c.ml.Leave(timeout)
 }
 
-// Shutdown terminates the memberlist transport.
+// Shutdown terminates the memberlist transport. It is idempotent.
 func (c *Cluster) Shutdown() error {
+	c.mu.Lock()
+	if c.shutdown {
+		c.mu.Unlock()
+		return nil
+	}
+	c.shutdown = true
+	c.mu.Unlock()
 	return c.ml.Shutdown()
 }
 
@@ -214,10 +230,15 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 		return d.c.si.SwarmID
 	}()
 
+	// A true mismatch is two distinct non-empty swarm ids under the same secret
+	// (ADR-0001). An empty remote id is a pending-join peer that will adopt our
+	// id, so GuardJoin accepts it and we proceed with the merge. On a true
+	// mismatch we skip merging this peer only — we do NOT tear down the local
+	// node from inside this delegate callback (a single rogue peer must never
+	// evict an otherwise-healthy node).
 	if err := GuardJoin(localID, remote.SwarmID); err != nil {
-		d.c.log.Warn("MergeRemoteState: swarm id mismatch; leaving",
-			"local_swarm", localID, "remote_swarm", remote.SwarmID)
-		go func() { _ = d.c.ml.Leave(5 * time.Second) }()
+		d.c.log.Warn("MergeRemoteState: swarm id mismatch; skipping peer",
+			"local_swarm", localID, "remote_swarm", remote.SwarmID, "peer", remote.NodeID)
 		return
 	}
 
