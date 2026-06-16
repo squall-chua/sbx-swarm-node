@@ -91,7 +91,7 @@ func TestOwnerProxy_RemoteProxies(t *testing.T) {
 	ownerAddr := backend.Listener.Addr().String()
 
 	tbl := routing.NewTable("nA")
-	tbl.Upsert("nB", ownerAddr, false)
+	tbl.Upsert("nB", ownerAddr, false, nil)
 
 	called := false
 	h := OwnerProxy(tbl, localSentinel(&called))

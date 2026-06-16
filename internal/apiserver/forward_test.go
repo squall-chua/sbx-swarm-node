@@ -46,7 +46,7 @@ func TestForward_UnaryGetSandbox(t *testing.T) {
 	// --- Routing table + peer pool for server A ---
 	const addrB = "nB-bufnet"
 	tbl := routing.NewTable("nA")
-	tbl.Upsert("nB", addrB, false)
+	tbl.Upsert("nB", addrB, false, nil)
 
 	dialB := func(ctx context.Context, _ string) (net.Conn, error) {
 		return lisB.DialContext(ctx)

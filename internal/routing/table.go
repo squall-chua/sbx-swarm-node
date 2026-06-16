@@ -10,6 +10,7 @@ import (
 type entry struct {
 	addr     string
 	cordoned bool
+	pubkey   []byte
 }
 
 // Table is the in-memory node directory (rebuilt from gossip).
@@ -22,11 +23,30 @@ type Table struct {
 // NewTable returns a table for the local node id.
 func NewTable(self string) *Table { return &Table{self: self, m: map[string]entry{}} }
 
-// Upsert records a node's address + cordon flag.
-func (t *Table) Upsert(nodeID, addr string, cordoned bool) {
+// Upsert records a node's address, cordon flag, and (if non-empty) gossiped
+// pubkey. An empty pubkey preserves any previously-pinned key, so meta-tier
+// (UDP) updates do not clobber the bulk-tier (TCP) pubkey.
+func (t *Table) Upsert(nodeID, addr string, cordoned bool, pubkey []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.m[nodeID] = entry{addr: addr, cordoned: cordoned}
+	e := t.m[nodeID]
+	e.addr = addr
+	e.cordoned = cordoned
+	if len(pubkey) > 0 {
+		e.pubkey = pubkey
+	}
+	t.m[nodeID] = e
+}
+
+// PubKey returns a node's gossiped pubkey, if known.
+func (t *Table) PubKey(nodeID string) ([]byte, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	e, ok := t.m[nodeID]
+	if !ok || len(e.pubkey) == 0 {
+		return nil, false
+	}
+	return e.pubkey, true
 }
 
 // Remove drops a node (left/dead).

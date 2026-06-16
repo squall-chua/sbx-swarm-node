@@ -146,7 +146,7 @@ func (c *Cluster) SetCordoned(cordoned bool) {
 	c.local.StateVersion++
 	ml := c.ml
 	c.mu.Unlock()
-	c.tbl.Upsert(c.local.NodeID, c.local.Addr, cordoned)
+	c.tbl.Upsert(c.local.NodeID, c.local.Addr, cordoned, c.local.PubKey)
 	if ml != nil {
 		_ = ml.UpdateNode(5 * time.Second)
 	}
@@ -259,7 +259,7 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 	d.c.mu.Unlock()
 
 	// Update routing table.
-	d.c.tbl.Upsert(remote.NodeID, remote.Addr, remote.Cordoned)
+	d.c.tbl.Upsert(remote.NodeID, remote.Addr, remote.Cordoned, remote.PubKey)
 
 	// Adopt swarm id if we are still pending-join and remote has one.
 	if isPending && remote.SwarmID != "" {
@@ -291,7 +291,7 @@ func (e *eventDelegate) NotifyJoin(node *memberlist.Node) {
 		e.c.log.Info("memberlist: node joined (awaiting bulk state for addr)", "name", node.Name)
 		return
 	}
-	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned)
+	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned, ns.PubKey)
 	e.c.log.Info("memberlist: node joined", "node_id", ns.NodeID, "addr", ns.Addr)
 }
 
@@ -301,7 +301,7 @@ func (e *eventDelegate) NotifyUpdate(node *memberlist.Node) {
 		e.c.log.Info("memberlist: node updated (awaiting bulk state for addr)", "name", node.Name)
 		return
 	}
-	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned)
+	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned, ns.PubKey)
 	e.c.log.Info("memberlist: node updated", "node_id", ns.NodeID, "cordoned", ns.Cordoned)
 }
 
