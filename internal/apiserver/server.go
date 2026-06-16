@@ -12,6 +12,8 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/peer"
+	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/web"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -27,6 +29,9 @@ type Options struct {
 	Sandboxes                 *SandboxService // optional; registered if set
 	Events                    *events.Bus     // optional; mounts /v1/events (SSE) under auth if set
 	Policy                    *PolicyService  // optional; registered if set
+	Forward                   *Forwarder      // optional; mounts unary forwarding interceptor if set
+	Routing                   *routing.Table  // optional; used for SSE peer-merge when combined with Peers
+	Peers                     *peer.Pool      // optional; used for SSE peer-merge when Routing is set
 }
 
 // Build constructs the one-port handler and the gRPC server. The caller serves
@@ -34,7 +39,12 @@ type Options struct {
 func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	node := NewNodeService(opts.NodeID, opts.NodeName, opts.Version)
 
-	grpcSrv := grpc.NewServer()
+	var grpcSrv *grpc.Server
+	if opts.Forward != nil {
+		grpcSrv = grpc.NewServer(grpc.UnaryInterceptor(opts.Forward.UnaryInterceptor()))
+	} else {
+		grpcSrv = grpc.NewServer()
+	}
 	sbxv1.RegisterNodeServiceServer(grpcSrv, node)
 
 	// In-process gateway: the gateway calls the service directly via a local
