@@ -21,7 +21,8 @@ type Options struct {
 	Keys                      auth.KeyStore
 	Signer                    *auth.Signer
 	Cert                      tls.Certificate
-	Health                    *obs.Health // optional; health routes mounted if set
+	Health                    *obs.Health     // optional; health routes mounted if set
+	Sandboxes                 *SandboxService // optional; registered if set
 }
 
 // Build constructs the one-port handler and the gRPC server. The caller serves
@@ -43,6 +44,13 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	)
 	if err := sbxv1.RegisterNodeServiceHandlerServer(context.Background(), gw, node); err != nil {
 		return nil, nil, err
+	}
+
+	if opts.Sandboxes != nil {
+		sbxv1.RegisterSandboxServiceServer(grpcSrv, opts.Sandboxes)
+		if err := sbxv1.RegisterSandboxServiceHandlerServer(context.Background(), gw, opts.Sandboxes); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	mw := auth.New(opts.Keys, opts.Signer)

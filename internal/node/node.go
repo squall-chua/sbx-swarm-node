@@ -20,6 +20,8 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/ops"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 	"google.golang.org/grpc"
@@ -57,6 +59,12 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	obs.RegisterBuildInfo(reg, version)
 	health := obs.NewHealth(reg)
 
+	gen := ids.NewGen(id.NodeID)
+	backend := sandbox.NewFake() // M1c default backend so the node boots without a daemon
+	mgr := sandbox.NewManager(id.NodeID, backend, st, gen)
+	opsM := ops.NewManager(st, gen)
+	sandboxes := apiserver.NewSandboxService(mgr, opsM)
+
 	cert, err := tlsutil.LoadOrGenerate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.DataDir)
 	if err != nil {
 		_ = st.Close()
@@ -65,24 +73,30 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	signer := auth.NewSigner(id.PrivateKey.Seed()) // stable per-node session signing key
 
 	handler, grpcSrv, err := apiserver.Build(apiserver.Options{
-		NodeID:   id.NodeID,
-		NodeName: cfg.NodeName,
-		Version:  version,
-		Keys:     cfg,
-		Signer:   signer,
-		Cert:     cert,
-		Health:   health,
+		NodeID:    id.NodeID,
+		NodeName:  cfg.NodeName,
+		Version:   version,
+		Keys:      cfg,
+		Signer:    signer,
+		Cert:      cert,
+		Health:    health,
+		Sandboxes: sandboxes,
 	})
 	if err != nil {
 		_ = st.Close()
 		return nil, fmt.Errorf("apiserver: %w", err)
 	}
 
+	// Best-effort reconcile of persisted records against backend truth at boot.
+	if err := mgr.Reconcile(context.Background()); err != nil {
+		log.Warn("initial reconcile failed", "err", err)
+	}
+
 	return &Node{
 		cfg:    cfg,
 		log:    log,
 		id:     id,
-		ids:    ids.NewGen(id.NodeID),
+		ids:    gen,
 		store:  st,
 		health: health,
 		srv: &http.Server{

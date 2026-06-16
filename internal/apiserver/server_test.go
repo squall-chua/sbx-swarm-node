@@ -6,11 +6,17 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/ids"
+	"github.com/squall-chua/sbx-swarm-node/internal/ops"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -88,4 +94,52 @@ func TestServer_GRPCGetNodeInfo(t *testing.T) {
 	out, err := sbxv1.NewNodeServiceClient(conn).GetNodeInfo(context.Background(), &sbxv1.GetNodeInfoRequest{})
 	require.NoError(t, err)
 	require.Equal(t, "n1", out.NodeId)
+}
+
+func startTestServerWithSandboxes(t *testing.T) (addr string, cleanup func()) {
+	t.Helper()
+	cert := mustSelfSigned(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	gen := ids.NewGen("n1")
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, gen)
+	svc := NewSandboxService(mgr, ops.NewManager(st, gen))
+	opts := Options{
+		NodeID: "n1", NodeName: "n", Version: "v0",
+		Keys:      keyMap{"adm": "admin"},
+		Signer:    testSigner(),
+		Cert:      cert,
+		Sandboxes: svc,
+	}
+	h, grpcSrv, err := Build(opts)
+	require.NoError(t, err)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	srv := &http.Server{Handler: h, TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}}}
+	go srv.ServeTLS(ln, "", "")
+
+	return ln.Addr().String(), func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+		grpcSrv.Stop()
+		_ = st.Close()
+	}
+}
+
+func TestServer_CreateSandboxOverREST(t *testing.T) {
+	addr, cleanup := startTestServerWithSandboxes(t)
+	defer cleanup()
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+
+	req, _ := http.NewRequest(http.MethodPost, "https://"+addr+"/v1/sandboxes", strings.NewReader(`{"cpus":1,"memory_bytes":1073741824}`))
+	req.Header.Set("Authorization", "Bearer adm")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, string(body), `"id"`) // operation id
 }
