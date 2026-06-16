@@ -29,7 +29,7 @@
 - Create: `internal/nodekey/nodekey.go`
 - Test: `internal/nodekey/nodekey_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package nodekey
@@ -116,12 +116,12 @@ func TestVerify_DenylistedRejected(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/nodekey/ -run TestSignVerify -v`
 Expected: FAIL (package/functions undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // Package nodekey signs and verifies audience-bound Ed25519 tokens that
@@ -202,12 +202,12 @@ func Verify(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/nodekey/ -v`
 Expected: PASS (all cases).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/nodekey/
@@ -222,7 +222,7 @@ git commit -m "feat(nodekey): audience-bound Ed25519 PerRPC token (ADR-0004)"
 - Modify: `internal/auth/session.go` (add `DeriveSessionKey`)
 - Test: `internal/auth/session_test.go` (append)
 
-- [ ] **Step 1: Write the failing test** (append to `internal/auth/session_test.go`)
+- [x] **Step 1: Write the failing test** (append to `internal/auth/session_test.go`)
 
 ```go
 func TestDeriveSessionKey_SwarmWideVsStandalone(t *testing.T) {
@@ -246,12 +246,12 @@ func TestDeriveSessionKey_SwarmWideVsStandalone(t *testing.T) {
 
 Add imports `"time"` and `"github.com/squall-chua/sbx-swarm-node/internal/auth"` if the test file is `package auth_test`; if it is `package auth`, drop the `auth.` qualifiers and the import. (Check the existing header of `session_test.go` and match it.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/auth/ -run TestDeriveSessionKey -v`
 Expected: FAIL (`DeriveSessionKey` undefined).
 
-- [ ] **Step 3: Write minimal implementation** (append to `internal/auth/session.go`, add imports `crypto/sha256`, `crypto/hkdf`)
+- [x] **Step 3: Write minimal implementation** (append to `internal/auth/session.go`, add imports `crypto/sha256`, `crypto/hkdf`)
 
 ```go
 // DeriveSessionKey returns the HMAC key used to sign session/x-sbx-authz tokens.
@@ -271,12 +271,12 @@ func DeriveSessionKey(clusterSecret string, nodeSeed []byte) []byte {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/auth/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/auth/session.go internal/auth/session_test.go
@@ -291,7 +291,7 @@ git commit -m "feat(auth): cluster-secret-derived swarm-wide session key (ADR-00
 - Create: `internal/apiserver/authz.go`
 - Test: `internal/apiserver/authz_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -350,12 +350,12 @@ func TestAuthz_AllMethodsClassified(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestAuthz -v`
 Expected: FAIL (`authorize`, `principal`, `classified` undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 package apiserver
@@ -457,12 +457,12 @@ Note: `principalFromContext` is defined in Task 4 (`authn.go`, same package). Th
 func principalFromContext(ctx context.Context) principal { return principal{} }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestAuthz -v && go test ./internal/apiserver/ -run TestAuthorize -v`
 Expected: PASS. Also `go build ./...` succeeds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/authz.go internal/apiserver/authz_test.go
@@ -478,7 +478,7 @@ git commit -m "feat(apiserver): 2-bucket gRPC authz interceptor + drift guard"
 - Modify: `internal/apiserver/authz.go` (remove the TEMP `principalFromContext` stub)
 - Test: `internal/apiserver/authn_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -547,12 +547,12 @@ func TestAuthenticate_NoCredsRejected(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestAuthenticate -v`
 Expected: FAIL (`newAuthenticator`, `authnDeps` undefined).
 
-- [ ] **Step 3: Write minimal implementation** (create `authn.go`; then delete the TEMP stub from `authz.go`)
+- [x] **Step 3: Write minimal implementation** (create `authn.go`; then delete the TEMP stub from `authz.go`)
 
 ```go
 package apiserver
@@ -658,12 +658,12 @@ func (s *ctxStream) Context() context.Context { return s.ctx }
 
 Then **delete** the TEMP `principalFromContext` stub from `authz.go` (Task 3 Step 3).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestAuthenticate -v && go test ./internal/apiserver/ -run TestAuthz -v`
 Expected: PASS. `go build ./...` succeeds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/authn.go internal/apiserver/authz.go internal/apiserver/authn_test.go
@@ -678,7 +678,7 @@ git commit -m "feat(apiserver): gRPC authn interceptor (x-sbx-authz / bearer / n
 - Modify: `internal/tlsutil/tlsutil.go` (add `GenerateForKey`, `LeafPublicKey`, `PinnedVerify`)
 - Test: `internal/tlsutil/tlsutil_test.go` (append)
 
-- [ ] **Step 1: Write the failing test** (append)
+- [x] **Step 1: Write the failing test** (append)
 
 ```go
 func TestGenerateForKey_LeafPubkeyMatchesNodeKey(t *testing.T) {
@@ -702,12 +702,12 @@ func TestGenerateForKey_LeafPubkeyMatchesNodeKey(t *testing.T) {
 
 Add imports to the test file: `"crypto/ed25519"`, `crand "crypto/rand"`, and `"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"` if `package tlsutil_test` (else drop qualifiers). Match the existing test file's package clause.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/tlsutil/ -run TestGenerateForKey -v`
 Expected: FAIL (functions undefined).
 
-- [ ] **Step 3: Write minimal implementation** (append to `tlsutil.go`; add imports `crypto/ed25519`, `crypto/x509`, `errors`)
+- [x] **Step 3: Write minimal implementation** (append to `tlsutil.go`; add imports `crypto/ed25519`, `crypto/x509`, `errors`)
 
 ```go
 // GenerateForKey builds an in-memory self-signed Ed25519 leaf certificate whose
@@ -768,12 +768,12 @@ func PinnedVerify(expected ed25519.PublicKey) func(rawCerts [][]byte, _ [][]*x50
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/tlsutil/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/tlsutil/tlsutil.go internal/tlsutil/tlsutil_test.go
@@ -789,7 +789,7 @@ git commit -m "feat(tlsutil): node-key-bound leaf cert + peer pin verifier"
 - Modify: `internal/membership/cluster.go` (4 `Upsert` call sites)
 - Test: `internal/routing/table_test.go` (append)
 
-- [ ] **Step 1: Write the failing test** (append)
+- [x] **Step 1: Write the failing test** (append)
 
 ```go
 func TestTable_PubKey_PreservedOnMetaUpsert(t *testing.T) {
@@ -812,12 +812,12 @@ func TestTable_PubKey_PreservedOnMetaUpsert(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/routing/ -run TestTable_PubKey -v`
 Expected: FAIL (`Upsert` arity / `PubKey` undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Edit `internal/routing/table.go`:
 
@@ -865,12 +865,12 @@ Edit `internal/membership/cluster.go` — update all four `Upsert` calls to pass
 
 Then fix any other `Upsert(` callers the compiler flags (e.g. existing routing/forward tests) by appending `, nil`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go build ./... && go test ./internal/routing/ ./internal/membership/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/routing/table.go internal/membership/cluster.go internal/routing/table_test.go
@@ -887,7 +887,7 @@ git commit -m "feat(routing): table carries gossiped peer pubkey (preserve-on-em
 - Create: `internal/peer/nodekey_creds.go`
 - Test: `internal/peer/client_test.go` (append), `internal/peer/pinning_test.go` (new)
 
-- [ ] **Step 1: Write the failing test** (`internal/peer/pinning_test.go`)
+- [x] **Step 1: Write the failing test** (`internal/peer/pinning_test.go`)
 
 ```go
 package peer
@@ -987,12 +987,12 @@ func TestPool_PinnedDial_RejectsMismatch(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/peer/ -run TestPool_Pinned -v`
 Expected: FAIL (`WithNodeKey`, `WithPinResolver`, `Conn` arity undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `internal/peer/nodekey_creds.go`:
 
@@ -1104,12 +1104,12 @@ Update callers:
 - `internal/apiserver/sse.go:129` → `conn, err := pool.Conn(addr, nodeID)`
 - Fix `internal/peer/client_test.go` existing `Conn(...)` calls to pass a second arg (e.g. `p.Conn(addr, "peer")`); that test uses `WithCreds(insecure...)` so it stays on the fallback branch.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go build ./... && go test ./internal/peer/ -race -v`
 Expected: PASS (pin accept + reject; existing reuse test still green).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/peer/ internal/apiserver/forward.go internal/apiserver/sse.go
@@ -1124,7 +1124,7 @@ git commit -m "feat(peer): per-target pinned TLS + node-key PerRPC creds"
 - Modify: `internal/apiserver/forward_http.go`
 - Test: `internal/apiserver/forward_http_test.go` (update the existing forward-to-owner test + add a mismatch test)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 The `OwnerProxy` signature gains a `PinResolver` argument, so **every** caller in `forward_http_test.go` must be updated. The three fall-through tests (`TestOwnerProxy_LocalFallsThrough`, `TestOwnerProxy_UnknownOwnerFallsThrough`, `TestOwnerProxy_NonRoutableFallsThrough`) never proxy, so pass a nil-returning resolver:
 
@@ -1212,12 +1212,12 @@ func PinnedVerify(expected crypto.PublicKey) func(rawCerts [][]byte, _ [][]*x509
 
 Update Task 5's test call `tlsutil.PinnedVerify(pub)` accordingly (pass `ed25519.PublicKey`, still works since it implements `Equal(crypto.PublicKey)`). The pin stored in `routing.Table` is the Ed25519 pubkey bytes; the resolver passed to `OwnerProxy`/`peer.Pool` converts `[]byte` → `ed25519.PublicKey`. For the gRPC pool the pin is always Ed25519 (node-key cert); only the httptest-based OwnerProxy test uses RSA, which is why the resolver type is `crypto.PublicKey`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestOwnerProxy -v`
 Expected: FAIL (`OwnerProxy` arity changed; undefined resolver param).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Edit `internal/apiserver/forward_http.go`:
 
@@ -1273,14 +1273,14 @@ func OwnerProxy(tbl *routing.Table, pins PinResolver, next http.Handler) http.Ha
 
 Add imports: `crypto`, and `"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"`. Remove the package-level shared `transport` var.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestOwnerProxy -v && go build ./...`
 Expected: PASS. (The `server.go` call to `OwnerProxy` won't compile yet — that's fixed in Task 9; build the `tlsutil`/`apiserver` test for this task with `go test ./internal/apiserver/ -run TestOwnerProxy` which compiles the package including server.go, so update the `server.go` call site to the new 3-arg form here too, passing a temporary `func(string)(crypto.PublicKey,bool){return nil,false}` if needed, and finalize in Task 9.)
 
 > To keep the package compiling: in `server.go`, change `OwnerProxy(opts.Routing, v1)` to `OwnerProxy(opts.Routing, opts.Pins, v1)` and add `Pins PinResolver` to `Options` now (wired for real in Task 10). A nil `opts.Pins` with a non-nil `Routing` should be guarded: if `opts.Pins == nil`, default it to a fail-closed `func(string)(crypto.PublicKey,bool){return nil,false}` inside `Build`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/forward_http.go internal/apiserver/forward_http_test.go internal/tlsutil/ internal/apiserver/server.go
@@ -1297,7 +1297,7 @@ git commit -m "feat(apiserver): OwnerProxy pins owner TLS to gossiped pubkey (fa
 - Modify: `internal/apiserver/server_test.go` (fix the credential-less gRPC test) + add role-gate tests
 - Test: `internal/apiserver/rolegate_test.go` (new)
 
-- [ ] **Step 1: Write the failing test** (`internal/apiserver/rolegate_test.go`)
+- [x] **Step 1: Write the failing test** (`internal/apiserver/rolegate_test.go`)
 
 ```go
 package apiserver
@@ -1378,12 +1378,12 @@ func TestRoleGate_ReadOnlyCanListOverREST(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestRoleGate -v`
 Expected: FAIL — currently read-only POST returns 200 (no gate), expected 403.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `internal/apiserver/loopback.go`:
 
@@ -1532,12 +1532,12 @@ func TestServer_GRPCGetNodeInfo(t *testing.T) {
 
 Add imports to `server_test.go`: `google.golang.org/grpc/codes`, `google.golang.org/grpc/metadata`, `google.golang.org/grpc/status`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go build ./... && go test ./internal/apiserver/ -race -v`
 Expected: PASS — role-gate REST tests pass; gRPC no-creds → Unauthenticated, bearer → ok; existing REST create (admin) still 200; idempotency + SSE + forward tests still green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/
@@ -1552,7 +1552,7 @@ git commit -m "feat(apiserver): loopback gateway + always-on authn/authz role-ga
 - Modify: `internal/node/node.go`
 - Test: `internal/node/node_test.go` (append a build/boot smoke + session-key assertion)
 
-- [ ] **Step 1: Write the failing test** (append)
+- [x] **Step 1: Write the failing test** (append)
 
 ```go
 func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
@@ -1568,12 +1568,12 @@ func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
 
 Add imports `bytes`, `crypto/ed25519`, `github.com/squall-chua/sbx-swarm-node/internal/auth` as needed. (This locks the contract; the wiring change below is verified by `go build` + the apiserver/integration tests.)
 
-- [ ] **Step 2: Run test to verify it fails / build breaks**
+- [x] **Step 2: Run test to verify it fails / build breaks**
 
 Run: `go test ./internal/node/ -run TestNode_SessionKey -v`
 Expected: PASS already (Task 2 added the helper) — this test guards the invariant. The real verification for this task is the wiring compiling and the integration test (Task 11).
 
-- [ ] **Step 3: Write minimal implementation** — edit `internal/node/node.go`:
+- [x] **Step 3: Write minimal implementation** — edit `internal/node/node.go`:
 
 1. Derive the session key from the cluster secret (replace `node.go:118`):
 
@@ -1630,12 +1630,12 @@ Expected: PASS already (Task 2 added the helper) — this test guards the invari
 
 Add imports to `node.go`: `crypto`, `crypto/ed25519`. Keep `crypto/tls` (still used for the server `TLSConfig`).
 
-- [ ] **Step 4: Verify build + full suite**
+- [x] **Step 4: Verify build + full suite**
 
 Run: `go build ./... && go vet ./... && go test ./... `
 Expected: PASS across all packages (default, non-integration).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/node/node.go internal/node/node_test.go
@@ -1653,7 +1653,7 @@ git commit -m "feat(node): node-key TLS cert, swarm-wide session key, pinned pee
 
 **Context:** The existing integration suite (`go test -tags integration ./internal/membership/`) already provides shared helpers in `package membership_test`: `startNode(t, listenAddr, gossipAddr, seeds)`, `tlsClient()`, `authedGet(t, client, url, key)`, `waitForPeer(t, nodeA, peerID, timeout)`, and `createSandboxOnB(t, client, owner)` (POSTs a sandbox on the owner and returns its `<nodeID>.<ulid>` id). The new file shares those. The existing forward/SSE tests (`TestCluster_ForwardSandboxRequest`, `TestCluster_ForwardLogsSSE`) already exercise cross-node forwarding and the `WatchEvents` SSE merge — after this milestone they implicitly cover the node-key-authenticated peer path and must stay green (the final verification re-runs them).
 
-- [ ] **Step 1: Add the read-only key to the shared helper**
+- [x] **Step 1: Add the read-only key to the shared helper**
 
 In `internal/membership/cluster_integration_test.go:53`, change:
 
@@ -1665,7 +1665,7 @@ to (identical keys on every node — the ADR-0010 swarm-wide invariant):
 	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}, {Key: "ro", Role: "read-only"}}
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `internal/membership/security_integration_test.go`:
 
@@ -1753,12 +1753,12 @@ func TestSecurity_CrossNodeBrowserSession(t *testing.T) {
 > require corrupting a gossiped pubkey, which the harness can't reach, so it is
 > intentionally not asserted at the integration layer.
 
-- [ ] **Step 3: Run tests to verify they fail (before the milestone code) / pass (after)**
+- [x] **Step 3: Run tests to verify they fail (before the milestone code) / pass (after)**
 
 Run: `go test -tags integration ./internal/membership/ -run TestSecurity -v -timeout 120s`
 Expected: PASS once Tasks 1–10 are implemented (read-only forwarded mutation → 403; admin → 200; cross-node cookie read → 200). If run before Task 9/10, the role-gate test fails (read-only would get 200).
 
-- [ ] **Step 4: Run the full integration suite + race**
+- [x] **Step 4: Run the full integration suite + race**
 
 Run:
 ```bash
@@ -1768,7 +1768,7 @@ go test ./...
 ```
 Expected: PASS everywhere (including the pre-existing `TestCluster_ForwardSandboxRequest` / `TestCluster_ForwardLogsSSE`, which now exercise the node-key-authenticated peer path); no data races.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/membership/security_integration_test.go internal/membership/cluster_integration_test.go
