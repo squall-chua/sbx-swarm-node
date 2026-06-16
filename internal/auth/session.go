@@ -2,6 +2,7 @@
 package auth
 
 import (
+	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -49,4 +50,20 @@ func (s *Signer) Verify(token string) (string, error) {
 		return "", errors.New("session expired")
 	}
 	return parts[0], nil
+}
+
+// DeriveSessionKey returns the HMAC key used to sign session/x-sbx-authz tokens.
+// In a swarm it is derived from the cluster secret so a token minted by any node
+// verifies on every node (ADR-0010); a standalone node (empty clusterSecret)
+// uses its per-node seed.
+func DeriveSessionKey(clusterSecret string, nodeSeed []byte) []byte {
+	if clusterSecret == "" {
+		return nodeSeed
+	}
+	key, err := hkdf.Key(sha256.New, []byte(clusterSecret), nil, "sbx-session-v1", 32)
+	if err != nil {
+		// HKDF only errors on absurd key lengths; 32 is always valid.
+		panic("auth: hkdf derive session key: " + err.Error())
+	}
+	return key
 }

@@ -27,3 +27,21 @@ func TestSession_RejectsExpiredAndTampered(t *testing.T) {
 	_, err = s.Verify(tok + "x") // tamper
 	require.Error(t, err)
 }
+
+func TestDeriveSessionKey_SwarmWideVsStandalone(t *testing.T) {
+	// Same cluster secret on two nodes -> identical key -> cross-node verify works.
+	k1 := DeriveSessionKey("cluster-secret-xyz", []byte("node-A-seed"))
+	k2 := DeriveSessionKey("cluster-secret-xyz", []byte("node-B-seed"))
+	require.Equal(t, k1, k2)
+	require.Len(t, k1, 32)
+
+	tokA := NewSigner(k1).Mint("admin", time.Now().Add(time.Hour))
+	role, err := NewSigner(k2).Verify(tokA) // node B verifies node A's token
+	require.NoError(t, err)
+	require.Equal(t, "admin", role)
+
+	// Standalone (no cluster secret) falls back to the per-node seed.
+	s1 := DeriveSessionKey("", []byte("node-A-seed"))
+	s2 := DeriveSessionKey("", []byte("node-B-seed"))
+	require.NotEqual(t, s1, s2)
+}
