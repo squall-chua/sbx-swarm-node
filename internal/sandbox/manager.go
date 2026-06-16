@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 )
@@ -18,12 +19,22 @@ type Manager struct {
 	backend Backend
 	store   *store.Store
 	ids     *ids.Gen
+	pub     events.Publisher
 	now     func() time.Time
 }
 
 // NewManager builds a Manager.
 func NewManager(nodeID string, backend Backend, st *store.Store, gen *ids.Gen) *Manager {
 	return &Manager{nodeID: nodeID, backend: backend, store: st, ids: gen, now: time.Now}
+}
+
+// SetPublisher wires an event publisher (optional; nil disables events).
+func (m *Manager) SetPublisher(p events.Publisher) { m.pub = p }
+
+func (m *Manager) emit(eventType, sandboxID string, payload any) {
+	if m.pub != nil {
+		m.pub.Publish(eventType, sandboxID, payload)
+	}
 }
 
 func (m *Manager) save(rec *Record) error {
@@ -52,6 +63,7 @@ func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) 
 	if err := m.save(rec); err != nil {
 		return nil, err
 	}
+	m.emit("sandbox.created", rec.ID, map[string]string{"status": rec.Status})
 	return rec, nil
 }
 
@@ -94,7 +106,11 @@ func (m *Manager) lifecycle(ctx context.Context, id string, fn func(name string)
 		return err
 	}
 	rec.Status = status
-	return m.save(rec)
+	if err := m.save(rec); err != nil {
+		return err
+	}
+	m.emit("sandbox."+status, rec.ID, nil)
+	return nil
 }
 
 // Start/Stop transition the backend and record.
@@ -114,7 +130,11 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if err := m.backend.Remove(ctx, rec.BackendName); err != nil && err != ErrNotFound {
 		return err
 	}
-	return m.store.Delete(bucket, id)
+	if err := m.store.Delete(bucket, id); err != nil {
+		return err
+	}
+	m.emit("sandbox.deleted", id, nil)
+	return nil
 }
 
 // Backend returns the underlying backend (for exec/ports/files handlers).
@@ -153,6 +173,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			if err := m.save(rec); err != nil {
 				return err
 			}
+			m.emit("sandbox.lost", rec.ID, nil)
 		}
 	}
 	return nil
