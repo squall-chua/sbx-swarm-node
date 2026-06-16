@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package sbxswarm.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1";
+
+// NodeService exposes node-level information and control.
+service NodeService {
+  rpc GetNodeInfo(GetNodeInfoRequest) returns (NodeInfo) {
+    option (google.api.http) = {get: "/v1/node"};
+  }
+}
+
+message GetNodeInfoRequest {}
+
+message NodeInfo {
+  string node_id = 1;
+  string node_name = 2;
+  string version = 3;
+}
