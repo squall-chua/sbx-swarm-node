@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package sbxswarm.v1;
+
+option go_package = "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1";
+
+service EventService {
+  rpc WatchEvents(WatchRequest) returns (stream EventMsg);
+}
+
+message EventMsg {
+  string id         = 1;
+  uint64 seq        = 2;
+  string type       = 3;
+  string node_id    = 4;
+  string sandbox_id = 5;
+  bytes  payload    = 6;
+}
+
+message WatchRequest {
+  repeated string types     = 1;
+  string          sandbox   = 2;
+  uint64          since_seq = 3;
+}

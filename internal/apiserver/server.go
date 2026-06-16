@@ -75,6 +75,10 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 		}
 	}
 
+	if opts.Events != nil {
+		sbxv1.RegisterEventServiceServer(grpcSrv, NewEventService(opts.Events))
+	}
+
 	mw := auth.New(opts.Keys, opts.Signer)
 
 	// The /v1 subtree is authed. SSE log/stats handlers (when the observe
@@ -88,7 +92,13 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	rest := http.NewServeMux()
 	rest.Handle("/v1/auth/session", sessionHandler(opts.Keys, opts.Signer)) // unauthenticated exchange
 	if opts.Events != nil {
-		rest.Handle("/v1/events", mw.Authenticate(SSEHandler(opts.Events))) // authed SSE firehose
+		var sseH http.Handler
+		if opts.Routing != nil && opts.Peers != nil {
+			sseH = SSEHandlerWithPeers(opts.Events, opts.Routing, opts.Peers)
+		} else {
+			sseH = SSEHandler(opts.Events)
+		}
+		rest.Handle("/v1/events", mw.Authenticate(sseH)) // authed SSE firehose
 	}
 	rest.Handle("/v1/", mw.Authenticate(v1))             // everything else under /v1 is authed
 	rest.Handle("/", http.FileServer(http.FS(web.FS()))) // SPA fallback
