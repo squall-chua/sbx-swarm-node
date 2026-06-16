@@ -16,8 +16,8 @@ func TestDeriveNodeID_DeterministicAndFormatted(t *testing.T) {
 
 	id1 := DeriveNodeID(pub)
 	id2 := DeriveNodeID(pub)
-	require.Equal(t, id1, id2)        // deterministic
-	require.Len(t, id1, 16)           // 10 bytes base32-no-pad = 16 chars
+	require.Equal(t, id1, id2)                  // deterministic
+	require.Len(t, id1, 16)                     // 10 bytes base32-no-pad = 16 chars
 	require.Equal(t, id1, strings.ToLower(id1)) // lowercase
 }
 
