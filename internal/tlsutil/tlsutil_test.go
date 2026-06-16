@@ -1,6 +1,8 @@
 package tlsutil
 
 import (
+	"crypto/ed25519"
+	crand "crypto/rand"
 	"path/filepath"
 	"testing"
 
@@ -18,4 +20,22 @@ func TestLoadOrGenerate_GeneratesUsableCert(t *testing.T) {
 	again, err := LoadOrGenerate(filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key"), dir)
 	require.NoError(t, err)
 	require.NotEmpty(t, again.Certificate)
+}
+
+func TestGenerateForKey_LeafPubkeyMatchesNodeKey(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(crand.Reader)
+	require.NoError(t, err)
+	cert, err := GenerateForKey(priv)
+	require.NoError(t, err)
+
+	leafPub, err := LeafPublicKey(cert)
+	require.NoError(t, err)
+	require.True(t, ed25519.PublicKey(leafPub).Equal(pub))
+
+	// PinnedVerify accepts the matching pubkey, rejects a different one.
+	verify := PinnedVerify(pub)
+	require.NoError(t, verify(cert.Certificate, nil))
+
+	otherPub, _, _ := ed25519.GenerateKey(crand.Reader)
+	require.Error(t, PinnedVerify(otherPub)(cert.Certificate, nil))
 }
