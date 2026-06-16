@@ -59,12 +59,20 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 
 	mw := auth.New(opts.Keys, opts.Signer)
 
+	// The /v1 subtree is authed. SSE log/stats handlers (when the observe
+	// collectors are wired) intercept .../logs and text/event-stream .../stats;
+	// all other /v1 traffic (including unary JSON GetStats) falls through to gw.
+	var v1 http.Handler = gw
+	if opts.Sandboxes != nil && opts.Sandboxes.observeStreamReady() {
+		v1 = observeStreamMux(opts.Sandboxes.obs, gw)
+	}
+
 	rest := http.NewServeMux()
 	rest.Handle("/v1/auth/session", sessionHandler(opts.Keys, opts.Signer)) // unauthenticated exchange
 	if opts.Events != nil {
 		rest.Handle("/v1/events", mw.Authenticate(SSEHandler(opts.Events))) // authed SSE firehose
 	}
-	rest.Handle("/v1/", mw.Authenticate(gw))             // everything else under /v1 is authed
+	rest.Handle("/v1/", mw.Authenticate(v1))             // everything else under /v1 is authed
 	rest.Handle("/", http.FileServer(http.FS(web.FS()))) // SPA fallback
 	if opts.Health != nil {
 		rest.Handle("/healthz", opts.Health.Handler())

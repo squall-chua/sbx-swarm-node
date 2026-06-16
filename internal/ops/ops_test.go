@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +44,46 @@ func TestOps_IdempotencyReturnsSameOp(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, existedB)
 	require.Equal(t, a.ID, b.ID) // same op for same idempotency key
+}
+
+type fakeOpCounter struct {
+	mu    sync.Mutex
+	calls [][2]string
+}
+
+func (f *fakeOpCounter) IncOp(opType, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, [2]string{opType, state})
+}
+
+func (f *fakeOpCounter) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
+func TestOps_IncrementsCounterOnTerminalState(t *testing.T) {
+	m := newMgr(t)
+	c := &fakeOpCounter{}
+	m.SetMetrics(c)
+
+	// Successful op -> done.
+	op, _, err := m.Start(context.Background(), "provision", "")
+	require.NoError(t, err)
+	m.Run(op.ID, func() (string, error) { return "sb1", nil })
+	require.Eventually(t, func() bool { return c.count() == 1 }, time.Second, 10*time.Millisecond)
+
+	// Failed op -> error.
+	op2, _, err := m.Start(context.Background(), "remove", "")
+	require.NoError(t, err)
+	m.Run(op2.ID, func() (string, error) { return "", context.Canceled })
+	require.Eventually(t, func() bool { return c.count() == 2 }, time.Second, 10*time.Millisecond)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	require.Contains(t, c.calls, [2]string{"provision", "done"})
+	require.Contains(t, c.calls, [2]string{"remove", "error"})
 }
 
 func TestOps_EmitsStateEvents(t *testing.T) {

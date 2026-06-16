@@ -5,18 +5,28 @@ import (
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/obsd"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// ObserveDeps are the observability collectors the observe RPCs read from.
+// ObserveDeps are the observability collectors and handles the observe RPCs and
+// SSE handlers read from.
 type ObserveDeps struct {
-	Stats  *obsd.StatsCollector
-	NetLog *obsd.NetLogCollector
+	Stats   *obsd.StatsCollector
+	NetLog  *obsd.NetLogCollector
+	Backend sandbox.Backend  // for log streaming (SSE /logs)
+	Mgr     *sandbox.Manager // for resolving id -> backend name (SSE)
 }
 
 // WithObserve wires the observability collectors into the service.
 func (s *SandboxService) WithObserve(o ObserveDeps) { s.obs = o }
+
+// observeStreamReady reports whether the SSE log/stats handlers can run (backend
+// + manager + stats collector are all wired).
+func (s *SandboxService) observeStreamReady() bool {
+	return s.obs.Backend != nil && s.obs.Mgr != nil && s.obs.Stats != nil
+}
 
 // GetStats returns the latest cached usage for a sandbox.
 func (s *SandboxService) GetStats(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.Stats, error) {

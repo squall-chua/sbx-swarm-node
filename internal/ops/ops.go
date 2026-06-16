@@ -29,13 +29,20 @@ type Operation struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// opCounter counts operations by type and final state. obs.Metrics satisfies
+// it; declared here to avoid an ops->obs import.
+type opCounter interface {
+	IncOp(opType, state string)
+}
+
 // Manager creates, runs, and persists operations.
 type Manager struct {
-	store *store.Store
-	ids   *ids.Gen
-	pub   events.Publisher
-	mu    sync.Mutex
-	now   func() time.Time
+	store   *store.Store
+	ids     *ids.Gen
+	pub     events.Publisher
+	metrics opCounter
+	mu      sync.Mutex
+	now     func() time.Time
 }
 
 // NewManager builds an ops manager.
@@ -45,6 +52,10 @@ func NewManager(st *store.Store, gen *ids.Gen) *Manager {
 
 // SetPublisher wires an event publisher (optional).
 func (m *Manager) SetPublisher(p events.Publisher) { m.pub = p }
+
+// SetMetrics wires an operation counter, incremented when an op reaches a
+// terminal state (optional; nil disables counting).
+func (m *Manager) SetMetrics(c opCounter) { m.metrics = c }
 
 func (m *Manager) emit(op *Operation) {
 	if m.pub != nil {
@@ -109,6 +120,9 @@ func (m *Manager) Run(opID string, fn func() (sandboxID string, err error)) {
 		}
 		_ = m.put(op)
 		m.emit(op)
+		if m.metrics != nil {
+			m.metrics.IncOp(op.Type, op.State)
+		}
 	}()
 }
 

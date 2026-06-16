@@ -296,6 +296,12 @@ func (b *SDKBackend) Logs(ctx context.Context, name, path string, out chan<- Log
 	if err != nil {
 		return err
 	}
+	// Unblock a parked scanner.Scan() when ctx is cancelled: closing the session
+	// closes the underlying reader, so Scan returns instead of leaking.
+	go func() {
+		<-ctx.Done()
+		_ = sess.Close()
+	}()
 	go func() {
 		defer sess.Close()
 		scanner := bufio.NewScanner(sess.Stdout())

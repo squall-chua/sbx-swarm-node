@@ -71,21 +71,27 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	mgr.SetPublisher(bus)
 	opsM := ops.NewManager(st, gen)
 	opsM.SetPublisher(bus)
+	opsM.SetMetrics(metrics)
 	sandboxes := apiserver.NewSandboxService(mgr, opsM)
 
 	// Background observability collectors.
 	nctx, cancel := context.WithCancel(context.Background())
 	statsC := obsd.NewStatsCollector(backend, namesList(mgr), obsd.DefaultProvisionLimit(), 4)
 	netC := obsd.NewNetLogCollector(backend, mgr.ResolveVMToID)
-	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC})
+	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC, Backend: backend, Mgr: mgr})
 	go runTicker(nctx, 10*time.Second, func() {
 		_ = statsC.PollOnce(nctx)
-		// Update the sandbox status gauge from manager records.
+		// Surface the spec §9 actual_util reconstruction on /metrics.
+		au := statsC.ActualUtil()
+		metrics.SetActualUtil(au.CPU, au.Mem)
+		// Update the sandbox status gauge from manager records. Reset first so
+		// statuses absent from this snapshot don't retain stale values.
 		if recs, err := mgr.List(nctx); err == nil {
 			counts := map[string]int{}
 			for _, r := range recs {
 				counts[r.Status]++
 			}
+			metrics.ResetSandboxes()
 			for status, n := range counts {
 				metrics.SetSandboxes(status, n)
 			}
@@ -169,7 +175,8 @@ func (n *Node) Start() error {
 	return nil
 }
 
-// namesList returns a function that lists all backend names for running sandboxes.
+// namesList returns a function that lists backend names of running sandboxes
+// only (exec.Stats requires a running sandbox).
 func namesList(mgr *sandbox.Manager) func(context.Context) ([]string, error) {
 	return func(ctx context.Context) ([]string, error) {
 		recs, err := mgr.List(ctx)
@@ -178,6 +185,9 @@ func namesList(mgr *sandbox.Manager) func(context.Context) ([]string, error) {
 		}
 		names := make([]string, 0, len(recs))
 		for _, r := range recs {
+			if r.Status != "running" {
+				continue
+			}
 			names = append(names, r.BackendName)
 		}
 		return names, nil
