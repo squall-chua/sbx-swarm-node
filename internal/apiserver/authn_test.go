@@ -62,3 +62,16 @@ func TestAuthenticate_NoCredsRejected(t *testing.T) {
 	_, err := a.authenticate(context.Background())
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }
+
+func TestAuthenticate_CSRFTokenRejectedAsAuthz(t *testing.T) {
+	signer := auth.NewSigner([]byte("k"))
+	a := newAuthenticator(authnDeps{
+		Signer: signer, Keys: keyMap{}, LocalNodeID: "self",
+	})
+	// Mint a CSRF-purpose token (role="csrf") and replay it as x-sbx-authz.
+	csrfTok := signer.Mint("csrf", time.Now().Add(time.Minute))
+	md := metadata.Pairs("x-sbx-authz", csrfTok)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	_, err := a.authenticate(ctx)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+}

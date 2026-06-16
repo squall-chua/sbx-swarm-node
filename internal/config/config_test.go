@@ -67,6 +67,68 @@ func TestValidate_RejectsBadRole(t *testing.T) {
 	require.Error(t, c.Validate())
 }
 
+func TestValidate_ClusterWithCustomTLS(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr bool
+	}{
+		{
+			name: "clustered with custom cert file is invalid",
+			mutate: func(c *Config) {
+				c.ClusterSecret = "s3cret"
+				c.TLSCertFile = "/etc/tls/node.crt"
+			},
+			wantErr: true,
+		},
+		{
+			name: "clustered with custom key file is invalid",
+			mutate: func(c *Config) {
+				c.ClusterSecret = "s3cret"
+				c.TLSKeyFile = "/etc/tls/node.key"
+			},
+			wantErr: true,
+		},
+		{
+			name: "clustered with both custom cert and key files is invalid",
+			mutate: func(c *Config) {
+				c.ClusterSecret = "s3cret"
+				c.TLSCertFile = "/etc/tls/node.crt"
+				c.TLSKeyFile = "/etc/tls/node.key"
+			},
+			wantErr: true,
+		},
+		{
+			name: "standalone with custom cert and key files is valid",
+			mutate: func(c *Config) {
+				c.TLSCertFile = "/etc/tls/node.crt"
+				c.TLSKeyFile = "/etc/tls/node.key"
+			},
+			wantErr: false,
+		},
+		{
+			name: "clustered without custom cert files is valid",
+			mutate: func(c *Config) {
+				c.ClusterSecret = "s3cret"
+			},
+			wantErr: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Default()
+			tc.mutate(c)
+			err := c.Validate()
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "tls")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidate_ClusterFields(t *testing.T) {
 	tests := []struct {
 		name    string

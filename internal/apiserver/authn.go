@@ -46,7 +46,7 @@ func (a *authenticator) authenticate(ctx context.Context) (principal, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	if v := first(md, "x-sbx-authz"); v != "" {
-		if role, err := a.d.Signer.Verify(v); err == nil {
+		if role, err := a.d.Signer.Verify(v); err == nil && isUserRole(role) {
 			return principal{userRole: role}, nil
 		}
 	}
@@ -62,6 +62,10 @@ func (a *authenticator) authenticate(ctx context.Context) (principal, error) {
 	}
 	return principal{}, status.Error(codes.Unauthenticated, "authentication required")
 }
+
+// isUserRole reports whether role is a real principal role (guards against
+// non-role signed tokens like the CSRF cookie value being replayed as auth).
+func isUserRole(role string) bool { return role == "admin" || role == "read-only" }
 
 func first(md metadata.MD, key string) string {
 	if v := md.Get(key); len(v) > 0 {

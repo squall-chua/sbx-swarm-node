@@ -154,6 +154,9 @@ func (c *Config) Validate() error {
 	if len(c.Join) > 0 && c.ClusterSecret == "" {
 		return fmt.Errorf("cluster_secret must be set when join seeds are configured")
 	}
+	if c.ClusterSecret != "" && (c.TLSCertFile != "" || c.TLSKeyFile != "") {
+		return fmt.Errorf("tls_cert_file/tls_key_file is incompatible with clustering: clustered nodes use the node-key-derived TLS cert for peer pinning (ADR-0004)")
+	}
 	if c.GossipAddr == "" {
 		return fmt.Errorf("gossip_addr must not be empty")
 	}
