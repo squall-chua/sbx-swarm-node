@@ -17,6 +17,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/web"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -35,6 +36,8 @@ type Options struct {
 	Peers                     *peer.Pool      // optional; used for SSE peer-merge when Routing is set
 	Pins                      PinResolver     // optional; resolves per-node TLS pin for OwnerProxy
 	NodeSvc                   *NodeService    // optional; if set, used instead of creating a new one (allows pre-wired Cordoner)
+	Denylist                  func(nodeID string) bool
+	PubKeyFor                 func(nodeID string) ([]byte, bool)
 }
 
 // Build constructs the one-port handler and the gRPC server. The caller serves
@@ -45,44 +48,58 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 		node = NewNodeService(opts.NodeID, opts.NodeName, opts.Version)
 	}
 
-	var grpcSrv *grpc.Server
+	// Authn + authz always-on (closes the native-gRPC port even standalone).
+	authn := newAuthenticator(authnDeps{
+		Signer: opts.Signer, Keys: opts.Keys, LocalNodeID: opts.NodeID,
+		PubKeyFor: opts.PubKeyFor, Denied: opts.Denylist,
+	})
+	unary := []grpc.UnaryServerInterceptor{authn.unaryInterceptor(), authzUnaryInterceptor()}
 	if opts.Forward != nil {
-		grpcSrv = grpc.NewServer(grpc.UnaryInterceptor(opts.Forward.UnaryInterceptor()))
-	} else {
-		grpcSrv = grpc.NewServer()
+		unary = append(unary, opts.Forward.UnaryInterceptor())
 	}
-	sbxv1.RegisterNodeServiceServer(grpcSrv, node)
+	grpcSrv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(unary...),
+		grpc.ChainStreamInterceptor(authn.streamInterceptor(), authzStreamInterceptor()),
+	)
 
-	// In-process gateway: the gateway calls the service directly via a local
-	// handler registration (no loopback gRPC connection). Use proto field names
-	// (snake_case) in the JSON so the REST contract matches the proto.
+	sbxv1.RegisterNodeServiceServer(grpcSrv, node)
+	if opts.Sandboxes != nil {
+		sbxv1.RegisterSandboxServiceServer(grpcSrv, opts.Sandboxes)
+	}
+	if opts.Policy != nil {
+		sbxv1.RegisterPolicyServiceServer(grpcSrv, opts.Policy)
+	}
+	if opts.Events != nil {
+		sbxv1.RegisterEventServiceServer(grpcSrv, NewEventService(opts.Events))
+	}
+
+	// Loopback: the gateway dials the local gRPC server so REST traverses the
+	// interceptor chain. Bridge the HTTP-authenticated role across the wire as a
+	// signed x-sbx-authz token.
+	loopConn, _, err := loopback(grpcSrv)
+	if err != nil {
+		return nil, nil, err
+	}
 	gw := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions:   protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true},
 			UnmarshalOptions: protojson.UnmarshalOptions{DiscardUnknown: true},
 		}),
 		runtime.WithIncomingHeaderMatcher(incomingHeaderMatcher),
+		runtime.WithMetadata(roleAnnotator(opts.Signer)),
 	)
-	if err := sbxv1.RegisterNodeServiceHandlerServer(context.Background(), gw, node); err != nil {
+	if err := sbxv1.RegisterNodeServiceHandler(context.Background(), gw, loopConn); err != nil {
 		return nil, nil, err
 	}
-
 	if opts.Sandboxes != nil {
-		sbxv1.RegisterSandboxServiceServer(grpcSrv, opts.Sandboxes)
-		if err := sbxv1.RegisterSandboxServiceHandlerServer(context.Background(), gw, opts.Sandboxes); err != nil {
+		if err := sbxv1.RegisterSandboxServiceHandler(context.Background(), gw, loopConn); err != nil {
 			return nil, nil, err
 		}
 	}
-
 	if opts.Policy != nil {
-		sbxv1.RegisterPolicyServiceServer(grpcSrv, opts.Policy)
-		if err := sbxv1.RegisterPolicyServiceHandlerServer(context.Background(), gw, opts.Policy); err != nil {
+		if err := sbxv1.RegisterPolicyServiceHandler(context.Background(), gw, loopConn); err != nil {
 			return nil, nil, err
 		}
-	}
-
-	if opts.Events != nil {
-		sbxv1.RegisterEventServiceServer(grpcSrv, NewEventService(opts.Events))
 	}
 
 	mw := auth.New(opts.Keys, opts.Signer)
@@ -127,6 +144,18 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	}
 
 	return Multiplex(grpcSrv, rest), grpcSrv, nil
+}
+
+// roleAnnotator injects the HTTP-authenticated role across the loopback as a
+// signed x-sbx-authz token (cookie callers have no Authorization header).
+func roleAnnotator(signer *auth.Signer) func(context.Context, *http.Request) metadata.MD {
+	return func(_ context.Context, r *http.Request) metadata.MD {
+		role, ok := auth.RoleFromContext(r.Context())
+		if !ok {
+			return nil
+		}
+		return metadata.Pairs("x-sbx-authz", signer.Mint(role, time.Now().Add(30*time.Second)))
+	}
 }
 
 // incomingHeaderMatcher forwards the Idempotency-Key REST header into gRPC

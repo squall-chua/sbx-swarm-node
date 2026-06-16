@@ -21,7 +21,10 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type keyMap map[string]string
@@ -87,12 +90,17 @@ func TestServer_RESTRequiresAuth_AndReturnsNodeInfo(t *testing.T) {
 func TestServer_GRPCGetNodeInfo(t *testing.T) {
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
-
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})))
 	require.NoError(t, err)
 	defer conn.Close()
 
-	out, err := sbxv1.NewNodeServiceClient(conn).GetNodeInfo(context.Background(), &sbxv1.GetNodeInfoRequest{})
+	// no creds -> Unauthenticated
+	_, err = sbxv1.NewNodeServiceClient(conn).GetNodeInfo(context.Background(), &sbxv1.GetNodeInfoRequest{})
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+
+	// bearer in metadata -> ok
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer adm"))
+	out, err := sbxv1.NewNodeServiceClient(conn).GetNodeInfo(ctx, &sbxv1.GetNodeInfoRequest{})
 	require.NoError(t, err)
 	require.Equal(t, "n1", out.NodeId)
 }
