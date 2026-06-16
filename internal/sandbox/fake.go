@@ -14,6 +14,8 @@ type Fake struct {
 	detached  map[string]bool // detachedID -> done
 	seq       int
 	blocked   []BlockedHost
+	rules     []PolicyRule
+	secrets   map[string][]CustomSecret
 }
 
 // NewFake returns an empty fake backend.
@@ -173,4 +175,77 @@ func (f *Fake) BlockedEgress(_ context.Context) ([]BlockedHost, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]BlockedHost(nil), f.blocked...), nil
+}
+
+// Policy methods.
+
+func (f *Fake) PolicyAllow(_ context.Context, _, host string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rules = append(f.rules, PolicyRule{Rule: host, Decision: "allow"})
+	return nil
+}
+
+func (f *Fake) PolicyDeny(_ context.Context, _, host string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rules = append(f.rules, PolicyRule{Rule: host, Decision: "deny"})
+	return nil
+}
+
+func (f *Fake) PolicySetDefault(_ context.Context, _ string) error { return nil }
+
+func (f *Fake) PolicyRemoveRule(_ context.Context, _ string) error { return nil }
+
+func (f *Fake) PolicyReset(_ context.Context) error {
+	f.mu.Lock()
+	f.rules = nil
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *Fake) PolicyList(_ context.Context, _ string) ([]PolicyRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]PolicyRule(nil), f.rules...), nil
+}
+
+func (f *Fake) PolicyProfiles(_ context.Context) ([]string, error) {
+	return []string{"allow-all", "balanced", "deny-all"}, nil
+}
+
+// Secret methods.
+
+func (f *Fake) SecretSet(_ context.Context, scope string, s CustomSecret) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.secrets == nil {
+		f.secrets = map[string][]CustomSecret{}
+	}
+	f.secrets[scope] = append(f.secrets[scope], s)
+	return nil
+}
+
+func (f *Fake) SecretList(_ context.Context, scope string) (Secrets, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out Secrets
+	for _, s := range f.secrets[scope] {
+		// Value is intentionally omitted — write-only (spec §11).
+		out.Custom = append(out.Custom, CustomSecret{Host: s.Host, Env: s.Env})
+	}
+	return out, nil
+}
+
+func (f *Fake) SecretRemove(_ context.Context, scope, host string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	kept := f.secrets[scope][:0]
+	for _, s := range f.secrets[scope] {
+		if s.Host != host {
+			kept = append(kept, s)
+		}
+	}
+	f.secrets[scope] = kept
+	return nil
 }

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	sdkclient "github.com/squall-chua/sbx-go-sdk/client"
 	sdkexec "github.com/squall-chua/sbx-go-sdk/exec"
 	sdkpolicy "github.com/squall-chua/sbx-go-sdk/policy"
 	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
+	sdksecret "github.com/squall-chua/sbx-go-sdk/secret"
 )
 
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
@@ -334,6 +336,98 @@ func (b *SDKBackend) BlockedEgress(ctx context.Context) ([]BlockedHost, error) {
 		out = append(out, BlockedHost{Host: e.Host, VMName: e.VMName})
 	}
 	return out, nil
+}
+
+// Policy methods — delegate to sdkpolicy (shells out to `sbx policy`).
+
+func (b *SDKBackend) PolicyAllow(ctx context.Context, scope, host string) error {
+	return sdkpolicy.Allow(ctx, b.cl, scope, host)
+}
+
+func (b *SDKBackend) PolicyDeny(ctx context.Context, scope, host string) error {
+	return sdkpolicy.Deny(ctx, b.cl, scope, host)
+}
+
+func (b *SDKBackend) PolicySetDefault(ctx context.Context, profile string) error {
+	return sdkpolicy.SetDefault(ctx, b.cl, profile)
+}
+
+func (b *SDKBackend) PolicyRemoveRule(ctx context.Context, scope string) error {
+	return sdkpolicy.RemoveRule(ctx, b.cl, scope)
+}
+
+func (b *SDKBackend) PolicyReset(ctx context.Context) error {
+	return sdkpolicy.Reset(ctx, b.cl)
+}
+
+// PolicyList returns parsed rules. On ErrUnexpectedFormat it falls back to
+// ListRaw and returns a single synthetic rule with Type:"raw".
+func (b *SDKBackend) PolicyList(ctx context.Context, scope string) ([]PolicyRule, error) {
+	rules, err := sdkpolicy.List(ctx, b.cl, scope)
+	if err != nil {
+		if errors.Is(err, sdkclient.ErrUnexpectedFormat) {
+			raw, rerr := sdkpolicy.ListRaw(ctx, b.cl, scope)
+			if rerr != nil {
+				return nil, rerr
+			}
+			return []PolicyRule{{Type: "raw", Rule: raw}}, nil
+		}
+		return nil, err
+	}
+	out := make([]PolicyRule, 0, len(rules))
+	for _, r := range rules {
+		out = append(out, PolicyRule{
+			Provenance: r.Provenance,
+			AppliesTo:  r.AppliesTo,
+			Rule:       r.Rule,
+			Type:       r.Type,
+			Decision:   r.Decision,
+			Resources:  strings.Join(r.Resources, ","),
+		})
+	}
+	return out, nil
+}
+
+// PolicyProfiles returns the raw profile listing text as a single-element slice.
+func (b *SDKBackend) PolicyProfiles(ctx context.Context) ([]string, error) {
+	raw, err := sdkpolicy.Profiles(ctx, b.cl)
+	if err != nil {
+		return nil, err
+	}
+	return []string{raw}, nil
+}
+
+// Secret methods — delegate to sdksecret (shells out to `sbx secret`).
+// Values are NEVER stored or returned (spec §11).
+
+func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret) error {
+	return sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
+		Host:  s.Host,
+		Env:   s.Env,
+		Value: s.Value, // passed to the CLI; never stored or logged here
+	})
+}
+
+// SecretList returns the secret inventory with values masked (the SDK already
+// returns ValueMasked, never the real value).
+func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, error) {
+	secs, err := sdksecret.List(ctx, b.cl, scope)
+	if err != nil {
+		return Secrets{}, err
+	}
+	out := Secrets{}
+	for _, st := range secs.Stored {
+		out.Stored = append(out.Stored, StoredSecret{Name: st.Name})
+	}
+	for _, c := range secs.Custom {
+		// Value field is intentionally empty — write-only (spec §11).
+		out.Custom = append(out.Custom, CustomSecret{Host: c.Target, Env: c.Env})
+	}
+	return out, nil
+}
+
+func (b *SDKBackend) SecretRemove(ctx context.Context, scope, host string) error {
+	return sdksecret.Remove(ctx, b.cl, scope, host)
 }
 
 var _ Backend = (*SDKBackend)(nil)

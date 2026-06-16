@@ -82,6 +82,35 @@ type LogLine struct {
 	Err  error // set on stream error/EOF
 }
 
+// PolicyRule mirrors a structured row from policy.List (SDK v0.1.2).
+type PolicyRule struct {
+	Provenance string `json:"provenance"`
+	AppliesTo  string `json:"applies_to"`
+	Rule       string `json:"rule"`
+	Type       string `json:"type"`
+	Decision   string `json:"decision"` // allow|deny
+	Resources  string `json:"resources"`
+}
+
+// CustomSecret is a proxy-injected credential. Value is write-only and never
+// returned by reads.
+type CustomSecret struct {
+	Host  string `json:"host"`
+	Env   string `json:"env"`
+	Value string `json:"value,omitempty"`
+}
+
+// StoredSecret is a non-custom secret entry (name only).
+type StoredSecret struct {
+	Name string `json:"name"`
+}
+
+// Secrets is the structured secret inventory (values always masked).
+type Secrets struct {
+	Stored []StoredSecret `json:"stored"`
+	Custom []CustomSecret `json:"custom"`
+}
+
 // Backend is the abstraction over sbx-go-sdk used by the manager.
 type Backend interface {
 	Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error)
@@ -104,4 +133,18 @@ type Backend interface {
 	Logs(ctx context.Context, name, path string, out chan<- LogLine) error
 	// BlockedEgress returns the daemon-wide set of blocked (host, vm) pairs.
 	BlockedEgress(ctx context.Context) ([]BlockedHost, error)
+
+	// Policy management (egress rules).
+	PolicyAllow(ctx context.Context, scope, host string) error
+	PolicyDeny(ctx context.Context, scope, host string) error
+	PolicySetDefault(ctx context.Context, profile string) error
+	PolicyRemoveRule(ctx context.Context, scope string) error
+	PolicyReset(ctx context.Context) error
+	PolicyList(ctx context.Context, scope string) ([]PolicyRule, error)
+	PolicyProfiles(ctx context.Context) ([]string, error)
+
+	// Secret management (values write-only; reads always mask them).
+	SecretSet(ctx context.Context, scope string, s CustomSecret) error
+	SecretList(ctx context.Context, scope string) (Secrets, error)
+	SecretRemove(ctx context.Context, scope, host string) error
 }
