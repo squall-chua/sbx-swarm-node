@@ -35,7 +35,7 @@
 - Create: `internal/store/kv.go`
 - Test: `internal/store/kv_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package store
@@ -74,12 +74,12 @@ func TestKV_PutGetDeleteForEach(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/store/ -run TestKV -v`
 Expected: FAIL — `s.Put undefined`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package store
@@ -142,12 +142,12 @@ func (s *Store) ForEach(bucket string, fn func(k, v []byte) error) error {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/store/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/store/kv.go internal/store/kv_test.go
@@ -162,7 +162,7 @@ git commit -m "feat(store): generic bucket KV helpers"
 - Create: `internal/sandbox/backend.go`, `internal/sandbox/fake.go`
 - Test: `internal/sandbox/fake_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package sandbox
@@ -204,12 +204,12 @@ func TestFake_LifecycleAndExec(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run TestFake -v`
 Expected: FAIL — `undefined: NewFake`
 
-- [ ] **Step 3: Write `backend.go`**
+- [x] **Step 3: Write `backend.go`**
 
 ```go
 // Package sandbox manages sandboxes on this node behind a Backend abstraction
@@ -292,7 +292,7 @@ type Backend interface {
 }
 ```
 
-- [ ] **Step 4: Write `fake.go`**
+- [x] **Step 4: Write `fake.go`**
 
 ```go
 package sandbox
@@ -443,7 +443,7 @@ func (f *Fake) CopyFrom(_ context.Context, name, _, _ string) error {
 }
 ```
 
-- [ ] **Step 5: Run test, then commit**
+- [x] **Step 5: Run test, then commit**
 
 Run: `go test ./internal/sandbox/ -run TestFake -v`
 Expected: PASS
@@ -461,7 +461,7 @@ git commit -m "feat(sandbox): Backend interface + in-memory fake"
 - Create: `internal/sandbox/record.go`, `internal/sandbox/manager.go`
 - Test: `internal/sandbox/manager_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package sandbox
@@ -523,12 +523,12 @@ func TestManager_ReconcileDropsVanishedRecords(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run TestManager -v`
 Expected: FAIL — `undefined: NewManager`
 
-- [ ] **Step 3: Write `record.go`**
+- [x] **Step 3: Write `record.go`**
 
 ```go
 package sandbox
@@ -550,7 +550,7 @@ type Record struct {
 }
 ```
 
-- [ ] **Step 4: Write `manager.go`**
+- [x] **Step 4: Write `manager.go`**
 
 ```go
 package sandbox
@@ -714,7 +714,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 }
 ```
 
-- [ ] **Step 5: Run test, then commit**
+- [x] **Step 5: Run test, then commit**
 
 Run: `go test ./internal/sandbox/ -v`
 Expected: PASS
@@ -732,7 +732,7 @@ git commit -m "feat(sandbox): records + Manager CRUD/lifecycle/reconcile"
 - Create: `internal/ops/ops.go`
 - Test: `internal/ops/ops_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package ops
@@ -782,12 +782,12 @@ func TestOps_IdempotencyReturnsSameOp(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ops/ -v`
 Expected: FAIL — `undefined: NewManager`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package ops tracks asynchronous operations and provision idempotency.
@@ -905,7 +905,7 @@ func (m *Manager) Get(opID string) (*Operation, error) {
 }
 ```
 
-- [ ] **Step 4: Run test, then commit**
+- [x] **Step 4: Run test, then commit**
 
 Run: `go test ./internal/ops/ -v`
 Expected: PASS
@@ -923,7 +923,7 @@ git commit -m "feat(ops): async operations with idempotency"
 - Create: `proto/sbxswarm/v1/sandbox.proto`
 - Regenerate: `internal/gen/sbxswarm/v1/`
 
-- [ ] **Step 1: Write `proto/sbxswarm/v1/sandbox.proto`**
+- [x] **Step 1: Write `proto/sbxswarm/v1/sandbox.proto`**
 
 ```proto
 syntax = "proto3";
@@ -1040,12 +1040,12 @@ message Operation {
 }
 ```
 
-- [ ] **Step 2: Regenerate + build**
+- [x] **Step 2: Regenerate + build**
 
 Run: `buf generate && go build ./...`
 Expected: new types/handlers compile.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add proto/ internal/gen/
@@ -1060,7 +1060,7 @@ git commit -m "feat(proto): SandboxService"
 - Create: `internal/apiserver/sandboxservice.go`
 - Test: `internal/apiserver/sandboxservice_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -1131,12 +1131,12 @@ func TestSandboxService_Exec(t *testing.T) {
 
 Add `"time"` to the test imports.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestSandboxService -v`
 Expected: FAIL — `undefined: NewSandboxService`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package apiserver
@@ -1343,12 +1343,12 @@ func (s *SandboxService) ListPorts(ctx context.Context, r *sbxv1.IdRequest) (*sb
 
 Add `"time"` to the imports.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestSandboxService -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/sandboxservice.go internal/apiserver/sandboxservice_test.go
@@ -1365,12 +1365,12 @@ git commit -m "feat(apiserver): SandboxService (CRUD/exec/agent-run/ports) over 
 
 > The adapter maps the `Backend` interface onto `sbx-go-sdk` v0.1.2. Method names below follow the SDK surface documented in the spec §2; **verify each call signature against the installed SDK** when implementing (the SDK is the source of truth). Unit tests use the fake; this adapter is exercised by a tagged integration test against a real `sandboxd`.
 
-- [ ] **Step 1: Add the SDK dependency**
+- [x] **Step 1: Add the SDK dependency**
 
 Run: `go get github.com/squall-chua/sbx-go-sdk@v0.1.2 && go mod tidy`
 Expected: module added.
 
-- [ ] **Step 2: Write `sdkbackend.go`**
+- [x] **Step 2: Write `sdkbackend.go`**
 
 ```go
 package sandbox
@@ -1447,7 +1447,7 @@ func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbo
 
 > Implement the remaining methods following the one shown, translating `sdkclient.ErrSandboxNotFound` → `ErrNotFound`. Each is a direct passthrough; do not add behavior. A compile-time check `var _ Backend = (*SDKBackend)(nil)` at the bottom of the file will flag any method you miss.
 
-- [ ] **Step 3: Add the interface assertion + write the tagged integration test**
+- [x] **Step 3: Add the interface assertion + write the tagged integration test**
 
 At the end of `sdkbackend.go`:
 
@@ -1485,12 +1485,12 @@ func TestSDKBackend_CreateExecRemove(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Verify compile (unit build) and that the assertion forces completeness**
+- [x] **Step 4: Verify compile (unit build) and that the assertion forces completeness**
 
 Run: `go build ./...`
 Expected: compiles only once **all** `Backend` methods are implemented (the `var _ Backend` assertion fails otherwise — that is the signal to finish the passthroughs).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sandbox/sdkbackend.go internal/sandbox/sdkbackend_integration_test.go go.mod go.sum
@@ -1506,7 +1506,7 @@ git commit -m "feat(sandbox): real sbx-go-sdk backend adapter"
 - Modify: `internal/node/node.go`
 - Test: `internal/apiserver/server_test.go` (extend)
 
-- [ ] **Step 1: Extend `apiserver.Options` and `Build` to register SandboxService**
+- [x] **Step 1: Extend `apiserver.Options` and `Build` to register SandboxService**
 
 In `server.go`, add to `Options`:
 
@@ -1525,7 +1525,7 @@ In `Build`, after registering NodeService on `grpcSrv` and the gateway, add:
 	}
 ```
 
-- [ ] **Step 2: Build the manager/ops/backend in `node.New` and pass them**
+- [x] **Step 2: Build the manager/ops/backend in `node.New` and pass them**
 
 In `node.go` `New`, after opening the store and before `apiserver.Build`, add:
 
@@ -1541,7 +1541,7 @@ Add `Sandboxes: sandboxes` to the `apiserver.Options{...}`. Add imports for `san
 
 > The fake backend is the M1c default so the node boots without a daemon. A later milestone (or a config flag) selects `SDKBackend`. This keeps M1c end-to-end testable.
 
-- [ ] **Step 3: Extend `server_test.go` with a REST round-trip**
+- [x] **Step 3: Extend `server_test.go` with a REST round-trip**
 
 ```go
 func TestServer_CreateSandboxOverREST(t *testing.T) {
@@ -1563,7 +1563,7 @@ func TestServer_CreateSandboxOverREST(t *testing.T) {
 
 Add a `startTestServerWithSandboxes` helper mirroring `startTestServer` but setting `opts.Sandboxes` to a fake-backed `NewSandboxService` (build a `store`, `ids`, `sandbox.NewManager(...,NewFake(),...)`, `ops.NewManager`). Add `strings` import.
 
-- [ ] **Step 4: Run all tests + manual smoke**
+- [x] **Step 4: Run all tests + manual smoke**
 
 Run: `go test ./... && go test -tags integration ./internal/sandbox/ || echo "integration skipped (no daemon)"`
 Expected: unit tests PASS; integration runs only with a daemon.
@@ -1577,7 +1577,7 @@ curl -sk -X POST -H "Authorization: Bearer adm" -H 'Content-Type: application/js
 kill %1; rm -rf ./tmp-data
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/server.go internal/apiserver/server_test.go internal/node/node.go
