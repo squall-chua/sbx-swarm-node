@@ -1,13 +1,16 @@
 package node
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"io"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
 	"github.com/stretchr/testify/require"
@@ -67,4 +70,14 @@ func TestNode_SSEEndpointAuthed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	resp.Body.Close()
+}
+
+func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
+	// Two nodes with the same cluster secret derive the same session signer, so a
+	// token minted by one verifies on the other (cross-node sessions, ADR-0010).
+	seedA := bytes.Repeat([]byte{1}, ed25519.SeedSize)
+	seedB := bytes.Repeat([]byte{2}, ed25519.SeedSize)
+	kA := auth.DeriveSessionKey("shared-secret", ed25519.NewKeyFromSeed(seedA).Seed())
+	kB := auth.DeriveSessionKey("shared-secret", ed25519.NewKeyFromSeed(seedB).Seed())
+	require.Equal(t, kA, kB)
 }

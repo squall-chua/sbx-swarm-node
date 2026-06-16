@@ -5,6 +5,8 @@ package node
 
 import (
 	"context"
+	"crypto"
+	"crypto/ed25519"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -32,7 +34,6 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // Node is a single standalone node.
@@ -109,13 +110,18 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
 
-	cert, err := tlsutil.LoadOrGenerate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.DataDir)
+	var cert tls.Certificate
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+		cert, err = tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+	} else {
+		cert, err = tlsutil.GenerateForKey(id.PrivateKey) // leaf pubkey == node pubkey (pinning)
+	}
 	if err != nil {
 		cancel()
 		_ = st.Close()
 		return nil, fmt.Errorf("tls: %w", err)
 	}
-	signer := auth.NewSigner(id.PrivateKey.Seed()) // stable per-node session signing key
+	signer := auth.NewSigner(auth.DeriveSessionKey(cfg.ClusterSecret, id.PrivateKey.Seed()))
 
 	// --- M4 cluster wiring ---
 	// Load (or initialise) the swarm identity. Standalone when no seeds are set.
@@ -129,14 +135,10 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 
 	tbl := routing.NewTable(id.NodeID)
 
-	// Peer TLS: use InsecureSkipVerify for v1. Nodes use self-signed certs;
-	// trust is established via the shared cluster secret (encrypted gossip,
-	// ADR-0004) rather than a CA. Node-key challenge auth (ADR-0004 §future)
-	// will replace this in a later milestone.
-	//
-	// SECURITY NOTE: InsecureSkipVerify is intentional for v1. Flag for review.
-	tlsCreds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
-	pool := peer.NewPool(peer.WithCreds(tlsCreds))
+	pool := peer.NewPool(
+		peer.WithNodeKey(id.NodeID, id.PrivateKey),
+		peer.WithPinResolver(func(nodeID string) ([]byte, bool) { return tbl.PubKey(nodeID) }),
+	)
 	fwd := apiserver.NewForwarder(tbl, pool)
 
 	// Build the initial local NodeState from config + current sandbox list.
@@ -156,6 +158,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Labels:          cfg.Labels,
 		LimitCPU:        cfg.ProvisionLimits.CPUCores,
 		LimitMemKB:      float64(cfg.ProvisionLimits.MemoryBytes / 1024),
+		PubKey:          id.PublicKey,
 	}
 
 	// Build NodeService before cluster so we can wire the Cordoner below.
@@ -199,6 +202,15 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Routing:   tbl,
 		Peers:     pool,
 		NodeSvc:   nodeSvc, // pre-wired with Cordoner (nil-safe if no cluster)
+		Pins: func(nodeID string) (crypto.PublicKey, bool) {
+			pk, ok := tbl.PubKey(nodeID)
+			if !ok {
+				return nil, false
+			}
+			return ed25519.PublicKey(pk), true
+		},
+		PubKeyFor: func(nodeID string) ([]byte, bool) { return tbl.PubKey(nodeID) },
+		// Denylist: nil for v1 (local-only hook; gossiped revocation is vNext).
 	})
 	if err != nil {
 		cancel()
