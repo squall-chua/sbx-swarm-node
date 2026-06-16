@@ -50,3 +50,19 @@ func TestValidate(t *testing.T) {
 	empty.DataDir = ""
 	require.Error(t, empty.Validate())
 }
+
+func TestRoleForKey(t *testing.T) {
+	c := Default()
+	c.APIKeys = []APIKey{{Key: "adm", Role: "admin"}, {Key: "ro", Role: "read-only"}}
+	role, ok := c.RoleForKey("adm")
+	require.True(t, ok)
+	require.Equal(t, "admin", role)
+	_, ok = c.RoleForKey("nope")
+	require.False(t, ok)
+}
+
+func TestValidate_RejectsBadRole(t *testing.T) {
+	c := Default()
+	c.APIKeys = []APIKey{{Key: "x", Role: "wizard"}}
+	require.Error(t, c.Validate())
+}

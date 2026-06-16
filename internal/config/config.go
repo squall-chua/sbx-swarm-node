@@ -13,10 +13,19 @@ import (
 
 // Config is the M1a subset of node configuration. Later milestones extend it.
 type Config struct {
-	NodeName   string `yaml:"node_name"`
-	DataDir    string `yaml:"data_dir"`
-	ListenAddr string `yaml:"listen_addr"`
-	LogLevel   string `yaml:"log_level"`
+	NodeName    string   `yaml:"node_name"`
+	DataDir     string   `yaml:"data_dir"`
+	ListenAddr  string   `yaml:"listen_addr"`
+	LogLevel    string   `yaml:"log_level"`
+	TLSCertFile string   `yaml:"tls_cert_file"`
+	TLSKeyFile  string   `yaml:"tls_key_file"`
+	APIKeys     []APIKey `yaml:"api_keys"`
+}
+
+// APIKey is a bearer credential mapped to a role ("admin"|"read-only").
+type APIKey struct {
+	Key  string `yaml:"key"`
+	Role string `yaml:"role"`
 }
 
 // Default returns the baseline configuration before any overrides.
@@ -93,6 +102,16 @@ func Load(args []string, lookupEnv func(string) (string, bool)) (*Config, error)
 	return cfg, nil
 }
 
+// RoleForKey returns the role for a bearer key, if configured.
+func (c *Config) RoleForKey(key string) (string, bool) {
+	for _, k := range c.APIKeys {
+		if k.Key == key {
+			return k.Role, true
+		}
+	}
+	return "", false
+}
+
 // Validate checks the configuration for obvious mistakes.
 func (c *Config) Validate() error {
 	if c.NodeName == "" {
@@ -108,6 +127,14 @@ func (c *Config) Validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("log_level must be one of debug|info|warn|error, got %q", c.LogLevel)
+	}
+	for _, k := range c.APIKeys {
+		if k.Key == "" {
+			return fmt.Errorf("api_keys: empty key")
+		}
+		if k.Role != "admin" && k.Role != "read-only" {
+			return fmt.Errorf("api_keys: role must be admin|read-only, got %q", k.Role)
+		}
 	}
 	return nil
 }
