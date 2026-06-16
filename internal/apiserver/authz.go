@@ -88,6 +88,3 @@ func authzStreamInterceptor() grpc.StreamServerInterceptor {
 		return handler(srv, ss)
 	}
 }
-
-// TEMP: replaced by authn.go in Task 4.
-func principalFromContext(ctx context.Context) principal { return principal{} }
