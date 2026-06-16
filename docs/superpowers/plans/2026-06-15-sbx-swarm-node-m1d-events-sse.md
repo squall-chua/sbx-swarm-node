@@ -30,7 +30,7 @@
 - Create: `internal/events/event.go`, `internal/events/bus.go`
 - Test: `internal/events/bus_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package events
@@ -79,12 +79,12 @@ func TestBus_SubscribeReceivesLiveEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/events/ -v`
 Expected: FAIL — `undefined: NewBus`
 
-- [ ] **Step 3: Write `event.go`**
+- [x] **Step 3: Write `event.go`**
 
 ```go
 // Package events is a best-effort, in-process notification bus (ADR-0008):
@@ -136,7 +136,7 @@ type Publisher interface {
 }
 ```
 
-- [ ] **Step 4: Write `bus.go`**
+- [x] **Step 4: Write `bus.go`**
 
 ```go
 package events
@@ -242,7 +242,7 @@ func (b *Bus) Subscribe(f Filter, _ uint64) (<-chan Event, func()) {
 }
 ```
 
-- [ ] **Step 5: Run test, then commit**
+- [x] **Step 5: Run test, then commit**
 
 Run: `go test ./internal/events/ -v`
 Expected: PASS
@@ -260,7 +260,7 @@ git commit -m "feat(events): best-effort in-process event bus (ADR-0008)"
 - Create: `internal/apiserver/sse.go`
 - Test: `internal/apiserver/sse_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -318,12 +318,12 @@ func TestSSE_StreamsLiveEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestSSE -v`
 Expected: FAIL — `undefined: SSEHandler`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package apiserver
@@ -406,7 +406,7 @@ func parseSinceSeq(lastID string) uint64 {
 }
 ```
 
-- [ ] **Step 4: Run test, then commit**
+- [x] **Step 4: Run test, then commit**
 
 Run: `go test ./internal/apiserver/ -run TestSSE -v`
 Expected: PASS
@@ -424,7 +424,7 @@ git commit -m "feat(apiserver): SSE firehose handler with filters + Last-Event-I
 - Modify: `internal/sandbox/manager.go`
 - Test: `internal/sandbox/manager_events_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package sandbox
@@ -464,12 +464,12 @@ func TestManager_EmitsLifecycleEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run TestManager_EmitsLifecycle -v`
 Expected: FAIL — `m.SetPublisher undefined`
 
-- [ ] **Step 3: Modify `manager.go`**
+- [x] **Step 3: Modify `manager.go`**
 
 Add a publisher field + setter + nil-safe emit, and call it on transitions.
 
@@ -518,7 +518,7 @@ In `Reconcile`, when marking a record `lost` (after `m.save(rec)`):
 		m.emit("sandbox.lost", rec.ID, nil)
 ```
 
-- [ ] **Step 4: Run test, then commit**
+- [x] **Step 4: Run test, then commit**
 
 Run: `go test ./internal/sandbox/ -v`
 Expected: PASS (existing + new)
@@ -538,7 +538,7 @@ git commit -m "feat(sandbox): emit lifecycle events via Publisher"
 - Modify: `internal/node/node.go`
 - Test: `internal/node/node_test.go` (extend)
 
-- [ ] **Step 1: Emit events from ops (failing test first)**
+- [x] **Step 1: Emit events from ops (failing test first)**
 
 Append to `internal/ops/ops_test.go`:
 
@@ -565,12 +565,12 @@ func TestOps_EmitsStateEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `go test ./internal/ops/ -run TestOps_EmitsStateEvents -v`
 Expected: FAIL — `m.SetPublisher undefined`
 
-- [ ] **Step 3: Modify `ops.go`**
+- [x] **Step 3: Modify `ops.go`**
 
 Add import `"github.com/squall-chua/sbx-swarm-node/internal/events"`, a `pub events.Publisher` field, a `SetPublisher`, and emit in `Run` after each state change:
 
@@ -587,7 +587,7 @@ func (m *Manager) emit(op *Operation) {
 
 In `Run`, after `op.State = "running"; _ = m.put(op)` add `m.emit(op)`, and after the final `_ = m.put(op)` add `m.emit(op)`.
 
-- [ ] **Step 4: Mount `/v1/events` in `apiserver.Build`**
+- [x] **Step 4: Mount `/v1/events` in `apiserver.Build`**
 
 In `server.go`, add to `Options`:
 
@@ -605,7 +605,7 @@ In `Build`, where the REST mux is assembled, before the `/v1/` catch-all add:
 
 (`/v1/events` must be registered before the broader `/v1/` pattern so Go's mux prefers the exact path; `http.ServeMux` longest-pattern matching handles this, but registering the specific route is clearest.) Add the `events` import.
 
-- [ ] **Step 5: Wire the bus in `node.New`**
+- [x] **Step 5: Wire the bus in `node.New`**
 
 In `node.go` `New`, after creating `gen`:
 
@@ -622,7 +622,7 @@ After building `mgr` and `opsM`:
 
 Add `Events: bus` to `apiserver.Options{...}`. Add the `events` import.
 
-- [ ] **Step 6: Extend the node integration test**
+- [x] **Step 6: Extend the node integration test**
 
 Append to `node_test.go`:
 
@@ -652,7 +652,7 @@ func TestNode_SSEEndpointAuthed(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run all tests + manual smoke**
+- [x] **Step 7: Run all tests + manual smoke**
 
 Run: `go test ./...`
 Expected: PASS across all packages.
@@ -666,7 +666,7 @@ curl -sk -N -H "Authorization: Bearer adm" https://localhost:8443/v1/events &
 kill %1 %2 2>/dev/null; rm -rf ./tmp-data
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/ops/ops.go internal/ops/ops_test.go internal/apiserver/server.go internal/node/node.go internal/node/node_test.go
