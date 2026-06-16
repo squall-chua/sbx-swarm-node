@@ -92,3 +92,22 @@ func Load(args []string, lookupEnv func(string) (string, bool)) (*Config, error)
 
 	return cfg, nil
 }
+
+// Validate checks the configuration for obvious mistakes.
+func (c *Config) Validate() error {
+	if c.NodeName == "" {
+		return fmt.Errorf("node_name must not be empty")
+	}
+	if c.DataDir == "" {
+		return fmt.Errorf("data_dir must not be empty")
+	}
+	if c.ListenAddr == "" {
+		return fmt.Errorf("listen_addr must not be empty")
+	}
+	switch c.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("log_level must be one of debug|info|warn|error, got %q", c.LogLevel)
+	}
+	return nil
+}

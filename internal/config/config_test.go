@@ -37,3 +37,16 @@ func TestLoad_Defaults(t *testing.T) {
 	require.Equal(t, ":8443", cfg.ListenAddr)
 	require.Equal(t, "info", cfg.LogLevel)
 }
+
+func TestValidate(t *testing.T) {
+	ok := Default()
+	require.NoError(t, ok.Validate())
+
+	bad := Default()
+	bad.LogLevel = "loud"
+	require.Error(t, bad.Validate())
+
+	empty := Default()
+	empty.DataDir = ""
+	require.Error(t, empty.Validate())
+}
