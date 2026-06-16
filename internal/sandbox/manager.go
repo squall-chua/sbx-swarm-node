@@ -149,6 +149,21 @@ func (m *Manager) Resolve(ctx context.Context, id string) (string, error) {
 	return rec.BackendName, nil
 }
 
+// ResolveVMToID is the reverse of Resolve: it scans all records and returns
+// the swarm sandbox ID whose BackendName matches vm.
+func (m *Manager) ResolveVMToID(vm string) (string, bool) {
+	recs, err := m.List(context.Background())
+	if err != nil {
+		return "", false
+	}
+	for _, rec := range recs {
+		if rec.BackendName == vm {
+			return rec.ID, true
+		}
+	}
+	return "", false
+}
+
 // Reconcile diffs backend truth against stored records: records whose backend
 // sandbox is gone are marked "lost" (spec §7).
 func (m *Manager) Reconcile(ctx context.Context) error {

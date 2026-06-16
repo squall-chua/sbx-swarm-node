@@ -3,15 +3,25 @@ package obsd
 
 import (
 	"context"
+	"runtime"
 	"sync"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"golang.org/x/sync/errgroup"
 )
 
-type provisionLimit struct {
+// ProvisionLimit is the node's provisioned resource ceiling used to compute
+// normalized utilization. Real per-node limits are deferred config; use
+// DefaultProvisionLimit() for a safe default.
+type ProvisionLimit struct {
 	CPU   float64
 	MemKB float64
+}
+
+// DefaultProvisionLimit returns a sane default: all online CPUs and 16 GiB RAM.
+// Real provisioned limits are deferred config.
+func DefaultProvisionLimit() ProvisionLimit {
+	return ProvisionLimit{CPU: float64(runtime.NumCPU()), MemKB: 16 * 1024 * 1024}
 }
 
 // Util is normalized actual utilization (0..1+) vs the provision limit.
@@ -21,7 +31,7 @@ type Util struct{ CPU, Mem float64 }
 type StatsCollector struct {
 	backend     sandbox.Backend
 	list        func(context.Context) ([]string, error)
-	limit       provisionLimit
+	limit       ProvisionLimit
 	concurrency int
 
 	mu     sync.RWMutex
@@ -30,7 +40,7 @@ type StatsCollector struct {
 }
 
 // NewStatsCollector builds a collector polling at most concurrency sandboxes at once.
-func NewStatsCollector(b sandbox.Backend, list func(context.Context) ([]string, error), limit provisionLimit, concurrency int) *StatsCollector {
+func NewStatsCollector(b sandbox.Backend, list func(context.Context) ([]string, error), limit ProvisionLimit, concurrency int) *StatsCollector {
 	if concurrency <= 0 {
 		concurrency = 4
 	}

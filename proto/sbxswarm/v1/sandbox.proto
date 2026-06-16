@@ -37,6 +37,12 @@ service SandboxService {
   rpc ListPorts(IdRequest) returns (ListPortsResponse) {
     option (google.api.http) = {get: "/v1/sandboxes/{id}/ports"};
   }
+  rpc GetStats(IdRequest) returns (Stats) {
+    option (google.api.http) = {get: "/v1/sandboxes/{id}/stats"};
+  }
+  rpc ListBlocked(IdRequest) returns (ListBlockedResponse) {
+    option (google.api.http) = {get: "/v1/sandboxes/{id}/network/blocked"};
+  }
 }
 
 message WorkspaceMount {
@@ -109,4 +115,22 @@ message Operation {
   string state = 3;
   string sandbox_id = 4;
   string error = 5;
+}
+
+message Stats {
+  int32 cores = 1;
+  double cpu_percent = 2;
+  int64 mem_total_kb = 3;
+  int64 mem_used_kb = 4;
+}
+
+message Blocked {
+  string host = 1;
+  string first_seen = 2;
+  string last_seen = 3;
+}
+
+message ListBlockedResponse {
+  repeated Blocked blocked = 1;
+  int32 distinct_count = 2;
 }

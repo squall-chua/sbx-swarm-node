@@ -17,6 +17,7 @@ type SandboxService struct {
 	sbxv1.UnimplementedSandboxServiceServer
 	mgr *sandbox.Manager
 	ops *ops.Manager
+	obs ObserveDeps
 }
 
 // NewSandboxService builds the service.

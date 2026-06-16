@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/squall-chua/sbx-swarm-node/internal/apiserver"
@@ -21,6 +22,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/obsd"
 	"github.com/squall-chua/sbx-swarm-node/internal/ops"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
@@ -40,6 +42,7 @@ type Node struct {
 	grpcSrv *grpc.Server
 	cert    tls.Certificate
 	ln      net.Listener
+	cancel  context.CancelFunc // cancels background collector goroutines
 }
 
 // New constructs a node: it establishes identity, opens the store, loads the TLS
@@ -59,6 +62,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	reg := prometheus.NewRegistry()
 	obs.RegisterBuildInfo(reg, version)
 	health := obs.NewHealth(reg)
+	metrics := obs.NewMetrics(reg)
 
 	gen := ids.NewGen(id.NodeID)
 	bus := events.NewBus(id.NodeID, 1024)
@@ -69,8 +73,29 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	opsM.SetPublisher(bus)
 	sandboxes := apiserver.NewSandboxService(mgr, opsM)
 
+	// Background observability collectors.
+	nctx, cancel := context.WithCancel(context.Background())
+	statsC := obsd.NewStatsCollector(backend, namesList(mgr), obsd.DefaultProvisionLimit(), 4)
+	netC := obsd.NewNetLogCollector(backend, mgr.ResolveVMToID)
+	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC})
+	go runTicker(nctx, 10*time.Second, func() {
+		_ = statsC.PollOnce(nctx)
+		// Update the sandbox status gauge from manager records.
+		if recs, err := mgr.List(nctx); err == nil {
+			counts := map[string]int{}
+			for _, r := range recs {
+				counts[r.Status]++
+			}
+			for status, n := range counts {
+				metrics.SetSandboxes(status, n)
+			}
+		}
+	})
+	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
+
 	cert, err := tlsutil.LoadOrGenerate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.DataDir)
 	if err != nil {
+		cancel()
 		_ = st.Close()
 		return nil, fmt.Errorf("tls: %w", err)
 	}
@@ -88,6 +113,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Events:    bus,
 	})
 	if err != nil {
+		cancel()
 		_ = st.Close()
 		return nil, fmt.Errorf("apiserver: %w", err)
 	}
@@ -104,6 +130,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		ids:    gen,
 		store:  st,
 		health: health,
+		cancel: cancel,
 		srv: &http.Server{
 			Handler:   handler,
 			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}},
@@ -142,10 +169,42 @@ func (n *Node) Start() error {
 	return nil
 }
 
+// namesList returns a function that lists all backend names for running sandboxes.
+func namesList(mgr *sandbox.Manager) func(context.Context) ([]string, error) {
+	return func(ctx context.Context) ([]string, error) {
+		recs, err := mgr.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(recs))
+		for _, r := range recs {
+			names = append(names, r.BackendName)
+		}
+		return names, nil
+	}
+}
+
+// runTicker calls fn on every interval tick until ctx is done.
+func runTicker(ctx context.Context, interval time.Duration, fn func()) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			fn()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 // Stop gracefully shuts the HTTP server, stops the gRPC server, and closes the
 // store.
 func (n *Node) Stop(ctx context.Context) error {
 	n.health.SetReady(false)
+	if n.cancel != nil {
+		n.cancel() // stop background collector goroutines
+	}
 	err := n.srv.Shutdown(ctx)
 	n.grpcSrv.Stop()
 	if cerr := n.store.Close(); cerr != nil && err == nil {

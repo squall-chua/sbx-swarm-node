@@ -29,6 +29,8 @@ const (
 	SandboxService_AgentRun_FullMethodName      = "/sbxswarm.v1.SandboxService/AgentRun"
 	SandboxService_PublishPort_FullMethodName   = "/sbxswarm.v1.SandboxService/PublishPort"
 	SandboxService_ListPorts_FullMethodName     = "/sbxswarm.v1.SandboxService/ListPorts"
+	SandboxService_GetStats_FullMethodName      = "/sbxswarm.v1.SandboxService/GetStats"
+	SandboxService_ListBlocked_FullMethodName   = "/sbxswarm.v1.SandboxService/ListBlocked"
 )
 
 // SandboxServiceClient is the client API for SandboxService service.
@@ -45,6 +47,8 @@ type SandboxServiceClient interface {
 	AgentRun(ctx context.Context, in *AgentRunRequest, opts ...grpc.CallOption) (*Operation, error)
 	PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*Port, error)
 	ListPorts(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListPortsResponse, error)
+	GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error)
+	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
 }
 
 type sandboxServiceClient struct {
@@ -155,6 +159,26 @@ func (c *sandboxServiceClient) ListPorts(ctx context.Context, in *IdRequest, opt
 	return out, nil
 }
 
+func (c *sandboxServiceClient) GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Stats)
+	err := c.cc.Invoke(ctx, SandboxService_GetStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxServiceClient) ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBlockedResponse)
+	err := c.cc.Invoke(ctx, SandboxService_ListBlocked_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxServiceServer is the server API for SandboxService service.
 // All implementations must embed UnimplementedSandboxServiceServer
 // for forward compatibility.
@@ -169,6 +193,8 @@ type SandboxServiceServer interface {
 	AgentRun(context.Context, *AgentRunRequest) (*Operation, error)
 	PublishPort(context.Context, *PublishPortRequest) (*Port, error)
 	ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error)
+	GetStats(context.Context, *IdRequest) (*Stats, error)
+	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
 	mustEmbedUnimplementedSandboxServiceServer()
 }
 
@@ -208,6 +234,12 @@ func (UnimplementedSandboxServiceServer) PublishPort(context.Context, *PublishPo
 }
 func (UnimplementedSandboxServiceServer) ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPorts not implemented")
+}
+func (UnimplementedSandboxServiceServer) GetStats(context.Context, *IdRequest) (*Stats, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetStats not implemented")
+}
+func (UnimplementedSandboxServiceServer) ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBlocked not implemented")
 }
 func (UnimplementedSandboxServiceServer) mustEmbedUnimplementedSandboxServiceServer() {}
 func (UnimplementedSandboxServiceServer) testEmbeddedByValue()                        {}
@@ -410,6 +442,42 @@ func _SandboxService_ListPorts_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_GetStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).GetStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_GetStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).GetStats(ctx, req.(*IdRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxService_ListBlocked_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).ListBlocked(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_ListBlocked_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).ListBlocked(ctx, req.(*IdRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxService_ServiceDesc is the grpc.ServiceDesc for SandboxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -456,6 +524,14 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPorts",
 			Handler:    _SandboxService_ListPorts_Handler,
+		},
+		{
+			MethodName: "GetStats",
+			Handler:    _SandboxService_GetStats_Handler,
+		},
+		{
+			MethodName: "ListBlocked",
+			Handler:    _SandboxService_ListBlocked_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

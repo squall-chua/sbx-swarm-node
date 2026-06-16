@@ -13,7 +13,7 @@ func TestStatsCollector_PollComputesActualUtil(t *testing.T) {
 	ctx := context.Background()
 	_, _ = f.Create(ctx, sandbox.CreateSpec{Name: "s1"})
 
-	c := NewStatsCollector(f, listFn(f), provisionLimit{CPU: 4, MemKB: 1 << 21}, 4)
+	c := NewStatsCollector(f, listFn(f), ProvisionLimit{CPU: 4, MemKB: 1 << 21}, 4)
 	require.NoError(t, c.PollOnce(ctx))
 
 	u, ok := c.Latest("s1")
