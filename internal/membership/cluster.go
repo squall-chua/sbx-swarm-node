@@ -1,0 +1,283 @@
+package membership
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"log/slog"
+	"net"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/hashicorp/memberlist"
+	"github.com/squall-chua/sbx-swarm-node/internal/config"
+	"github.com/squall-chua/sbx-swarm-node/internal/routing"
+)
+
+// Cluster wraps hashicorp/memberlist with swarm-aware delegate logic.
+// It handles:
+//   - NodeMeta (tiny UDP): routing fields via EncodeMeta/DecodeMeta.
+//   - Push/Pull (TCP): full state via EncodeBulk/DecodeBulk.
+//   - Delta broadcasts via TransmitLimitedQueue (wired but empty in v1;
+//     state propagates through push/pull).
+//   - Encrypted gossip via sha256(ClusterSecret) as AES-256 key (ADR-0004).
+type Cluster struct {
+	mu          sync.RWMutex
+	local       NodeState
+	peerStates  map[string]NodeState // nodeID → latest received bulk state
+	ml          *memberlist.Memberlist
+	bcast       *memberlist.TransmitLimitedQueue
+	tbl         *routing.Table
+	si          *SwarmIdentity
+	siPath      string // path to persist swarm.json on Adopt
+	onNodeDead  func(nodeID string)
+	log         *slog.Logger
+}
+
+// NewCluster constructs a Cluster. It does NOT join; call Join separately.
+func NewCluster(
+	cfg *config.Config,
+	local NodeState,
+	tbl *routing.Table,
+	si *SwarmIdentity,
+	siPath string,
+	onNodeDead func(string),
+	log *slog.Logger,
+) (*Cluster, error) {
+	c := &Cluster{
+		local:      local,
+		peerStates: map[string]NodeState{},
+		tbl:        tbl,
+		si:         si,
+		siPath:     siPath,
+		onNodeDead: onNodeDead,
+		log:        log,
+	}
+
+	mlCfg := memberlist.DefaultLANConfig()
+	mlCfg.Name = local.NodeID
+	mlCfg.Logger = nil // suppress memberlist's default logger to avoid interleave
+
+	// Parse GossipAddr into bind host/port.
+	host, portStr, err := net.SplitHostPort(cfg.GossipAddr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gossip_addr %q: %w", cfg.GossipAddr, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gossip_addr port %q: %w", portStr, err)
+	}
+	mlCfg.BindAddr = host
+	if mlCfg.BindAddr == "" {
+		mlCfg.BindAddr = "0.0.0.0"
+	}
+	mlCfg.BindPort = port
+	mlCfg.AdvertisePort = port
+
+	// Encrypted gossip: sha256(secret) → 32-byte AES-256 key (ADR-0004).
+	if cfg.ClusterSecret != "" {
+		key := sha256.Sum256([]byte(cfg.ClusterSecret))
+		keyring, err := memberlist.NewKeyring(nil, key[:])
+		if err != nil {
+			return nil, fmt.Errorf("memberlist keyring: %w", err)
+		}
+		mlCfg.Keyring = keyring
+	}
+
+	mlCfg.Delegate = &delegate{c: c}
+	mlCfg.Events = &eventDelegate{c: c}
+
+	ml, err := memberlist.Create(mlCfg)
+	if err != nil {
+		return nil, fmt.Errorf("memberlist create: %w", err)
+	}
+	c.ml = ml
+	c.bcast = &memberlist.TransmitLimitedQueue{
+		NumNodes:       func() int { return ml.NumMembers() },
+		RetransmitMult: mlCfg.RetransmitMult,
+	}
+
+	return c, nil
+}
+
+// Join contacts the given seed addresses and merges into the cluster.
+func (c *Cluster) Join(seeds []string) (int, error) {
+	return c.ml.Join(seeds)
+}
+
+// Leave gracefully notifies peers before shutting down.
+func (c *Cluster) Leave(timeout time.Duration) error {
+	return c.ml.Leave(timeout)
+}
+
+// Shutdown terminates the memberlist transport.
+func (c *Cluster) Shutdown() error {
+	return c.ml.Shutdown()
+}
+
+// LocalNodeState returns the current local NodeState snapshot.
+func (c *Cluster) LocalNodeState() NodeState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.local
+}
+
+// SetCordoned updates the local node's cordon flag and re-advertises via
+// memberlist.UpdateNode so peers receive the change in the next gossip round.
+func (c *Cluster) SetCordoned(cordoned bool) {
+	c.mu.Lock()
+	c.local.Cordoned = cordoned
+	c.local.StateVersion++
+	c.mu.Unlock()
+	c.tbl.Upsert(c.local.NodeID, c.local.Addr, cordoned)
+	_ = c.ml.UpdateNode(5 * time.Second)
+}
+
+// BumpStateVersion increments the local StateVersion (call after owned-sandbox
+// set changes so peers pick up the new bulk state on next push/pull).
+func (c *Cluster) BumpStateVersion() {
+	c.mu.Lock()
+	c.local.StateVersion++
+	c.mu.Unlock()
+}
+
+// PeerStates returns a snapshot of all known peer bulk states.
+func (c *Cluster) PeerStates() []NodeState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]NodeState, 0, len(c.peerStates))
+	for _, ns := range c.peerStates {
+		out = append(out, ns)
+	}
+	return out
+}
+
+// localState returns the current local NodeState (caller must NOT hold mu).
+func (c *Cluster) localState() NodeState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.local
+}
+
+// UpdateLocalSandboxIDs replaces OwnedSandboxIDs and bumps StateVersion so
+// peers pick up the change on the next push/pull cycle.
+func (c *Cluster) UpdateLocalSandboxIDs(ids []string) {
+	c.mu.Lock()
+	c.local.OwnedSandboxIDs = ids
+	c.local.StateVersion++
+	c.mu.Unlock()
+}
+
+// --- delegate (push/pull + broadcasts) ---
+
+type delegate struct{ c *Cluster }
+
+// NodeMeta returns tiny routing fields for UDP gossip (ADR-0005 meta tier).
+func (d *delegate) NodeMeta(limit int) []byte {
+	b := d.c.localState().EncodeMeta()
+	if len(b) > limit {
+		// Meta too large: clear OwnedSandboxIDs (they ride bulk push/pull anyway).
+		d.c.log.Warn("NodeMeta exceeds limit; trimming owned sandbox ids",
+			"size", len(b), "limit", limit)
+		s := d.c.localState()
+		s.OwnedSandboxIDs = nil
+		b = s.EncodeMeta()
+	}
+	return b
+}
+
+// NotifyMsg handles incoming delta broadcast messages. In v1 broadcasts are
+// unused (state rides push/pull), so we discard inbound messages silently.
+func (d *delegate) NotifyMsg([]byte) {}
+
+// GetBroadcasts returns pending delta messages. In v1 we send none.
+func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
+	return d.c.bcast.GetBroadcasts(overhead, limit)
+}
+
+// LocalState returns the full bulk state for TCP push/pull.
+func (d *delegate) LocalState(join bool) []byte {
+	return d.c.localState().EncodeBulk()
+}
+
+// MergeRemoteState merges a peer's bulk state received via push/pull.
+func (d *delegate) MergeRemoteState(buf []byte, join bool) {
+	remote, err := DecodeBulk(buf)
+	if err != nil {
+		d.c.log.Warn("MergeRemoteState: failed to decode bulk", "err", err)
+		return
+	}
+
+	localID := func() string {
+		d.c.mu.RLock()
+		defer d.c.mu.RUnlock()
+		return d.c.si.SwarmID
+	}()
+
+	if err := GuardJoin(localID, remote.SwarmID); err != nil {
+		d.c.log.Warn("MergeRemoteState: swarm id mismatch; leaving",
+			"local_swarm", localID, "remote_swarm", remote.SwarmID)
+		go func() { _ = d.c.ml.Leave(5 * time.Second) }()
+		return
+	}
+
+	// Update peer map.
+	d.c.mu.Lock()
+	d.c.peerStates[remote.NodeID] = remote
+	isPending := d.c.si.Mode == ModePendingJoin
+	d.c.mu.Unlock()
+
+	// Update routing table.
+	d.c.tbl.Upsert(remote.NodeID, remote.Addr, remote.Cordoned)
+
+	// Adopt swarm id if we are still pending-join and remote has one.
+	if isPending && remote.SwarmID != "" {
+		if err := d.c.si.Adopt(d.c.siPath, remote.SwarmID, remote.NodeID); err != nil {
+			d.c.log.Warn("Adopt failed", "err", err)
+		} else {
+			d.c.mu.Lock()
+			d.c.local.SwarmID = remote.SwarmID
+			d.c.mu.Unlock()
+			d.c.log.Info("adopted swarm id from peer",
+				"swarm_id", remote.SwarmID, "peer", remote.NodeID)
+		}
+	}
+}
+
+// --- eventDelegate (join/leave/update notifications) ---
+
+type eventDelegate struct{ c *Cluster }
+
+func (e *eventDelegate) NotifyJoin(node *memberlist.Node) {
+	ns, err := DecodeMeta(node.Meta)
+	if err != nil || ns.NodeID == "" {
+		// Use node.Name as fallback NodeID (we set Name = NodeID in cluster config).
+		ns.NodeID = node.Name
+		ns.Addr = node.Address()
+	}
+	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned)
+	e.c.log.Info("memberlist: node joined", "node_id", ns.NodeID, "addr", ns.Addr)
+}
+
+func (e *eventDelegate) NotifyUpdate(node *memberlist.Node) {
+	ns, err := DecodeMeta(node.Meta)
+	if err != nil || ns.NodeID == "" {
+		ns.NodeID = node.Name
+		ns.Addr = node.Address()
+	}
+	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned)
+	e.c.log.Info("memberlist: node updated", "node_id", ns.NodeID, "cordoned", ns.Cordoned)
+}
+
+func (e *eventDelegate) NotifyLeave(node *memberlist.Node) {
+	// node.Name is the memberlist name, which we set to NodeID.
+	nodeID := node.Name
+	e.c.tbl.Remove(nodeID)
+	e.c.mu.Lock()
+	delete(e.c.peerStates, nodeID)
+	e.c.mu.Unlock()
+	e.c.log.Info("memberlist: node left/dead", "node_id", nodeID)
+	if e.c.onNodeDead != nil {
+		e.c.onNodeDead(nodeID)
+	}
+}

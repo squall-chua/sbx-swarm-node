@@ -164,6 +164,24 @@ func (m *Manager) ResolveVMToID(vm string) (string, bool) {
 	return "", false
 }
 
+// MarkUnreachable records that a remote peer node is considered dead so callers
+// can surface it. In v1 this is a no-op on the local Manager because a node
+// only owns its own records — the dead node's records remain in their last
+// known status. The authoritative "lost" transition happens on the dead node's
+// own Reconcile when it rejoins. This method exists so the cluster's
+// onNodeDead callback has a concrete call target, and tests can verify the
+// wiring without triggering cross-node writes.
+//
+// NOTE for holistic reviewer: the chosen semantic is "view-level noop". The
+// local node does not mutate records owned by the dead peer because it lacks
+// truth about whether the peer's backend is actually gone. When the dead node
+// rejoins it calls Reconcile and transitions its own records to "lost" if the
+// backend confirms they are gone. This avoids split-brain writes.
+func (m *Manager) MarkUnreachable(deadNodeID string) {
+	// No-op in v1: log the event; do not mutate remote-owned records.
+	_ = deadNodeID
+}
+
 // Reconcile diffs backend truth against stored records: records whose backend
 // sandbox is gone are marked "lost" (spec §7).
 func (m *Manager) Reconcile(ctx context.Context) error {

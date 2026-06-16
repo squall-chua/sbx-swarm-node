@@ -58,18 +58,92 @@ func (*GetNodeInfoRequest) Descriptor() ([]byte, []int) {
 	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{0}
 }
 
+type CordonRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CordonRequest) Reset() {
+	*x = CordonRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CordonRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CordonRequest) ProtoMessage() {}
+
+func (x *CordonRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CordonRequest.ProtoReflect.Descriptor instead.
+func (*CordonRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{1}
+}
+
+type DrainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DrainRequest) Reset() {
+	*x = DrainRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DrainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DrainRequest) ProtoMessage() {}
+
+func (x *DrainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DrainRequest.ProtoReflect.Descriptor instead.
+func (*DrainRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{2}
+}
+
 type NodeInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	NodeName      string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Cordoned      bool                   `protobuf:"varint,4,opt,name=cordoned,proto3" json:"cordoned,omitempty"`
+	Draining      bool                   `protobuf:"varint,5,opt,name=draining,proto3" json:"draining,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NodeInfo) Reset() {
 	*x = NodeInfo{}
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[1]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -81,7 +155,7 @@ func (x *NodeInfo) String() string {
 func (*NodeInfo) ProtoMessage() {}
 
 func (x *NodeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[1]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -94,7 +168,7 @@ func (x *NodeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeInfo.ProtoReflect.Descriptor instead.
 func (*NodeInfo) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{1}
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *NodeInfo) GetNodeId() string {
@@ -118,19 +192,40 @@ func (x *NodeInfo) GetVersion() string {
 	return ""
 }
 
+func (x *NodeInfo) GetCordoned() bool {
+	if x != nil {
+		return x.Cordoned
+	}
+	return false
+}
+
+func (x *NodeInfo) GetDraining() bool {
+	if x != nil {
+		return x.Draining
+	}
+	return false
+}
+
 var File_sbxswarm_v1_node_proto protoreflect.FileDescriptor
 
 const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x16sbxswarm/v1/node.proto\x12\vsbxswarm.v1\x1a\x1cgoogle/api/annotations.proto\"\x14\n" +
-	"\x12GetNodeInfoRequest\"Z\n" +
+	"\x12GetNodeInfoRequest\"\x0f\n" +
+	"\rCordonRequest\"\x0e\n" +
+	"\fDrainRequest\"\x92\x01\n" +
 	"\bNodeInfo\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion2f\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1a\n" +
+	"\bcordoned\x18\x04 \x01(\bR\bcordoned\x12\x1a\n" +
+	"\bdraining\x18\x05 \x01(\bR\bdraining2\xe9\x02\n" +
 	"\vNodeService\x12W\n" +
 	"\vGetNodeInfo\x12\x1f.sbxswarm.v1.GetNodeInfoRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x10\x82\xd3\xe4\x93\x02\n" +
-	"\x12\b/v1/nodeB\xb4\x01\n" +
+	"\x12\b/v1/node\x12T\n" +
+	"\x06Cordon\x12\x1a.sbxswarm.v1.CordonRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x17\x82\xd3\xe4\x93\x02\x11\"\x0f/v1/node/cordon\x12X\n" +
+	"\bUncordon\x12\x1a.sbxswarm.v1.CordonRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x19\x82\xd3\xe4\x93\x02\x13\"\x11/v1/node/uncordon\x12Q\n" +
+	"\x05Drain\x12\x19.sbxswarm.v1.DrainRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x16\x82\xd3\xe4\x93\x02\x10\"\x0e/v1/node/drainB\xb4\x01\n" +
 	"\x0fcom.sbxswarm.v1B\tNodeProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -145,16 +240,24 @@ func file_sbxswarm_v1_node_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_node_proto_rawDescData
 }
 
-var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_sbxswarm_v1_node_proto_goTypes = []any{
 	(*GetNodeInfoRequest)(nil), // 0: sbxswarm.v1.GetNodeInfoRequest
-	(*NodeInfo)(nil),           // 1: sbxswarm.v1.NodeInfo
+	(*CordonRequest)(nil),      // 1: sbxswarm.v1.CordonRequest
+	(*DrainRequest)(nil),       // 2: sbxswarm.v1.DrainRequest
+	(*NodeInfo)(nil),           // 3: sbxswarm.v1.NodeInfo
 }
 var file_sbxswarm_v1_node_proto_depIdxs = []int32{
 	0, // 0: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
-	1, // 1: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	1, // 1: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
+	1, // 2: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
+	2, // 3: sbxswarm.v1.NodeService.Drain:input_type -> sbxswarm.v1.DrainRequest
+	3, // 4: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
+	3, // 5: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
+	3, // 6: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
+	3, // 7: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -171,7 +274,7 @@ func file_sbxswarm_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_node_proto_rawDesc), len(file_sbxswarm_v1_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

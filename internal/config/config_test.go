@@ -66,3 +66,47 @@ func TestValidate_RejectsBadRole(t *testing.T) {
 	c.APIKeys = []APIKey{{Key: "x", Role: "wizard"}}
 	require.Error(t, c.Validate())
 }
+
+func TestValidate_ClusterFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr bool
+	}{
+		{
+			name:    "join without secret is invalid",
+			mutate:  func(c *Config) { c.Join = []string{"10.0.0.1:7946"} },
+			wantErr: true,
+		},
+		{
+			name: "join with secret is valid",
+			mutate: func(c *Config) {
+				c.Join = []string{"10.0.0.1:7946"}
+				c.ClusterSecret = "s3cret"
+			},
+			wantErr: false,
+		},
+		{
+			name:    "empty gossip_addr is invalid",
+			mutate:  func(c *Config) { c.GossipAddr = "" },
+			wantErr: true,
+		},
+		{
+			name:    "distinct gossip_addr is valid",
+			mutate:  func(c *Config) { c.GossipAddr = ":7947" },
+			wantErr: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Default()
+			tc.mutate(c)
+			err := c.Validate()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

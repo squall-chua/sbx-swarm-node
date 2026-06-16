@@ -32,12 +32,16 @@ type Options struct {
 	Forward                   *Forwarder      // optional; mounts unary forwarding interceptor if set
 	Routing                   *routing.Table  // optional; used for SSE peer-merge when combined with Peers
 	Peers                     *peer.Pool      // optional; used for SSE peer-merge when Routing is set
+	NodeSvc                   *NodeService    // optional; if set, used instead of creating a new one (allows pre-wired Cordoner)
 }
 
 // Build constructs the one-port handler and the gRPC server. The caller serves
 // the handler over TLS (ALPN h2) and stops grpcSrv on shutdown.
 func Build(opts Options) (http.Handler, *grpc.Server, error) {
-	node := NewNodeService(opts.NodeID, opts.NodeName, opts.Version)
+	node := opts.NodeSvc
+	if node == nil {
+		node = NewNodeService(opts.NodeID, opts.NodeName, opts.Version)
+	}
 
 	var grpcSrv *grpc.Server
 	if opts.Forward != nil {

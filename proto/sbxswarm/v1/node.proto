@@ -11,12 +11,27 @@ service NodeService {
   rpc GetNodeInfo(GetNodeInfoRequest) returns (NodeInfo) {
     option (google.api.http) = {get: "/v1/node"};
   }
+  rpc Cordon(CordonRequest) returns (NodeInfo) {
+    option (google.api.http) = {post: "/v1/node/cordon"};
+  }
+  rpc Uncordon(CordonRequest) returns (NodeInfo) {
+    option (google.api.http) = {post: "/v1/node/uncordon"};
+  }
+  rpc Drain(DrainRequest) returns (NodeInfo) {
+    option (google.api.http) = {post: "/v1/node/drain"};
+  }
 }
 
 message GetNodeInfoRequest {}
+
+message CordonRequest {}
+
+message DrainRequest {}
 
 message NodeInfo {
   string node_id = 1;
   string node_name = 2;
   string version = 3;
+  bool cordoned = 4;
+  bool draining = 5;
 }

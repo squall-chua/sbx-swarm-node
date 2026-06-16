@@ -22,13 +22,17 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
+	"github.com/squall-chua/sbx-swarm-node/internal/membership"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
 	"github.com/squall-chua/sbx-swarm-node/internal/obsd"
 	"github.com/squall-chua/sbx-swarm-node/internal/ops"
+	"github.com/squall-chua/sbx-swarm-node/internal/peer"
+	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // Node is a single standalone node.
@@ -38,12 +42,15 @@ type Node struct {
 	id      *identity.Identity
 	ids     *ids.Gen
 	store   *store.Store
+	mgr     *sandbox.Manager
 	health  *obs.Health
 	srv     *http.Server
 	grpcSrv *grpc.Server
 	cert    tls.Certificate
 	ln      net.Listener
 	cancel  context.CancelFunc // cancels background collector goroutines
+	cluster *membership.Cluster // nil when not in cluster mode
+	pool    *peer.Pool          // nil when not in cluster mode
 }
 
 // New constructs a node: it establishes identity, opens the store, loads the TLS
@@ -110,6 +117,65 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	}
 	signer := auth.NewSigner(id.PrivateKey.Seed()) // stable per-node session signing key
 
+	// --- M4 cluster wiring ---
+	// Load (or initialise) the swarm identity. Standalone when no seeds are set.
+	siPath := filepath.Join(cfg.DataDir, "swarm.json")
+	si, err := membership.LoadOrInit(siPath, cfg.Join)
+	if err != nil {
+		cancel()
+		_ = st.Close()
+		return nil, fmt.Errorf("swarm identity: %w", err)
+	}
+
+	tbl := routing.NewTable(id.NodeID)
+
+	// Peer TLS: use InsecureSkipVerify for v1. Nodes use self-signed certs;
+	// trust is established via the shared cluster secret (encrypted gossip,
+	// ADR-0004) rather than a CA. Node-key challenge auth (ADR-0004 §future)
+	// will replace this in a later milestone.
+	//
+	// SECURITY NOTE: InsecureSkipVerify is intentional for v1. Flag for review.
+	tlsCreds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
+	pool := peer.NewPool(peer.WithCreds(tlsCreds))
+	fwd := apiserver.NewForwarder(tbl, pool)
+
+	// Build the initial local NodeState from config + current sandbox list.
+	ownedIDs := ownedSandboxIDs(context.Background(), mgr)
+	localNS := membership.NodeState{
+		NodeID:          id.NodeID,
+		Addr:            dialableAddr(cfg.ListenAddr),
+		ProtocolVersion: 1,
+		Capabilities:    []string{"clone", "stats", "exec"},
+		OwnedSandboxIDs: ownedIDs,
+		SwarmID:         si.SwarmID,
+		Labels:          cfg.Labels,
+		LimitCPU:        cfg.ProvisionLimits.CPUCores,
+		LimitMemKB:      float64(cfg.ProvisionLimits.MemoryBytes / 1024),
+	}
+
+	// Build NodeService before cluster so we can wire the Cordoner below.
+	nodeSvc := apiserver.NewNodeService(id.NodeID, cfg.NodeName, version)
+
+	var clusterInstance *membership.Cluster
+	if cfg.GossipAddr != "" && cfg.ClusterSecret != "" {
+		// Only build the cluster when a cluster_secret is configured. A pure
+		// standalone node (no secret, no seeds) skips gossip entirely.
+		cl, clErr := membership.NewCluster(cfg, localNS, tbl, si, siPath,
+			func(deadNodeID string) {
+				mgr.MarkUnreachable(deadNodeID)
+			},
+			log,
+		)
+		if clErr != nil {
+			cancel()
+			_ = st.Close()
+			pool.Close()
+			return nil, fmt.Errorf("membership cluster: %w", clErr)
+		}
+		clusterInstance = cl
+		nodeSvc.SetCordoner(cl)
+	}
+
 	handler, grpcSrv, err := apiserver.Build(apiserver.Options{
 		NodeID:    id.NodeID,
 		NodeName:  cfg.NodeName,
@@ -121,10 +187,18 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Sandboxes: sandboxes,
 		Events:    bus,
 		Policy:    policySvc,
+		Forward:   fwd,
+		Routing:   tbl,
+		Peers:     pool,
+		NodeSvc:   nodeSvc, // pre-wired with Cordoner (nil-safe if no cluster)
 	})
 	if err != nil {
 		cancel()
 		_ = st.Close()
+		pool.Close()
+		if clusterInstance != nil {
+			_ = clusterInstance.Shutdown()
+		}
 		return nil, fmt.Errorf("apiserver: %w", err)
 	}
 
@@ -134,13 +208,16 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	}
 
 	return &Node{
-		cfg:    cfg,
-		log:    log,
-		id:     id,
-		ids:    gen,
-		store:  st,
-		health: health,
-		cancel: cancel,
+		cfg:     cfg,
+		log:     log,
+		id:      id,
+		ids:     gen,
+		store:   st,
+		mgr:     mgr,
+		health:  health,
+		cancel:  cancel,
+		cluster: clusterInstance,
+		pool:    pool,
 		srv: &http.Server{
 			Handler:   handler,
 			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}},
@@ -161,8 +238,12 @@ func (n *Node) Addr() string {
 	return n.ln.Addr().String()
 }
 
+// Cluster returns the membership.Cluster (nil in standalone mode).
+func (n *Node) Cluster() *membership.Cluster { return n.cluster }
+
 // Start binds the listener and serves the one-port TLS server in the background,
-// then marks ready.
+// then marks ready. If seeds are configured it also initiates a non-blocking
+// join in the background (retried once; startup modes handle the rest).
 func (n *Node) Start() error {
 	ln, err := net.Listen("tcp", n.cfg.ListenAddr)
 	if err != nil {
@@ -176,7 +257,44 @@ func (n *Node) Start() error {
 	}()
 	n.health.SetReady(true)
 	n.log.Info("node serving", "addr", n.Addr())
+
+	// Background join: non-blocking. If seeds are set and the cluster is up,
+	// attempt to join. The pending-join → member transition happens inside
+	// MergeRemoteState (Adopt) when the first bulk push/pull round-trip completes.
+	if n.cluster != nil && len(n.cfg.Join) > 0 {
+		go func() {
+			if _, err := n.cluster.Join(n.cfg.Join); err != nil {
+				n.log.Warn("cluster join failed (will rely on gossip re-contact)", "err", err)
+			}
+		}()
+	}
+
 	return nil
+}
+
+// Stop gracefully shuts the HTTP server, stops the gRPC server, closes the
+// cluster membership, and closes the store.
+func (n *Node) Stop(ctx context.Context) error {
+	n.health.SetReady(false)
+	if n.cancel != nil {
+		n.cancel() // stop background collector goroutines
+	}
+
+	// Leave the cluster before closing the API so peers learn we're gone.
+	if n.cluster != nil {
+		_ = n.cluster.Leave(3 * time.Second)
+		_ = n.cluster.Shutdown()
+	}
+	if n.pool != nil {
+		n.pool.Close()
+	}
+
+	err := n.srv.Shutdown(ctx)
+	n.grpcSrv.Stop()
+	if cerr := n.store.Close(); cerr != nil && err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // namesList returns a function that lists backend names of running sandboxes
@@ -198,6 +316,33 @@ func namesList(mgr *sandbox.Manager) func(context.Context) ([]string, error) {
 	}
 }
 
+// ownedSandboxIDs returns the IDs of all sandboxes currently known to the manager.
+func ownedSandboxIDs(ctx context.Context, mgr *sandbox.Manager) []string {
+	recs, err := mgr.List(ctx)
+	if err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(recs))
+	for _, r := range recs {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
+// dialableAddr converts a listen address like ":8443" to "127.0.0.1:8443" so
+// peers can dial it. In production, set ListenAddr to a concrete host. For
+// integration tests (loopback), this default is correct.
+func dialableAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return "127.0.0.1:" + port
+	}
+	return addr
+}
+
 // runTicker calls fn on every interval tick until ctx is done.
 func runTicker(ctx context.Context, interval time.Duration, fn func()) {
 	t := time.NewTicker(interval)
@@ -210,19 +355,4 @@ func runTicker(ctx context.Context, interval time.Duration, fn func()) {
 			return
 		}
 	}
-}
-
-// Stop gracefully shuts the HTTP server, stops the gRPC server, and closes the
-// store.
-func (n *Node) Stop(ctx context.Context) error {
-	n.health.SetReady(false)
-	if n.cancel != nil {
-		n.cancel() // stop background collector goroutines
-	}
-	err := n.srv.Shutdown(ctx)
-	n.grpcSrv.Stop()
-	if cerr := n.store.Close(); cerr != nil && err == nil {
-		err = cerr
-	}
-	return err
 }

@@ -20,6 +20,9 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	NodeService_GetNodeInfo_FullMethodName = "/sbxswarm.v1.NodeService/GetNodeInfo"
+	NodeService_Cordon_FullMethodName      = "/sbxswarm.v1.NodeService/Cordon"
+	NodeService_Uncordon_FullMethodName    = "/sbxswarm.v1.NodeService/Uncordon"
+	NodeService_Drain_FullMethodName       = "/sbxswarm.v1.NodeService/Drain"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -29,6 +32,9 @@ const (
 // NodeService exposes node-level information and control.
 type NodeServiceClient interface {
 	GetNodeInfo(ctx context.Context, in *GetNodeInfoRequest, opts ...grpc.CallOption) (*NodeInfo, error)
+	Cordon(ctx context.Context, in *CordonRequest, opts ...grpc.CallOption) (*NodeInfo, error)
+	Uncordon(ctx context.Context, in *CordonRequest, opts ...grpc.CallOption) (*NodeInfo, error)
+	Drain(ctx context.Context, in *DrainRequest, opts ...grpc.CallOption) (*NodeInfo, error)
 }
 
 type nodeServiceClient struct {
@@ -49,6 +55,36 @@ func (c *nodeServiceClient) GetNodeInfo(ctx context.Context, in *GetNodeInfoRequ
 	return out, nil
 }
 
+func (c *nodeServiceClient) Cordon(ctx context.Context, in *CordonRequest, opts ...grpc.CallOption) (*NodeInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeInfo)
+	err := c.cc.Invoke(ctx, NodeService_Cordon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) Uncordon(ctx context.Context, in *CordonRequest, opts ...grpc.CallOption) (*NodeInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeInfo)
+	err := c.cc.Invoke(ctx, NodeService_Uncordon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) Drain(ctx context.Context, in *DrainRequest, opts ...grpc.CallOption) (*NodeInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeInfo)
+	err := c.cc.Invoke(ctx, NodeService_Drain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -56,6 +92,9 @@ func (c *nodeServiceClient) GetNodeInfo(ctx context.Context, in *GetNodeInfoRequ
 // NodeService exposes node-level information and control.
 type NodeServiceServer interface {
 	GetNodeInfo(context.Context, *GetNodeInfoRequest) (*NodeInfo, error)
+	Cordon(context.Context, *CordonRequest) (*NodeInfo, error)
+	Uncordon(context.Context, *CordonRequest) (*NodeInfo, error)
+	Drain(context.Context, *DrainRequest) (*NodeInfo, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -68,6 +107,15 @@ type UnimplementedNodeServiceServer struct{}
 
 func (UnimplementedNodeServiceServer) GetNodeInfo(context.Context, *GetNodeInfoRequest) (*NodeInfo, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetNodeInfo not implemented")
+}
+func (UnimplementedNodeServiceServer) Cordon(context.Context, *CordonRequest) (*NodeInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method Cordon not implemented")
+}
+func (UnimplementedNodeServiceServer) Uncordon(context.Context, *CordonRequest) (*NodeInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method Uncordon not implemented")
+}
+func (UnimplementedNodeServiceServer) Drain(context.Context, *DrainRequest) (*NodeInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method Drain not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -108,6 +156,60 @@ func _NodeService_GetNodeInfo_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_Cordon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CordonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Cordon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Cordon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Cordon(ctx, req.(*CordonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_Uncordon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CordonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Uncordon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Uncordon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Uncordon(ctx, req.(*CordonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_Drain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DrainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Drain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Drain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Drain(ctx, req.(*DrainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -118,6 +220,18 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetNodeInfo",
 			Handler:    _NodeService_GetNodeInfo_Handler,
+		},
+		{
+			MethodName: "Cordon",
+			Handler:    _NodeService_Cordon_Handler,
+		},
+		{
+			MethodName: "Uncordon",
+			Handler:    _NodeService_Uncordon_Handler,
+		},
+		{
+			MethodName: "Drain",
+			Handler:    _NodeService_Drain_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

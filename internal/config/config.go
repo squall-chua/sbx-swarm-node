@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the M1a subset of node configuration. Later milestones extend it.
+// Config is the node configuration. Extended in M4 with cluster fields.
 type Config struct {
 	NodeName    string   `yaml:"node_name"`
 	DataDir     string   `yaml:"data_dir"`
@@ -20,6 +20,20 @@ type Config struct {
 	TLSCertFile string   `yaml:"tls_cert_file"`
 	TLSKeyFile  string   `yaml:"tls_key_file"`
 	APIKeys     []APIKey `yaml:"api_keys"`
+
+	// M4 cluster fields.
+	ClusterSecret string            `yaml:"cluster_secret"`
+	Join          []string          `yaml:"join"`
+	SwarmName     string            `yaml:"swarm_name"`
+	Labels        map[string]string `yaml:"labels"`
+	ProvisionLimits ProvisionLimits `yaml:"provision_limits"`
+	GossipAddr    string            `yaml:"gossip_addr"`
+}
+
+// ProvisionLimits caps how much CPU/memory this node offers to the swarm.
+type ProvisionLimits struct {
+	CPUCores    float64 `yaml:"cpu_cores"`
+	MemoryBytes int64   `yaml:"memory_bytes"`
 }
 
 // APIKey is a bearer credential mapped to a role ("admin"|"read-only").
@@ -39,6 +53,7 @@ func Default() *Config {
 		DataDir:    "./data",
 		ListenAddr: ":8443",
 		LogLevel:   "info",
+		GossipAddr: ":7946",
 	}
 }
 
@@ -135,6 +150,12 @@ func (c *Config) Validate() error {
 		if k.Role != "admin" && k.Role != "read-only" {
 			return fmt.Errorf("api_keys: role must be admin|read-only, got %q", k.Role)
 		}
+	}
+	if len(c.Join) > 0 && c.ClusterSecret == "" {
+		return fmt.Errorf("cluster_secret must be set when join seeds are configured")
+	}
+	if c.GossipAddr == "" {
+		return fmt.Errorf("gossip_addr must not be empty")
 	}
 	return nil
 }
