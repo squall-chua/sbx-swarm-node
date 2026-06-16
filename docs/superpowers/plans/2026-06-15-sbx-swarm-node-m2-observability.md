@@ -31,7 +31,7 @@
 
 **Files:** `internal/sandbox/backend.go`, `fake.go`, test `internal/sandbox/observe_fake_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package sandbox
@@ -59,9 +59,9 @@ func TestFake_StatsAndBlocked(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL** (`f.Stats undefined`): `go test ./internal/sandbox/ -run TestFake_StatsAndBlocked -v`
+- [x] **Step 2: Run → FAIL** (`f.Stats undefined`): `go test ./internal/sandbox/ -run TestFake_StatsAndBlocked -v`
 
-- [ ] **Step 3: Add to `backend.go`**
+- [x] **Step 3: Add to `backend.go`**
 
 ```go
 // Usage is a point-in-time per-sandbox resource snapshot (exec.Stats).
@@ -99,7 +99,7 @@ Add to the `Backend` interface:
 	BlockedEgress(ctx context.Context) ([]BlockedHost, error)
 ```
 
-- [ ] **Step 4: Add to `fake.go`**
+- [x] **Step 4: Add to `fake.go`**
 
 ```go
 func (f *Fake) Stats(_ context.Context, name string) (Usage, error) {
@@ -134,7 +134,7 @@ func (f *Fake) BlockedEgress(_ context.Context) ([]BlockedHost, error) {
 
 Add `blocked []BlockedHost` to the `Fake` struct.
 
-- [ ] **Step 5: Run → PASS, commit**
+- [x] **Step 5: Run → PASS, commit**
 
 ```bash
 go test ./internal/sandbox/ -v
@@ -149,7 +149,7 @@ git add internal/sandbox/ && git commit -m "feat(sandbox): Backend Stats/Logs/Bl
 
 **Files:** `internal/obsd/stats.go`, test `internal/obsd/stats_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package obsd
@@ -194,9 +194,9 @@ func listFn(f *sandbox.Fake) func(context.Context) ([]string, error) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/obsd/ -run TestStatsCollector -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/obsd/ -run TestStatsCollector -v`
 
-- [ ] **Step 3: Implement `stats.go`**
+- [x] **Step 3: Implement `stats.go`**
 
 ```go
 // Package obsd holds background observability collectors (stats, network log).
@@ -300,7 +300,7 @@ func safeDiv(a, b float64) float64 {
 }
 ```
 
-- [ ] **Step 4: Run → PASS** (`go get golang.org/x/sync` first), **commit**
+- [x] **Step 4: Run → PASS** (`go get golang.org/x/sync` first), **commit**
 
 ```bash
 go get golang.org/x/sync && go mod tidy && go test ./internal/obsd/ -v
@@ -316,7 +316,7 @@ git commit -m "feat(obsd): stats collector with actual_util reconstruction"
 
 **Files:** `internal/obsd/netlog.go`, test `internal/obsd/netlog_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package obsd
@@ -344,9 +344,9 @@ func TestNetLog_AccumulatesDistinctPairs(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/obsd/ -run TestNetLog -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/obsd/ -run TestNetLog -v`
 
-- [ ] **Step 3: Implement `netlog.go`**
+- [x] **Step 3: Implement `netlog.go`**
 
 ```go
 package obsd
@@ -428,7 +428,7 @@ func (c *NetLogCollector) DistinctCount() int {
 }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/obsd/ -v
@@ -442,7 +442,7 @@ git commit -m "feat(obsd): blocked-egress collector (distinct pairs, no fake cou
 
 **Files:** `internal/obs/metrics.go`, test `internal/obs/metrics_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package obs
@@ -465,9 +465,9 @@ func TestMetrics_SandboxGauge(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/obs/ -run TestMetrics -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/obs/ -run TestMetrics -v`
 
-- [ ] **Step 3: Implement `metrics.go`**
+- [x] **Step 3: Implement `metrics.go`**
 
 ```go
 package obs
@@ -501,7 +501,7 @@ func (m *Metrics) SetSandboxes(status string, n int) { m.sandboxes.WithLabelValu
 func (m *Metrics) IncOp(opType, state string) { m.opsTotal.WithLabelValues(opType, state).Inc() }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/obs/ -v
@@ -515,7 +515,7 @@ git commit -m "feat(obs): domain prometheus metrics"
 
 **Files:** `proto/sbxswarm/v1/sandbox.proto` (extend), `internal/apiserver/observe.go`, `internal/node/node.go`
 
-- [ ] **Step 1: Add proto RPCs + regenerate**
+- [x] **Step 1: Add proto RPCs + regenerate**
 
 Add to `SandboxService`:
 
@@ -541,7 +541,7 @@ message ListBlockedResponse { repeated Blocked blocked = 1; int32 distinct_count
 
 Run: `buf generate && go build ./...`
 
-- [ ] **Step 2: Implement unary handlers + SSE in `observe.go`** (TDD: write a test calling `GetStats`/`ListBlocked` against a service backed by the collectors with a fake; then implement)
+- [x] **Step 2: Implement unary handlers + SSE in `observe.go`** (TDD: write a test calling `GetStats`/`ListBlocked` against a service backed by the collectors with a fake; then implement)
 
 ```go
 package apiserver
@@ -589,7 +589,7 @@ func (s *SandboxService) ListBlocked(_ context.Context, r *sbxv1.IdRequest) (*sb
 
 Add an `obs ObserveDeps` field to `SandboxService` and an `WithObserve(ObserveDeps)` setter; guard nil in handlers (return Unimplemented if `s.obs.Stats == nil`). Logs/network SSE reuse the M1d `events.Bus` pattern: a `GET /v1/sandboxes/{id}/logs` handler that subscribes to `backend.Logs` lines and writes SSE frames; a `GET /v1/sandboxes/{id}/stats` SSE handler emitting the cache on a ticker. Register these on the rest mux in `Build` when `Events`/collectors are present.
 
-- [ ] **Step 3: Wire collectors + ticker loops in `node.New`**
+- [x] **Step 3: Wire collectors + ticker loops in `node.New`**
 
 ```go
 	statsC := obsd.NewStatsCollector(backend, namesList(mgr), provisionLimitFromCfg(cfg), 4)
@@ -602,12 +602,12 @@ Add an `obs ObserveDeps` field to `SandboxService` and an `WithObserve(ObserveDe
 
 Add `mgr.ResolveVMToID(vm string)(string,bool)` (reverse of `Resolve`, scanning records), a `runTicker` helper, and a node-level `ctx`/`cancel` for the loops (cancel in `Stop`).
 
-- [ ] **Step 4: Run all tests + manual**
+- [x] **Step 4: Run all tests + manual**
 
 Run: `go test ./...`
 Manual: create a sandbox, `curl -sk -N -H "Authorization: Bearer adm" https://localhost:8443/v1/sandboxes/<id>/logs` streams a line; `.../stats` returns cached usage.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add proto/ internal/gen/ internal/apiserver/observe.go internal/node/

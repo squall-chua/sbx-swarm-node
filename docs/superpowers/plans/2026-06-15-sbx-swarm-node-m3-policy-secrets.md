@@ -30,7 +30,7 @@
 
 **Files:** `internal/sandbox/backend.go`, `fake.go`, test `internal/sandbox/policy_fake_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package sandbox
@@ -61,9 +61,9 @@ func TestFake_PolicyAndSecrets(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/sandbox/ -run TestFake_PolicyAndSecrets -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/sandbox/ -run TestFake_PolicyAndSecrets -v`
 
-- [ ] **Step 3: Add to `backend.go`**
+- [x] **Step 3: Add to `backend.go`**
 
 ```go
 // PolicyRule mirrors a structured row from policy.List (SDK v0.1.2).
@@ -111,7 +111,7 @@ Add to `Backend`:
 	SecretRemove(ctx context.Context, scope, host string) error
 ```
 
-- [ ] **Step 4: Add to `fake.go`** (in-memory; `SecretList` returns entries with empty `Value`)
+- [x] **Step 4: Add to `fake.go`** (in-memory; `SecretList` returns entries with empty `Value`)
 
 ```go
 // add to Fake struct: rules []PolicyRule; secrets map[string][]CustomSecret
@@ -153,7 +153,7 @@ func (f *Fake) SecretRemove(_ context.Context, scope, host string) error {
 }
 ```
 
-- [ ] **Step 5: Run → PASS, commit**
+- [x] **Step 5: Run → PASS, commit**
 
 ```bash
 go test ./internal/sandbox/ -v
@@ -168,7 +168,7 @@ git add internal/sandbox/ && git commit -m "feat(sandbox): Backend policy/secret
 
 **Files:** `internal/audit/audit.go`, test `internal/audit/audit_test.go`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```go
 package audit
@@ -196,9 +196,9 @@ func TestAudit_AppendAndList(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run → FAIL**: `go test ./internal/audit/ -v`
+- [x] **Step 2: Run → FAIL**: `go test ./internal/audit/ -v`
 
-- [ ] **Step 3: Implement `audit.go`**
+- [x] **Step 3: Implement `audit.go`**
 
 ```go
 // Package audit is the durable, append-only record of credentialed/sensitive
@@ -267,7 +267,7 @@ func (l *Log) List() ([]Entry, error) {
 }
 ```
 
-- [ ] **Step 4: Run → PASS, commit**
+- [x] **Step 4: Run → PASS, commit**
 
 ```bash
 go test ./internal/audit/ -v
@@ -280,7 +280,7 @@ git add internal/audit/ && git commit -m "feat(audit): durable append-only audit
 
 **Files:** `proto/sbxswarm/v1/policy.proto`, `internal/apiserver/policyservice.go`, `internal/node/node.go`
 
-- [ ] **Step 1: Write `policy.proto` + regenerate**
+- [x] **Step 1: Write `policy.proto` + regenerate**
 
 ```proto
 syntax = "proto3";
@@ -321,7 +321,7 @@ message DeleteSecretRequest { string scope = 1; string host = 2; }
 
 Run: `buf generate && go build ./...`
 
-- [ ] **Step 2: Implement handlers (TDD: test SetSecret then ListSecrets returns no value; SetPolicy writes audit)**
+- [x] **Step 2: Implement handlers (TDD: test SetSecret then ListSecrets returns no value; SetPolicy writes audit)**
 
 ```go
 package apiserver
@@ -452,16 +452,16 @@ func outcomeOf(err error) string { if err != nil { return "error" }; return "ok"
 
 Write a test in `policyservice_test.go` constructing a `PolicyService` over a fake-backed manager + an audit log, asserting: `SetSecret` then `ListSecrets` returns the host but empty value; `SetPolicy("deny")` then `audit.List()` contains a `policy.deny` entry.
 
-- [ ] **Step 3: Register in `apiserver.Build` + `node.New`**
+- [x] **Step 3: Register in `apiserver.Build` + `node.New`**
 
 Add `Policy *PolicyService` to `apiserver.Options`; register on `grpcSrv` + gateway when set. In `node.New`, build `audit.New(st, func() int64 { return time.Now().Unix() })` and `apiserver.NewPolicyService(mgr, auditLog)`; pass via `Options`.
 
-- [ ] **Step 4: Run all tests + manual**
+- [x] **Step 4: Run all tests + manual**
 
 Run: `go test ./...`
 Manual: `PUT /v1/sandboxes//policy {"decision":"deny","host":"evil.example"}` (global scope), then `GET /v1/sandboxes//policy` shows the rule; `PUT .../secrets` then `GET .../secrets` shows host/env but no value.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add proto/ internal/gen/ internal/apiserver/policyservice.go internal/apiserver/policyservice_test.go internal/node/
