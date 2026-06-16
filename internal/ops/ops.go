@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 )
@@ -32,6 +33,7 @@ type Operation struct {
 type Manager struct {
 	store *store.Store
 	ids   *ids.Gen
+	pub   events.Publisher
 	mu    sync.Mutex
 	now   func() time.Time
 }
@@ -39,6 +41,15 @@ type Manager struct {
 // NewManager builds an ops manager.
 func NewManager(st *store.Store, gen *ids.Gen) *Manager {
 	return &Manager{store: st, ids: gen, now: time.Now}
+}
+
+// SetPublisher wires an event publisher (optional).
+func (m *Manager) SetPublisher(p events.Publisher) { m.pub = p }
+
+func (m *Manager) emit(op *Operation) {
+	if m.pub != nil {
+		m.pub.Publish("operation."+op.State, op.SandboxID, map[string]string{"op_id": op.ID, "type": op.Type})
+	}
 }
 
 func (m *Manager) put(op *Operation) error {
@@ -88,6 +99,7 @@ func (m *Manager) Run(opID string, fn func() (sandboxID string, err error)) {
 		}
 		op.State = "running"
 		_ = m.put(op)
+		m.emit(op)
 
 		sbID, runErr := fn()
 		if runErr != nil {
@@ -96,6 +108,7 @@ func (m *Manager) Run(opID string, fn func() (sandboxID string, err error)) {
 			op.State, op.SandboxID = "done", sbID
 		}
 		_ = m.put(op)
+		m.emit(op)
 	}()
 }
 

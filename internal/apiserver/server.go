@@ -9,6 +9,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
+	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
 	"github.com/squall-chua/sbx-swarm-node/web"
@@ -24,6 +25,7 @@ type Options struct {
 	Cert                      tls.Certificate
 	Health                    *obs.Health     // optional; health routes mounted if set
 	Sandboxes                 *SandboxService // optional; registered if set
+	Events                    *events.Bus     // optional; mounts /v1/events (SSE) under auth if set
 }
 
 // Build constructs the one-port handler and the gRPC server. The caller serves
@@ -59,8 +61,11 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 
 	rest := http.NewServeMux()
 	rest.Handle("/v1/auth/session", sessionHandler(opts.Keys, opts.Signer)) // unauthenticated exchange
-	rest.Handle("/v1/", mw.Authenticate(gw))                                // everything else under /v1 is authed
-	rest.Handle("/", http.FileServer(http.FS(web.FS())))                    // SPA fallback
+	if opts.Events != nil {
+		rest.Handle("/v1/events", mw.Authenticate(SSEHandler(opts.Events))) // authed SSE firehose
+	}
+	rest.Handle("/v1/", mw.Authenticate(gw))             // everything else under /v1 is authed
+	rest.Handle("/", http.FileServer(http.FS(web.FS()))) // SPA fallback
 	if opts.Health != nil {
 		rest.Handle("/healthz", opts.Health.Handler())
 		rest.Handle("/readyz", opts.Health.Handler())

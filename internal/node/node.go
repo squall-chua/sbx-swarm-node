@@ -17,6 +17,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/apiserver"
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
+	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
@@ -60,9 +61,12 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	health := obs.NewHealth(reg)
 
 	gen := ids.NewGen(id.NodeID)
+	bus := events.NewBus(id.NodeID, 1024)
 	backend := sandbox.NewFake() // M1c default backend so the node boots without a daemon
 	mgr := sandbox.NewManager(id.NodeID, backend, st, gen)
+	mgr.SetPublisher(bus)
 	opsM := ops.NewManager(st, gen)
+	opsM.SetPublisher(bus)
 	sandboxes := apiserver.NewSandboxService(mgr, opsM)
 
 	cert, err := tlsutil.LoadOrGenerate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.DataDir)
@@ -81,6 +85,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Cert:      cert,
 		Health:    health,
 		Sandboxes: sandboxes,
+		Events:    bus,
 	})
 	if err != nil {
 		_ = st.Close()
