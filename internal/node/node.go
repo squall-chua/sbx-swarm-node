@@ -1,9 +1,11 @@
-// Package node wires the M1a components — identity, store, observability —
-// into a startable, stoppable node serving the health/metrics endpoints.
+// Package node wires the node's components — identity, store, observability,
+// and the one-port TLS API server (gRPC + REST + static) — into a startable,
+// stoppable node.
 package node
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,27 +14,33 @@ import (
 	"path/filepath"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/squall-chua/sbx-swarm-node/internal/apiserver"
+	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
+	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
+	"google.golang.org/grpc"
 )
 
-// Node is a single standalone node (M1a scope).
+// Node is a single standalone node.
 type Node struct {
-	cfg    *config.Config
-	log    *slog.Logger
-	id     *identity.Identity
-	ids    *ids.Gen
-	store  *store.Store
-	health *obs.Health
-	srv    *http.Server
-	ln     net.Listener
+	cfg     *config.Config
+	log     *slog.Logger
+	id      *identity.Identity
+	ids     *ids.Gen
+	store   *store.Store
+	health  *obs.Health
+	srv     *http.Server
+	grpcSrv *grpc.Server
+	cert    tls.Certificate
+	ln      net.Listener
 }
 
-// New constructs a node: it establishes identity and opens the store, but does
-// not listen yet.
+// New constructs a node: it establishes identity, opens the store, loads the TLS
+// certificate, and builds the one-port API server, but does not listen yet.
 func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	id, err := identity.LoadOrCreate(cfg.DataDir)
 	if err != nil {
@@ -49,6 +57,27 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	obs.RegisterBuildInfo(reg, version)
 	health := obs.NewHealth(reg)
 
+	cert, err := tlsutil.LoadOrGenerate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.DataDir)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("tls: %w", err)
+	}
+	signer := auth.NewSigner(id.PrivateKey.Seed()) // stable per-node session signing key
+
+	handler, grpcSrv, err := apiserver.Build(apiserver.Options{
+		NodeID:   id.NodeID,
+		NodeName: cfg.NodeName,
+		Version:  version,
+		Keys:     cfg,
+		Signer:   signer,
+		Cert:     cert,
+		Health:   health,
+	})
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("apiserver: %w", err)
+	}
+
 	return &Node{
 		cfg:    cfg,
 		log:    log,
@@ -56,7 +85,12 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		ids:    ids.NewGen(id.NodeID),
 		store:  st,
 		health: health,
-		srv:    &http.Server{Handler: health.Handler()},
+		srv: &http.Server{
+			Handler:   handler,
+			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}},
+		},
+		grpcSrv: grpcSrv,
+		cert:    cert,
 	}, nil
 }
 
@@ -71,7 +105,8 @@ func (n *Node) Addr() string {
 	return n.ln.Addr().String()
 }
 
-// Start binds the listener and serves in the background, then marks ready.
+// Start binds the listener and serves the one-port TLS server in the background,
+// then marks ready.
 func (n *Node) Start() error {
 	ln, err := net.Listen("tcp", n.cfg.ListenAddr)
 	if err != nil {
@@ -79,7 +114,7 @@ func (n *Node) Start() error {
 	}
 	n.ln = ln
 	go func() {
-		if err := n.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := n.srv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			n.log.Error("http server stopped", "err", err)
 		}
 	}()
@@ -88,10 +123,12 @@ func (n *Node) Start() error {
 	return nil
 }
 
-// Stop gracefully shuts the server and closes the store.
+// Stop gracefully shuts the HTTP server, stops the gRPC server, and closes the
+// store.
 func (n *Node) Stop(ctx context.Context) error {
 	n.health.SetReady(false)
 	err := n.srv.Shutdown(ctx)
+	n.grpcSrv.Stop()
 	if cerr := n.store.Close(); cerr != nil && err == nil {
 		err = cerr
 	}
