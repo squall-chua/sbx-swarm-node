@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -9,6 +10,7 @@ import (
 
 	sdkclient "github.com/squall-chua/sbx-go-sdk/client"
 	sdkexec "github.com/squall-chua/sbx-go-sdk/exec"
+	sdkpolicy "github.com/squall-chua/sbx-go-sdk/policy"
 	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
 )
 
@@ -258,6 +260,74 @@ func memString(b int64) string {
 	default:
 		return strconv.FormatInt(b, 10) + "b"
 	}
+}
+
+// Stats returns a point-in-time resource snapshot for the named sandbox.
+// Maps to exec.Stats in sbx-go-sdk v0.1.2.
+func (b *SDKBackend) Stats(ctx context.Context, name string) (Usage, error) {
+	sb, err := b.handle(ctx, name)
+	if err != nil {
+		return Usage{}, err
+	}
+	u, err := sdkexec.Stats(ctx, sb)
+	if err != nil {
+		return Usage{}, err
+	}
+	return Usage{
+		Cores:         u.Cores,
+		CPUPercent:    u.CPUPercent,
+		MemTotalKB:    int64(u.MemTotalKB),
+		MemUsedKB:     int64(u.MemUsedKB),
+		DiskTotalGB:   u.DiskTotalGB,
+		DiskUsedGB:    u.DiskUsedGB,
+		UptimeSeconds: int64(u.UptimeSeconds),
+	}, nil
+}
+
+// Logs follows the log file at path inside the named sandbox. Lines are
+// streamed to out until ctx is cancelled or the session ends.
+// Maps to exec.Logs in sbx-go-sdk v0.1.2.
+func (b *SDKBackend) Logs(ctx context.Context, name, path string, out chan<- LogLine) error {
+	sb, err := b.handle(ctx, name)
+	if err != nil {
+		return err
+	}
+	sess, err := sdkexec.Logs(ctx, sb, path)
+	if err != nil {
+		return err
+	}
+	go func() {
+		defer sess.Close()
+		scanner := bufio.NewScanner(sess.Stdout())
+		for scanner.Scan() {
+			select {
+			case out <- LogLine{Line: scanner.Text()}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			select {
+			case out <- LogLine{Err: err}:
+			case <-ctx.Done():
+			}
+		}
+	}()
+	return nil
+}
+
+// BlockedEgress returns the daemon-wide set of blocked (host, vm) pairs.
+// Maps to policy.Log in sbx-go-sdk v0.1.2.
+func (b *SDKBackend) BlockedEgress(ctx context.Context) ([]BlockedHost, error) {
+	pl, err := sdkpolicy.Log(ctx, b.cl)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlockedHost, 0, len(pl.BlockedHosts))
+	for _, e := range pl.BlockedHosts {
+		out = append(out, BlockedHost{Host: e.Host, VMName: e.VMName})
+	}
+	return out, nil
 }
 
 var _ Backend = (*SDKBackend)(nil)

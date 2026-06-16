@@ -13,6 +13,7 @@ type Fake struct {
 	ports     map[string][]PublishedPort
 	detached  map[string]bool // detachedID -> done
 	seq       int
+	blocked   []BlockedHost
 }
 
 // NewFake returns an empty fake backend.
@@ -143,4 +144,33 @@ func (f *Fake) CopyTo(_ context.Context, name, _, _ string) error {
 func (f *Fake) CopyFrom(_ context.Context, name, _, _ string) error {
 	_, err := f.Get(context.Background(), name)
 	return err
+}
+
+func (f *Fake) Stats(_ context.Context, name string) (Usage, error) {
+	if _, err := f.Get(context.Background(), name); err != nil {
+		return Usage{}, err
+	}
+	return Usage{Cores: 2, CPUPercent: 10, MemTotalKB: 1 << 20, MemUsedKB: 1 << 18}, nil
+}
+
+func (f *Fake) Logs(ctx context.Context, name, _ string, out chan<- LogLine) error {
+	if _, err := f.Get(ctx, name); err != nil {
+		return err
+	}
+	go func() {
+		select {
+		case out <- LogLine{Line: "log from " + name}:
+		case <-ctx.Done():
+		}
+	}()
+	return nil
+}
+
+// SetBlocked sets the fake's blocked-egress list (test helper).
+func (f *Fake) SetBlocked(b []BlockedHost) { f.mu.Lock(); f.blocked = b; f.mu.Unlock() }
+
+func (f *Fake) BlockedEgress(_ context.Context) ([]BlockedHost, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]BlockedHost(nil), f.blocked...), nil
 }

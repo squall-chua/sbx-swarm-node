@@ -59,6 +59,29 @@ type PublishedPort struct {
 	HostPort      int
 }
 
+// Usage is a point-in-time per-sandbox resource snapshot.
+type Usage struct {
+	Cores         int
+	CPUPercent    float64
+	MemTotalKB    int64
+	MemUsedKB     int64
+	DiskTotalGB   float64
+	DiskUsedGB    float64
+	UptimeSeconds int64
+}
+
+// BlockedHost is one denied egress attempt: host + sandbox VM name.
+type BlockedHost struct {
+	Host   string
+	VMName string
+}
+
+// LogLine is one streamed log line.
+type LogLine struct {
+	Line string
+	Err  error // set on stream error/EOF
+}
+
 // Backend is the abstraction over sbx-go-sdk used by the manager.
 type Backend interface {
 	Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error)
@@ -75,4 +98,10 @@ type Backend interface {
 	UnpublishPort(ctx context.Context, name string, containerPort int) error
 	CopyTo(ctx context.Context, name, localPath, remotePath string) error
 	CopyFrom(ctx context.Context, name, remotePath, localPath string) error
+	Stats(ctx context.Context, name string) (Usage, error)
+	// Logs follows the log at path; lines are sent to out until ctx is done or
+	// the stream ends (a final LogLine with non-nil Err signals end/error).
+	Logs(ctx context.Context, name, path string, out chan<- LogLine) error
+	// BlockedEgress returns the daemon-wide set of blocked (host, vm) pairs.
+	BlockedEgress(ctx context.Context) ([]BlockedHost, error)
 }
