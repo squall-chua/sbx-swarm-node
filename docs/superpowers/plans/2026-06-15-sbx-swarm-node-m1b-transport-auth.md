@@ -37,7 +37,7 @@
 - Create: `proto/sbxswarm/v1/node.proto`, `buf.yaml`, `buf.gen.yaml`
 - Create (generated): `internal/gen/sbxswarm/v1/`
 
-- [ ] **Step 1: Write `proto/sbxswarm/v1/node.proto`**
+- [x] **Step 1: Write `proto/sbxswarm/v1/node.proto`**
 
 ```proto
 syntax = "proto3";
@@ -64,7 +64,7 @@ message NodeInfo {
 }
 ```
 
-- [ ] **Step 2: Write `buf.yaml`**
+- [x] **Step 2: Write `buf.yaml`**
 
 ```yaml
 version: v2
@@ -78,7 +78,7 @@ breaking:
   use: [FILE]
 ```
 
-- [ ] **Step 3: Write `buf.gen.yaml`**
+- [x] **Step 3: Write `buf.gen.yaml`**
 
 ```yaml
 version: v2
@@ -96,7 +96,7 @@ plugins:
     opt: paths=source_relative
 ```
 
-- [ ] **Step 4: Generate and wire deps**
+- [x] **Step 4: Generate and wire deps**
 
 Run:
 ```bash
@@ -109,7 +109,7 @@ go build ./...
 Expected: `internal/gen/sbxswarm/v1/node.pb.go`, `node_grpc.pb.go`, `node.pb.gw.go` exist and compile.
 (If `buf` is not installed: `go install github.com/bufbuild/buf/cmd/buf@latest` and ensure `$GOBIN` is on `PATH`.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add proto/ buf.yaml buf.gen.yaml internal/gen/ go.mod go.sum
@@ -124,7 +124,7 @@ git commit -m "feat(proto): NodeService proto + buf codegen"
 - Create: `internal/apiserver/nodeservice.go`
 - Test: `internal/apiserver/nodeservice_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -147,12 +147,12 @@ func TestNodeService_GetNodeInfo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestNodeService -v`
 Expected: FAIL — `undefined: NewNodeService`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package apiserver builds the node's one-port gRPC + REST + static server.
@@ -181,12 +181,12 @@ func (s *NodeService) GetNodeInfo(_ context.Context, _ *sbxv1.GetNodeInfoRequest
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestNodeService -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/nodeservice.go internal/apiserver/nodeservice_test.go
@@ -201,7 +201,7 @@ git commit -m "feat(apiserver): NodeService.GetNodeInfo"
 - Create: `internal/tlsutil/tlsutil.go`
 - Test: `internal/tlsutil/tlsutil_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package tlsutil
@@ -227,12 +227,12 @@ func TestLoadOrGenerate_GeneratesUsableCert(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/tlsutil/ -v`
 Expected: FAIL — `undefined: LoadOrGenerate`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package tlsutil loads a TLS certificate or generates a self-signed one for
@@ -306,12 +306,12 @@ func LoadOrGenerate(certFile, keyFile, dir string) (tls.Certificate, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/tlsutil/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/tlsutil/
@@ -326,7 +326,7 @@ git commit -m "feat(tlsutil): load-or-generate self-signed TLS cert"
 - Modify: `internal/config/config.go`
 - Test: `internal/config/config_test.go`
 
-- [ ] **Step 1: Write the failing test (append to `config_test.go`)**
+- [x] **Step 1: Write the failing test (append to `config_test.go`)**
 
 ```go
 func TestRoleForKey(t *testing.T) {
@@ -346,12 +346,12 @@ func TestValidate_RejectsBadRole(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config/ -run "TestRoleForKey|TestValidate_RejectsBadRole" -v`
 Expected: FAIL — `undefined: APIKey`
 
-- [ ] **Step 3: Extend `config.go`**
+- [x] **Step 3: Extend `config.go`**
 
 Add to the file:
 
@@ -398,12 +398,12 @@ In `Validate`, before `return nil`, add:
 	}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/config/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/config/
@@ -418,7 +418,7 @@ git commit -m "feat(config): API keys with roles and TLS cert paths"
 - Create: `internal/auth/session.go`
 - Test: `internal/auth/session_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package auth
@@ -452,12 +452,12 @@ func TestSession_RejectsExpiredAndTampered(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/auth/ -run TestSession -v`
 Expected: FAIL — `undefined: NewSigner`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package auth provides bearer + cookie-session authentication and role gating.
@@ -514,12 +514,12 @@ func (s *Signer) Verify(token string) (string, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/auth/ -run TestSession -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/auth/session.go internal/auth/session_test.go
@@ -534,7 +534,7 @@ git commit -m "feat(auth): HMAC-signed session tokens"
 - Create: `internal/auth/auth.go`
 - Test: `internal/auth/auth_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package auth
@@ -618,12 +618,12 @@ func TestAuthenticate_CookieAndCSRF(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/auth/ -run TestAuthenticate -v`
 Expected: FAIL — `undefined: New`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package auth
@@ -730,12 +730,12 @@ func csrfOK(r *http.Request) bool {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/auth/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/auth/auth.go internal/auth/auth_test.go
@@ -749,7 +749,7 @@ git commit -m "feat(auth): bearer + cookie auth, role gate, double-submit CSRF"
 **Files:**
 - Create: `web/dist/index.html`, `web/embed.go`
 
-- [ ] **Step 1: Write `web/dist/index.html`**
+- [x] **Step 1: Write `web/dist/index.html`**
 
 ```html
 <!doctype html>
@@ -757,7 +757,7 @@ git commit -m "feat(auth): bearer + cookie auth, role gate, double-submit CSRF"
 <h1>sbx-swarm-node console (placeholder)</h1>
 ```
 
-- [ ] **Step 2: Write `web/embed.go`**
+- [x] **Step 2: Write `web/embed.go`**
 
 ```go
 // Package web embeds the built SPA assets served by the node.
@@ -781,12 +781,12 @@ func FS() fs.FS {
 }
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 Run: `go build ./...`
 Expected: no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add web/
@@ -801,7 +801,7 @@ git commit -m "feat(web): embedded SPA placeholder"
 - Create: `internal/apiserver/mux.go`
 - Test: `internal/apiserver/mux_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -836,12 +836,12 @@ func TestMultiplex_RoutesByProtocolAndContentType(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestMultiplex -v`
 Expected: FAIL — `undefined: Multiplex`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package apiserver
@@ -865,12 +865,12 @@ func Multiplex(grpcH, otherH http.Handler) http.Handler {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestMultiplex -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/mux.go internal/apiserver/mux_test.go
@@ -885,7 +885,7 @@ git commit -m "feat(apiserver): protocol-dispatch multiplex handler"
 - Create: `internal/apiserver/server.go`
 - Test: `internal/apiserver/server_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -976,12 +976,12 @@ func (k keyMap) RoleForKey(key string) (string, bool) { r, ok := k[key]; return 
 
 (Provide `mustSelfSigned`, `testSigner` via the tlsutil/auth packages in the test file — `mustSelfSigned` calls `tlsutil.LoadOrGenerate("","",t.TempDir())`; `testSigner` returns `auth.NewSigner([]byte("test-secret"))`. Import those packages.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestServer -v`
 Expected: FAIL — `undefined: Build` / `Options`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package apiserver
@@ -1073,12 +1073,12 @@ func trimBearer(h string) string {
 
 Note: `RegisterNodeServiceHandlerServer` runs the gateway **in-process** (no self-dial), which is simplest and avoids a loopback gRPC connection. Streaming RPCs later use SSE (M1d), not the gateway.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -v`
 Expected: PASS (REST 401-then-200, and gRPC GetNodeInfo)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/server.go internal/apiserver/server_test.go
@@ -1093,7 +1093,7 @@ git commit -m "feat(apiserver): one-port gRPC+gateway+auth+static server"
 - Modify: `internal/node/node.go`
 - Modify: `internal/node/node_test.go`
 
-- [ ] **Step 1: Update the node test to use TLS + bearer**
+- [x] **Step 1: Update the node test to use TLS + bearer**
 
 Replace the body of `TestNode_BootServeStop` in `node_test.go` with:
 
@@ -1133,12 +1133,12 @@ func TestNode_BootServeStop(t *testing.T) {
 
 Add imports: `crypto/tls`, `net/http`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/node/ -v`
 Expected: FAIL (node still serves plain health only; `/v1/node` 404s and no TLS).
 
-- [ ] **Step 3: Update `node.go`**
+- [x] **Step 3: Update `node.go`**
 
 Add fields and a session signer/secret. Replace the server construction in `New` and the `Start`/`Stop` to use TLS + the apiserver. Concretely:
 
@@ -1181,7 +1181,7 @@ In `Stop`, after `n.srv.Shutdown(ctx)`, add `n.grpcSrv.Stop()` before closing th
 
 Add imports: `crypto/tls`, `google.golang.org/grpc`, and the `apiserver`, `auth`, `tlsutil` internal packages. `cfg` satisfies `auth.KeyStore` because `config.Config` has `RoleForKey` (Task 4).
 
-- [ ] **Step 4: Run tests + manual smoke**
+- [x] **Step 4: Run tests + manual smoke**
 
 Run: `go test ./... -v`
 Expected: PASS across all packages.
@@ -1195,7 +1195,7 @@ kill %1; rm -rf ./tmp-data
 ```
 Expected: `ok` from healthz; `/v1/node` returns 401 (no key configured) — wiring confirmed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/node/
