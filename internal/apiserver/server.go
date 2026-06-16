@@ -26,6 +26,7 @@ type Options struct {
 	Health                    *obs.Health     // optional; health routes mounted if set
 	Sandboxes                 *SandboxService // optional; registered if set
 	Events                    *events.Bus     // optional; mounts /v1/events (SSE) under auth if set
+	Policy                    *PolicyService  // optional; registered if set
 }
 
 // Build constructs the one-port handler and the gRPC server. The caller serves
@@ -53,6 +54,13 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	if opts.Sandboxes != nil {
 		sbxv1.RegisterSandboxServiceServer(grpcSrv, opts.Sandboxes)
 		if err := sbxv1.RegisterSandboxServiceHandlerServer(context.Background(), gw, opts.Sandboxes); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if opts.Policy != nil {
+		sbxv1.RegisterPolicyServiceServer(grpcSrv, opts.Policy)
+		if err := sbxv1.RegisterPolicyServiceHandlerServer(context.Background(), gw, opts.Policy); err != nil {
 			return nil, nil, err
 		}
 	}

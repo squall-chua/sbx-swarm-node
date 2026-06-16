@@ -16,6 +16,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/squall-chua/sbx-swarm-node/internal/apiserver"
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
@@ -73,6 +74,8 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	opsM.SetPublisher(bus)
 	opsM.SetMetrics(metrics)
 	sandboxes := apiserver.NewSandboxService(mgr, opsM)
+	auditLog := audit.New(st, func() int64 { return time.Now().Unix() })
+	policySvc := apiserver.NewPolicyService(mgr, auditLog)
 
 	// Background observability collectors.
 	nctx, cancel := context.WithCancel(context.Background())
@@ -117,6 +120,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Health:    health,
 		Sandboxes: sandboxes,
 		Events:    bus,
+		Policy:    policySvc,
 	})
 	if err != nil {
 		cancel()
