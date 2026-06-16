@@ -50,7 +50,7 @@ func startNode(t *testing.T, listenAddr, gossipAddr string, seeds []string) *nod
 	cfg.GossipAddr = gossipAddr
 	cfg.ClusterSecret = "integration-test-secret"
 	cfg.Join = seeds
-	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}}
+	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}, {Key: "ro", Role: "read-only"}}
 
 	log := obs.NewLogger("error", io.Discard)
 	n, err := node.New(cfg, log, "test")
