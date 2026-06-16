@@ -41,7 +41,7 @@ Module path: `github.com/squall-chua/sbx-swarm-node`.
 - Create: `go.mod`
 - Create: `cmd/sbx-swarm-node/main.go`
 
-- [ ] **Step 1: Create `go.mod`**
+- [x] **Step 1: Create `go.mod`**
 
 ```
 module github.com/squall-chua/sbx-swarm-node
@@ -57,7 +57,7 @@ require (
 )
 ```
 
-- [ ] **Step 2: Create a minimal compilable `cmd/sbx-swarm-node/main.go`**
+- [x] **Step 2: Create a minimal compilable `cmd/sbx-swarm-node/main.go`**
 
 ```go
 // Command sbx-swarm-node runs a single Docker-sandbox swarm node.
@@ -73,17 +73,17 @@ func main() {
 }
 ```
 
-- [ ] **Step 3: Fetch deps and verify it builds**
+- [x] **Step 3: Fetch deps and verify it builds**
 
 Run: `go mod tidy && go build ./...`
 Expected: no errors; `go.sum` is created.
 
-- [ ] **Step 4: Verify it runs**
+- [x] **Step 4: Verify it runs**
 
 Run: `go run ./cmd/sbx-swarm-node`
 Expected: prints `sbx-swarm-node dev`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add go.mod go.sum cmd/sbx-swarm-node/main.go
@@ -98,7 +98,7 @@ git commit -m "chore: scaffold sbx-swarm-node module and entrypoint"
 - Create: `internal/config/config.go`
 - Test: `internal/config/config_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package config
@@ -142,12 +142,12 @@ func TestLoad_Defaults(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config/ -run TestLoad -v`
 Expected: FAIL — `undefined: Load`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package config loads node configuration from defaults, an optional YAML
@@ -246,12 +246,12 @@ func Load(args []string, lookupEnv func(string) (string, bool)) (*Config, error)
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/config/ -run TestLoad -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/config/
@@ -266,7 +266,7 @@ git commit -m "feat(config): layered config loader (file/env/flags precedence)"
 - Modify: `internal/config/config.go`
 - Test: `internal/config/config_test.go`
 
-- [ ] **Step 1: Write the failing test (append to `config_test.go`)**
+- [x] **Step 1: Write the failing test (append to `config_test.go`)**
 
 ```go
 func TestValidate(t *testing.T) {
@@ -283,12 +283,12 @@ func TestValidate(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config/ -run TestValidate -v`
 Expected: FAIL — `cfg.Validate undefined`
 
-- [ ] **Step 3: Add `Validate` to `config.go`**
+- [x] **Step 3: Add `Validate` to `config.go`**
 
 ```go
 // Validate checks the configuration for obvious mistakes.
@@ -311,12 +311,12 @@ func (c *Config) Validate() error {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/config/ -v`
 Expected: PASS (all config tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/config/
@@ -333,7 +333,7 @@ Implements ADR-0004 (`node_id = short-hash(pubkey)`) and the persisted-key requi
 - Create: `internal/identity/identity.go`
 - Test: `internal/identity/identity_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package identity
@@ -377,12 +377,12 @@ func TestLoadOrCreate_PersistsAndReuses(t *testing.T) {
 
 Add `"strings"` to the test imports.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/identity/ -v`
 Expected: FAIL — `undefined: DeriveNodeID` / `LoadOrCreate`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package identity manages the node's persistent Ed25519 keypair and derives
@@ -450,12 +450,12 @@ func LoadOrCreate(dir string) (*Identity, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/identity/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/identity/
@@ -472,7 +472,7 @@ Implements ADR-0002 (`<node_id>.<ulid>`).
 - Create: `internal/ids/ids.go`
 - Test: `internal/ids/ids_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package ids
@@ -510,12 +510,12 @@ func TestOwner_Invalid(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ids/ -v`
 Expected: FAIL — `undefined: NewGen`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package ids mints self-routing identifiers of the form <node_id>.<ulid>,
@@ -566,12 +566,12 @@ func Owner(id string) (string, bool) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/ids/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/ids/
@@ -588,7 +588,7 @@ Implements the persistence model (spec §16) and the `schema_version` forward-mi
 - Create: `internal/store/store.go`
 - Test: `internal/store/store_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package store
@@ -646,12 +646,12 @@ func TestOpen_DowngradeGuard(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/store/ -v`
 Expected: FAIL — `undefined: Open`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package store is the node's durable state in a single bbolt file. It owns
@@ -748,12 +748,12 @@ func putUint64(b *bolt.Bucket, key []byte, v uint64) error {
 
 Note: the unused `metaBucket` alias is intentional naming clarity — if `go vet`/lint flags it, delete the `metaBucket` line and keep `bucketMeta`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/store/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/store/
@@ -768,7 +768,7 @@ git commit -m "feat(store): bbolt store with buckets, schema version, downgrade 
 - Create: `internal/obs/obs.go`
 - Test: `internal/obs/obs_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package obs
@@ -817,12 +817,12 @@ func TestHealth_Endpoints(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/obs/ -v`
 Expected: FAIL — `undefined: NewHealth`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 // Package obs provides logging, Prometheus metrics, and the health/readiness
@@ -902,12 +902,12 @@ func (h *Health) Handler() http.Handler {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/obs/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/obs/
@@ -923,7 +923,7 @@ git commit -m "feat(obs): slog logger, prometheus metrics, health endpoints"
 - Test: `internal/node/node_test.go`
 - Modify: `cmd/sbx-swarm-node/main.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package node
@@ -969,12 +969,12 @@ func TestNode_BootServeStop(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/node/ -v`
 Expected: FAIL — `undefined: New`
 
-- [ ] **Step 3: Write `internal/node/node.go`**
+- [x] **Step 3: Write `internal/node/node.go`**
 
 ```go
 // Package node wires the M1a components — identity, store, observability —
@@ -1078,12 +1078,12 @@ func (n *Node) Stop(ctx context.Context) error {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/node/ -v`
 Expected: PASS
 
-- [ ] **Step 5: Rewrite `cmd/sbx-swarm-node/main.go` to wire it all**
+- [x] **Step 5: Rewrite `cmd/sbx-swarm-node/main.go` to wire it all**
 
 ```go
 // Command sbx-swarm-node runs a single Docker-sandbox swarm node.
@@ -1140,7 +1140,7 @@ func run() error {
 }
 ```
 
-- [ ] **Step 6: Verify build, full tests, and manual smoke**
+- [x] **Step 6: Verify build, full tests, and manual smoke**
 
 Run: `go build ./... && go test ./...`
 Expected: PASS across all packages.
@@ -1148,7 +1148,7 @@ Expected: PASS across all packages.
 Run: `go run ./cmd/sbx-swarm-node --data-dir ./tmp-data --listen-addr 127.0.0.1:8443 &` then `curl -s localhost:8443/healthz` then `curl -s localhost:8443/readyz`
 Expected: `ok` and `ready`. Stop with `kill %1`. (Clean up: `rm -rf ./tmp-data`.)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/node/ cmd/sbx-swarm-node/main.go
