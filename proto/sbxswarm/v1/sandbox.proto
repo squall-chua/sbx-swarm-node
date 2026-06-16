@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package sbxswarm.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1";
+
+service SandboxService {
+  rpc CreateSandbox(CreateSandboxRequest) returns (Operation) {
+    option (google.api.http) = {post: "/v1/sandboxes" body: "*"};
+  }
+  rpc GetSandbox(GetSandboxRequest) returns (Sandbox) {
+    option (google.api.http) = {get: "/v1/sandboxes/{id}"};
+  }
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse) {
+    option (google.api.http) = {get: "/v1/sandboxes"};
+  }
+  rpc DeleteSandbox(DeleteSandboxRequest) returns (Operation) {
+    option (google.api.http) = {delete: "/v1/sandboxes/{id}"};
+  }
+  rpc StartSandbox(IdRequest) returns (Sandbox) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/start"};
+  }
+  rpc StopSandbox(IdRequest) returns (Sandbox) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/stop"};
+  }
+  rpc Exec(ExecRequest) returns (ExecResponse) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/exec" body: "*"};
+  }
+  rpc AgentRun(AgentRunRequest) returns (Operation) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/agent-run" body: "*"};
+  }
+  rpc PublishPort(PublishPortRequest) returns (Port) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/ports" body: "*"};
+  }
+  rpc ListPorts(IdRequest) returns (ListPortsResponse) {
+    option (google.api.http) = {get: "/v1/sandboxes/{id}/ports"};
+  }
+}
+
+message WorkspaceMount {
+  string name = 1;
+  bool read_only = 2;
+}
+
+message CreateSandboxRequest {
+  string agent = 1;
+  string template = 2;
+  int32 cpus = 3;
+  int64 memory_bytes = 4;
+  bool clone = 5;
+  repeated WorkspaceMount workspaces = 6;
+  map<string, string> env = 7;
+  map<string, string> labels = 8;
+}
+
+message Sandbox {
+  string id = 1;
+  string owner_node = 2;
+  string status = 3;
+  repeated Port ports = 4;
+  map<string, string> labels = 5;
+}
+
+message GetSandboxRequest { string id = 1; }
+message IdRequest { string id = 1; }
+message DeleteSandboxRequest { string id = 1; }
+
+message ListSandboxesRequest {
+  string status = 1;
+  string label = 2;
+}
+message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
+
+message ExecRequest {
+  string id = 1;
+  repeated string cmd = 2;
+  string workdir = 3;
+  map<string, string> env = 4;
+}
+message ExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+}
+
+message AgentRunRequest {
+  string id = 1;
+  repeated string cmd = 2;
+  string workdir = 3;
+  map<string, string> env = 4;
+  bool publish_on_success = 5;
+}
+
+message PublishPortRequest {
+  string id = 1;
+  int32 container_port = 2;
+}
+message Port {
+  int32 container_port = 1;
+  int32 host_port = 2;
+}
+message ListPortsResponse { repeated Port ports = 1; }
+
+message Operation {
+  string id = 1;
+  string type = 2;
+  string state = 3;
+  string sandbox_id = 4;
+  string error = 5;
+}
