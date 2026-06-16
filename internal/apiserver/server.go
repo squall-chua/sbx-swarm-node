@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"crypto"
 	"crypto/tls"
 	"net/http"
 	"strings"
@@ -32,6 +33,7 @@ type Options struct {
 	Forward                   *Forwarder      // optional; mounts unary forwarding interceptor if set
 	Routing                   *routing.Table  // optional; used for SSE peer-merge when combined with Peers
 	Peers                     *peer.Pool      // optional; used for SSE peer-merge when Routing is set
+	Pins                      PinResolver     // optional; resolves per-node TLS pin for OwnerProxy
 	NodeSvc                   *NodeService    // optional; if set, used instead of creating a new one (allows pre-wired Cordoner)
 }
 
@@ -98,7 +100,11 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	// runs after authentication (the caller is authenticated at this node) but
 	// before the local handlers; local ids fall through unchanged. Nil-safe.
 	if opts.Routing != nil {
-		v1 = OwnerProxy(opts.Routing, v1)
+		pins := opts.Pins
+		if pins == nil {
+			pins = func(string) (crypto.PublicKey, bool) { return nil, false }
+		}
+		v1 = OwnerProxy(opts.Routing, pins, v1)
 	}
 
 	rest := http.NewServeMux()

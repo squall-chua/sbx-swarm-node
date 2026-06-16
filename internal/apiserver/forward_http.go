@@ -1,31 +1,26 @@
 package apiserver
 
 import (
+	"crypto"
 	"crypto/tls"
 	"net/http"
 	"net/http/httputil"
 	"strings"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
+	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 )
 
-// OwnerProxy reverse-proxies REST requests for a remote sandbox to its owning
-// node. It covers both unary REST (the in-process gateway never traverses the
-// gRPC forwarding interceptor) and SSE streams (logs/stats), and naturally
-// preserves the caller's Authorization/Cookie/Idempotency-Key headers so the
-// owner re-authenticates the request.
-//
-// Paths handled: /v1/sandboxes/{id} and /v1/sandboxes/{id}/... . The {id} is the
-// first path segment after /v1/sandboxes/. When the id is routable (self-routing
-// "<node>.<ulid>") and not local, the request is proxied to the owner; otherwise
-// it falls through to next (local handler → proper 404 for unknown ids).
-func OwnerProxy(tbl *routing.Table, next http.Handler) http.Handler {
+// PinResolver returns the expected peer public key for a node id (TLS pin).
+type PinResolver func(nodeID string) (crypto.PublicKey, bool)
+
+// OwnerProxy reverse-proxies REST/SSE for a remote sandbox to its owning node,
+// pinning the owner's TLS leaf cert to its gossiped pubkey (ADR-0004). Fail-closed
+// (502) when no pin is known.
+func OwnerProxy(tbl *routing.Table, pins PinResolver, next http.Handler) http.Handler {
 	if tbl == nil {
 		return next
 	}
-	// v1 trusted-network only; peer identity/MITM protection pending node-key
-	// challenge auth (ADR-0004).
-	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := sandboxPathID(r.URL.Path)
 		if !ok || !strings.Contains(id, ".") || tbl.IsLocal(id) {
@@ -39,18 +34,25 @@ func OwnerProxy(tbl *routing.Table, next http.Handler) http.Handler {
 		}
 		addr, ok := tbl.Addr(owner)
 		if !ok {
-			next.ServeHTTP(w, r) // unknown owner addr → local handler returns 404
+			next.ServeHTTP(w, r)
 			return
 		}
-
+		pin, ok := pins(owner)
+		if !ok {
+			http.Error(w, "no TLS pin known for owner node", http.StatusBadGateway)
+			return
+		}
+		transport := &http.Transport{TLSClientConfig: &tls.Config{
+			InsecureSkipVerify:    true, //nolint:gosec // pin is enforced below
+			VerifyPeerCertificate: tlsutil.PinnedVerify(pin),
+		}}
 		proxy := &httputil.ReverseProxy{
 			Director: func(req *http.Request) {
 				req.URL.Scheme = "https"
 				req.URL.Host = addr
 				req.Host = addr
 			},
-			Transport: transport,
-			// Flush SSE frames immediately rather than buffering.
+			Transport:     transport,
 			FlushInterval: -1,
 		}
 		proxy.ServeHTTP(w, r)

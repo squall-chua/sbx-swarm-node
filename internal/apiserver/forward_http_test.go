@@ -1,9 +1,12 @@
 package apiserver
 
 import (
-	"io"
+	"crypto"
+	"crypto/ed25519"
+	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
@@ -42,7 +45,8 @@ func localSentinel(called *bool) http.Handler {
 func TestOwnerProxy_LocalFallsThrough(t *testing.T) {
 	tbl := routing.NewTable("nA")
 	called := false
-	h := OwnerProxy(tbl, localSentinel(&called))
+	noPin := func(string) (crypto.PublicKey, bool) { return nil, false }
+	h := OwnerProxy(tbl, noPin, localSentinel(&called))
 
 	// Local id (owner == self) → next handler.
 	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nA.abc", nil)
@@ -56,7 +60,8 @@ func TestOwnerProxy_UnknownOwnerFallsThrough(t *testing.T) {
 	tbl := routing.NewTable("nA")
 	// nB owner is routable but its addr is unknown → fall through to local 404.
 	called := false
-	h := OwnerProxy(tbl, localSentinel(&called))
+	noPin := func(string) (crypto.PublicKey, bool) { return nil, false }
+	h := OwnerProxy(tbl, noPin, localSentinel(&called))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nB.abc", nil)
 	rr := httptest.NewRecorder()
@@ -68,7 +73,8 @@ func TestOwnerProxy_UnknownOwnerFallsThrough(t *testing.T) {
 func TestOwnerProxy_NonRoutableFallsThrough(t *testing.T) {
 	tbl := routing.NewTable("nA")
 	called := false
-	h := OwnerProxy(tbl, localSentinel(&called))
+	noPin := func(string) (crypto.PublicKey, bool) { return nil, false }
+	h := OwnerProxy(tbl, noPin, localSentinel(&called))
 
 	// Id without a dot is not self-routing → local.
 	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/plainid", nil)
@@ -77,31 +83,52 @@ func TestOwnerProxy_NonRoutableFallsThrough(t *testing.T) {
 	require.True(t, called)
 }
 
-func TestOwnerProxy_RemoteProxies(t *testing.T) {
-	// Owner backend (TLS) echoes a marker so we can prove the proxy reached it.
+func TestOwnerProxy_PinnedForwardToOwner(t *testing.T) {
 	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/sandboxes/nB.abc/logs", r.URL.Path)
 		require.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "from-owner")
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer backend.Close()
+	addr := strings.TrimPrefix(backend.URL, "https://")
 
-	// backend.Listener.Addr() gives host:port; strip scheme.
-	ownerAddr := backend.Listener.Addr().String()
-
+	leafPub := backend.Certificate().PublicKey
 	tbl := routing.NewTable("nA")
-	tbl.Upsert("nB", ownerAddr, false, nil)
+	tbl.Upsert("nB", addr, false, nil)
 
-	called := false
-	h := OwnerProxy(tbl, localSentinel(&called))
+	resolver := func(nodeID string) (crypto.PublicKey, bool) {
+		if nodeID == "nB" {
+			return leafPub, true
+		}
+		return nil, false
+	}
+	h := OwnerProxy(tbl, resolver, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("should have proxied")
+	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nB.abc/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nB.abc", nil)
 	req.Header.Set("Authorization", "Bearer tok")
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-
-	require.False(t, called, "should NOT fall through to local for a remote sandbox")
 	require.Equal(t, http.StatusOK, rr.Code)
-	require.Equal(t, "from-owner", rr.Body.String())
+	require.Equal(t, "ok", rr.Body.String())
+}
+
+func TestOwnerProxy_PinMismatchFailsClosed(t *testing.T) {
+	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+	addr := strings.TrimPrefix(backend.URL, "https://")
+
+	wrongPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	tbl := routing.NewTable("nA")
+	tbl.Upsert("nB", addr, false, nil)
+	resolver := func(string) (crypto.PublicKey, bool) { return wrongPub, true }
+	h := OwnerProxy(tbl, resolver, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nB.abc", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusBadGateway, rr.Code) // pin rejected the channel
 }
