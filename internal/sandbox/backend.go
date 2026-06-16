@@ -1,0 +1,78 @@
+// Package sandbox manages sandboxes on this node behind a Backend abstraction
+// over the sbx-go-sdk, with an in-memory fake for tests.
+package sandbox
+
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotFound is returned when a sandbox does not exist in the backend.
+var ErrNotFound = errors.New("sandbox not found")
+
+// WorkspaceMount describes a workspace to attach.
+type WorkspaceMount struct {
+	Name     string // logical workspace name (resolved to a host path by the backend/config)
+	ReadOnly bool
+}
+
+// CreateSpec describes a sandbox to provision.
+type CreateSpec struct {
+	Name        string
+	Agent       string
+	Template    string
+	CPUs        int
+	MemoryBytes int64
+	Clone       bool
+	Workspaces  []WorkspaceMount
+	Env         map[string]string
+}
+
+// BackendSandbox is the backend's view of a sandbox.
+type BackendSandbox struct {
+	Name   string
+	Status string // "running" | "stopped" | ...
+}
+
+// ExecOpts are options for exec/agent-run.
+type ExecOpts struct {
+	Workdir string
+	Env     map[string]string
+}
+
+// ExecResult is the captured outcome of a synchronous exec.
+type ExecResult struct {
+	ExitCode int
+	Stdout   []byte
+	Stderr   []byte
+}
+
+// DetachedStatus is the poll result for a detached exec / agent run.
+type DetachedStatus struct {
+	Done     bool
+	ExitCode int // valid when Done
+}
+
+// PublishedPort maps a container port to a host port.
+type PublishedPort struct {
+	ContainerPort int
+	HostPort      int
+}
+
+// Backend is the abstraction over sbx-go-sdk used by the manager.
+type Backend interface {
+	Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error)
+	Get(ctx context.Context, name string) (BackendSandbox, error)
+	List(ctx context.Context) ([]BackendSandbox, error)
+	Start(ctx context.Context, name string) error
+	Stop(ctx context.Context, name string) error
+	Remove(ctx context.Context, name string) error
+	Exec(ctx context.Context, name string, cmd []string, opts ExecOpts) (ExecResult, error)
+	ExecDetached(ctx context.Context, name string, cmd []string, opts ExecOpts) (detachedID string, err error)
+	PollDetached(ctx context.Context, name, detachedID string) (DetachedStatus, error)
+	PublishPort(ctx context.Context, name string, containerPort int) (PublishedPort, error)
+	Ports(ctx context.Context, name string) ([]PublishedPort, error)
+	UnpublishPort(ctx context.Context, name string, containerPort int) error
+	CopyTo(ctx context.Context, name, localPath, remotePath string) error
+	CopyFrom(ctx context.Context, name, remotePath, localPath string) error
+}
