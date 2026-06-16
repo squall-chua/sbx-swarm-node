@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -41,6 +42,7 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 			MarshalOptions:   protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true},
 			UnmarshalOptions: protojson.UnmarshalOptions{DiscardUnknown: true},
 		}),
+		runtime.WithIncomingHeaderMatcher(incomingHeaderMatcher),
 	)
 	if err := sbxv1.RegisterNodeServiceHandlerServer(context.Background(), gw, node); err != nil {
 		return nil, nil, err
@@ -66,6 +68,16 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	}
 
 	return Multiplex(grpcSrv, rest), grpcSrv, nil
+}
+
+// incomingHeaderMatcher forwards the Idempotency-Key REST header into gRPC
+// metadata (the default matcher drops non-permanent headers), so REST clients
+// get the same idempotent behavior as native gRPC callers.
+func incomingHeaderMatcher(key string) (string, bool) {
+	if strings.EqualFold(key, "Idempotency-Key") {
+		return "idempotency-key", true
+	}
+	return runtime.DefaultHeaderMatcher(key)
 }
 
 // sessionHandler exchanges a valid API key (Authorization: Bearer <key>) for an

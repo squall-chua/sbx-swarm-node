@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -142,4 +143,30 @@ func TestServer_CreateSandboxOverREST(t *testing.T) {
 	resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, string(body), `"id"`) // operation id
+}
+
+func TestServer_CreateSandboxIdempotentOverREST(t *testing.T) {
+	addr, cleanup := startTestServerWithSandboxes(t)
+	defer cleanup()
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+
+	do := func() string {
+		req, _ := http.NewRequest(http.MethodPost, "https://"+addr+"/v1/sandboxes", strings.NewReader(`{"cpus":1}`))
+		req.Header.Set("Authorization", "Bearer adm")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "key-xyz")
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var op struct {
+			Id string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(body, &op))
+		require.NotEmpty(t, op.Id)
+		return op.Id
+	}
+
+	require.Equal(t, do(), do()) // same Idempotency-Key -> same operation
 }
