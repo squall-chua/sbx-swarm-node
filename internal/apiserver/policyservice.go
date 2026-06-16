@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -33,6 +34,16 @@ func (s *PolicyService) scopeName(ctx context.Context, scope string) (string, er
 	return s.mgr.Resolve(ctx, scope)
 }
 
+// scopeStatusErr maps a scopeName error to a gRPC status: a missing sandbox is
+// NotFound; any other error (store I/O, JSON decode) is Internal — so real
+// backend failures are not masked as "not found".
+func scopeStatusErr(err error) error {
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return status.Error(codes.NotFound, err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
+}
+
 // actor returns the authenticated role from context, or "" if unauthenticated.
 func actor(ctx context.Context) string {
 	r, _ := auth.RoleFromContext(ctx)
@@ -50,7 +61,7 @@ func outcomeOf(err error) string {
 func (s *PolicyService) SetPolicy(ctx context.Context, r *sbxv1.SetPolicyRequest) (*sbxv1.Empty, error) {
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, scopeStatusErr(err)
 	}
 	var opErr error
 	switch r.Decision {
@@ -78,7 +89,7 @@ func (s *PolicyService) SetPolicy(ctx context.Context, r *sbxv1.SetPolicyRequest
 func (s *PolicyService) ListPolicy(ctx context.Context, r *sbxv1.ScopeRequest) (*sbxv1.ListPolicyResponse, error) {
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, scopeStatusErr(err)
 	}
 	rules, err := s.mgr.Backend().PolicyList(ctx, name)
 	if err != nil {
@@ -103,7 +114,7 @@ func (s *PolicyService) ListPolicy(ctx context.Context, r *sbxv1.ScopeRequest) (
 func (s *PolicyService) SetSecret(ctx context.Context, r *sbxv1.SetSecretRequest) (*sbxv1.Empty, error) {
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, scopeStatusErr(err)
 	}
 	serr := s.mgr.Backend().SecretSet(ctx, name, sandbox.CustomSecret{
 		Host:  r.Host,
@@ -128,7 +139,7 @@ func (s *PolicyService) SetSecret(ctx context.Context, r *sbxv1.SetSecretRequest
 func (s *PolicyService) ListSecrets(ctx context.Context, r *sbxv1.ScopeRequest) (*sbxv1.ListSecretsResponse, error) {
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, scopeStatusErr(err)
 	}
 	secs, err := s.mgr.Backend().SecretList(ctx, name)
 	if err != nil {
@@ -149,7 +160,7 @@ func (s *PolicyService) ListSecrets(ctx context.Context, r *sbxv1.ScopeRequest) 
 func (s *PolicyService) DeleteSecret(ctx context.Context, r *sbxv1.DeleteSecretRequest) (*sbxv1.Empty, error) {
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, scopeStatusErr(err)
 	}
 	derr := s.mgr.Backend().SecretRemove(ctx, name, r.Host)
 	_ = s.audit.Record(audit.Entry{

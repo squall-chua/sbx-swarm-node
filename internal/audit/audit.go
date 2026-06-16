@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
+	bolt "go.etcd.io/bbolt"
 )
 
 const bucket = "audit"
@@ -32,21 +33,29 @@ type Log struct {
 // New builds an audit log. now returns a unix timestamp (injected for tests).
 func New(st *store.Store, now func() int64) *Log { return &Log{store: st, now: now} }
 
-// Record appends an entry with a monotonic seq (big-endian bbolt key).
+// Record appends an entry in a single transaction. The Seq is the bucket's
+// monotonic sequence (atomic via NextSequence), and the big-endian-encoded Seq
+// is the key, so concurrent appends never collide and List stays in Seq order.
 func (l *Log) Record(e Entry) error {
 	e.TSUnix = l.now()
-	cur, err := l.List()
-	if err != nil {
-		return err
-	}
-	e.Seq = int64(len(cur)) + 1
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key, uint64(e.Seq))
-	raw, err := json.Marshal(e)
-	if err != nil {
-		return err
-	}
-	return l.store.Put(bucket, string(key), raw)
+	return l.store.DB().Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return fmt.Errorf("unknown bucket %q", bucket)
+		}
+		seq, err := b.NextSequence()
+		if err != nil {
+			return err
+		}
+		e.Seq = int64(seq)
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, seq)
+		raw, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+		return b.Put(key, raw)
+	})
 }
 
 // List returns all entries in seq order.

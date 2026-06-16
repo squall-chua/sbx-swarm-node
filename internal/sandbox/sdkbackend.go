@@ -426,6 +426,10 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 	return out, nil
 }
 
+// SecretRemove deletes a secret in scope. NOTE (unverified, integration-only):
+// sdksecret.Remove documents its last arg as `service`, but custom secrets are
+// keyed by target host. Whether passing the host here actually removes a
+// set-custom entry needs a live-daemon integration test to confirm.
 func (b *SDKBackend) SecretRemove(ctx context.Context, scope, host string) error {
 	return sdksecret.Remove(ctx, b.cl, scope, host)
 }
