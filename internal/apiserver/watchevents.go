@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"sync"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
@@ -23,12 +24,26 @@ func NewMerger(out chan events.Event) *Merger {
 	return &Merger{out: out}
 }
 
-// Consume reads from ch until it is closed, forwarding events that have not
-// been seen before (by ID) into the output channel.
-func (m *Merger) Consume(ch <-chan events.Event) {
-	for e := range ch {
-		if m.markSeen(e.ID) {
-			m.out <- e
+// Consume reads from ch until it is closed (or ctx is cancelled), forwarding
+// events that have not been seen before (by ID) into the output channel. The
+// send is guarded by ctx so that when the SSE client disconnects, this
+// goroutine returns instead of blocking forever on a full/unread out channel.
+func (m *Merger) Consume(ctx context.Context, ch <-chan events.Event) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e, ok := <-ch:
+			if !ok {
+				return
+			}
+			if m.markSeen(e.ID) {
+				select {
+				case m.out <- e:
+				case <-ctx.Done():
+					return
+				}
+			}
 		}
 	}
 }

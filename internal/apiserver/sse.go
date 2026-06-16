@@ -111,12 +111,13 @@ func SSEHandlerWithPeers(bus *events.Bus, tbl *routing.Table, pool *peer.Pool) h
 		flusher.Flush()
 
 		// Merged output channel: local bus + peer WatchEvents streams.
+		ctx := r.Context()
 		merged := make(chan events.Event, 128)
 		merger := NewMerger(merged)
 
 		localCh, cancel := bus.Subscribe(filter, since)
 		defer cancel()
-		go merger.Consume(localCh)
+		go merger.Consume(ctx, localCh)
 
 		// Open WatchEvents to each peer (best-effort; ignore dial errors).
 		peers := tbl.Peers()
@@ -140,7 +141,7 @@ func SSEHandlerWithPeers(bus *events.Bus, tbl *routing.Table, pool *peer.Pool) h
 				continue
 			}
 			peerCh := make(chan events.Event, 64)
-			go merger.Consume(peerCh)
+			go merger.Consume(ctx, peerCh)
 			go func() {
 				defer close(peerCh)
 				for {
@@ -148,19 +149,22 @@ func SSEHandlerWithPeers(bus *events.Bus, tbl *routing.Table, pool *peer.Pool) h
 					if err != nil {
 						return
 					}
-					peerCh <- events.Event{
+					select {
+					case peerCh <- events.Event{
 						ID:        msg.Id,
 						Seq:       msg.Seq,
 						Type:      msg.Type,
 						NodeID:    msg.NodeId,
 						SandboxID: msg.SandboxId,
 						Payload:   msg.Payload,
+					}:
+					case <-peerCtx.Done():
+						return
 					}
 				}
 			}()
 		}
 
-		ctx := r.Context()
 		for {
 			select {
 			case <-ctx.Done():

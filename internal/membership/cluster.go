@@ -144,17 +144,12 @@ func (c *Cluster) SetCordoned(cordoned bool) {
 	c.mu.Lock()
 	c.local.Cordoned = cordoned
 	c.local.StateVersion++
+	ml := c.ml
 	c.mu.Unlock()
 	c.tbl.Upsert(c.local.NodeID, c.local.Addr, cordoned)
-	_ = c.ml.UpdateNode(5 * time.Second)
-}
-
-// BumpStateVersion increments the local StateVersion (call after owned-sandbox
-// set changes so peers pick up the new bulk state on next push/pull).
-func (c *Cluster) BumpStateVersion() {
-	c.mu.Lock()
-	c.local.StateVersion++
-	c.mu.Unlock()
+	if ml != nil {
+		_ = ml.UpdateNode(5 * time.Second)
+	}
 }
 
 // PeerStates returns a snapshot of all known peer bulk states.
@@ -175,13 +170,20 @@ func (c *Cluster) localState() NodeState {
 	return c.local
 }
 
-// UpdateLocalSandboxIDs replaces OwnedSandboxIDs and bumps StateVersion so
-// peers pick up the change on the next push/pull cycle.
+// UpdateLocalSandboxIDs replaces OwnedSandboxIDs, bumps StateVersion, and
+// re-advertises so peers pick up the change. The owned-id set rides bulk
+// push/pull; UpdateNode promptly propagates the bumped StateVersion in meta and
+// triggers a gossip round. Safe to call before memberlist is created (no-op
+// re-advertise when ml is nil).
 func (c *Cluster) UpdateLocalSandboxIDs(ids []string) {
 	c.mu.Lock()
 	c.local.OwnedSandboxIDs = ids
 	c.local.StateVersion++
+	ml := c.ml
 	c.mu.Unlock()
+	if ml != nil {
+		_ = ml.UpdateNode(5 * time.Second)
+	}
 }
 
 // --- delegate (push/pull + broadcasts) ---
@@ -224,6 +226,14 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 		return
 	}
 
+	// Protocol-version gating (ADR-0009): for v1 require an exact match. Skip
+	// (do not Upsert / track) peers on an incompatible protocol version.
+	if remote.ProtocolVersion != ProtocolVersion {
+		d.c.log.Warn("MergeRemoteState: incompatible protocol version; skipping peer",
+			"local_proto", ProtocolVersion, "remote_proto", remote.ProtocolVersion, "peer", remote.NodeID)
+		return
+	}
+
 	localID := func() string {
 		d.c.mu.RLock()
 		defer d.c.mu.RUnlock()
@@ -253,11 +263,14 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 
 	// Adopt swarm id if we are still pending-join and remote has one.
 	if isPending && remote.SwarmID != "" {
-		if err := d.c.si.Adopt(d.c.siPath, remote.SwarmID, remote.NodeID); err != nil {
+		if err := d.c.si.Adopt(d.c.siPath, remote.SwarmID, remote.SwarmName); err != nil {
 			d.c.log.Warn("Adopt failed", "err", err)
 		} else {
 			d.c.mu.Lock()
 			d.c.local.SwarmID = remote.SwarmID
+			// Transition out of pending-join so we stop re-Adopting (re-writing
+			// swarm.json) on every subsequent push/pull round.
+			d.c.si.Mode = ModeRejoin
 			d.c.mu.Unlock()
 			d.c.log.Info("adopted swarm id from peer",
 				"swarm_id", remote.SwarmID, "peer", remote.NodeID)
@@ -271,10 +284,12 @@ type eventDelegate struct{ c *Cluster }
 
 func (e *eventDelegate) NotifyJoin(node *memberlist.Node) {
 	ns, err := DecodeMeta(node.Meta)
-	if err != nil || ns.NodeID == "" {
-		// Use node.Name as fallback NodeID (we set Name = NodeID in cluster config).
-		ns.NodeID = node.Name
-		ns.Addr = node.Address()
+	if err != nil || ns.NodeID == "" || ns.Addr == "" {
+		// Meta unavailable/empty: do NOT fall back to node.Address() — that is the
+		// gossip port, not the API/routing addr. MergeRemoteState (bulk push/pull)
+		// will supply the correct API addr shortly.
+		e.c.log.Info("memberlist: node joined (awaiting bulk state for addr)", "name", node.Name)
+		return
 	}
 	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned)
 	e.c.log.Info("memberlist: node joined", "node_id", ns.NodeID, "addr", ns.Addr)
@@ -282,9 +297,9 @@ func (e *eventDelegate) NotifyJoin(node *memberlist.Node) {
 
 func (e *eventDelegate) NotifyUpdate(node *memberlist.Node) {
 	ns, err := DecodeMeta(node.Meta)
-	if err != nil || ns.NodeID == "" {
-		ns.NodeID = node.Name
-		ns.Addr = node.Address()
+	if err != nil || ns.NodeID == "" || ns.Addr == "" {
+		e.c.log.Info("memberlist: node updated (awaiting bulk state for addr)", "name", node.Name)
+		return
 	}
 	e.c.tbl.Upsert(ns.NodeID, ns.Addr, ns.Cordoned)
 	e.c.log.Info("memberlist: node updated", "node_id", ns.NodeID, "cordoned", ns.Cordoned)

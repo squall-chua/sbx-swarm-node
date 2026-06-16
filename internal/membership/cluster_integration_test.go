@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,19 +108,12 @@ func TestCluster_TwoNodeJoin(t *testing.T) {
 	require.True(t, found, "nodeA.PeerStates should contain nodeB")
 }
 
-// TestCluster_ForwardSandboxRequest creates a sandbox on node B and verifies
-// it is reachable via node A's REST API (forwarding by self-routing id prefix).
-func TestCluster_ForwardSandboxRequest(t *testing.T) {
-	nodeA := startNode(t, "127.0.0.1:19543", "127.0.0.1:17956", nil)
-	nodeB := startNode(t, "127.0.0.1:19544", "127.0.0.1:17957", []string{"127.0.0.1:17956"})
-
-	// Wait for gossip to converge.
-	waitForPeer(t, nodeA, nodeB.NodeID(), 10*time.Second)
-
-	client := tlsClient()
-
-	// Create a sandbox on B directly.
-	createURL := fmt.Sprintf("https://%s/v1/sandboxes", nodeB.Addr())
+// createSandboxOnB POSTs a sandbox on the owner node, then polls its sandbox
+// list for the REAL sandbox id (CreateSandbox returns an async Operation, not
+// the sandbox itself). It returns the "<nodeID>.<ulid>" sandbox id.
+func createSandboxOnB(t *testing.T, client *http.Client, owner *node.Node) string {
+	t.Helper()
+	createURL := fmt.Sprintf("https://%s/v1/sandboxes", owner.Addr())
 	req, err := http.NewRequest(http.MethodPost, createURL, nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer adm")
@@ -129,20 +123,102 @@ func TestCluster_ForwardSandboxRequest(t *testing.T) {
 	defer createResp.Body.Close()
 	require.Equal(t, http.StatusOK, createResp.StatusCode)
 
-	var sbx struct {
-		ID string `json:"id"`
+	// Poll the owner's own list for the created sandbox id.
+	listURL := fmt.Sprintf("https://%s/v1/sandboxes", owner.Addr())
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp := authedGet(t, client, listURL, "adm")
+		var body struct {
+			Sandboxes []struct {
+				ID        string `json:"id"`
+				OwnerNode string `json:"owner_node"`
+			} `json:"sandboxes"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if len(body.Sandboxes) > 0 && body.Sandboxes[0].ID != "" {
+			require.Equal(t, owner.NodeID(), body.Sandboxes[0].OwnerNode)
+			return body.Sandboxes[0].ID
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	require.NoError(t, json.NewDecoder(createResp.Body).Decode(&sbx))
-	require.NotEmpty(t, sbx.ID)
+	t.Fatal("timeout: sandbox never appeared in owner's list")
+	return ""
+}
 
-	// Fetch the sandbox from A (should forward to B).
-	getURL := fmt.Sprintf("https://%s/v1/sandboxes/%s", nodeA.Addr(), sbx.ID)
+// TestCluster_ForwardSandboxRequest creates a sandbox on node B and verifies it
+// is reachable via node A's REST API: A must reverse-proxy GET
+// /v1/sandboxes/{id} to B (the owner) and return 200 with B's sandbox data.
+func TestCluster_ForwardSandboxRequest(t *testing.T) {
+	nodeA := startNode(t, "127.0.0.1:19543", "127.0.0.1:17956", nil)
+	nodeB := startNode(t, "127.0.0.1:19544", "127.0.0.1:17957", []string{"127.0.0.1:17956"})
+
+	// Wait for gossip to converge so A knows B's API address.
+	waitForPeer(t, nodeA, nodeB.NodeID(), 10*time.Second)
+
+	client := tlsClient()
+	sbxID := createSandboxOnB(t, client, nodeB)
+	require.Contains(t, sbxID, nodeB.NodeID()+".", "sandbox id must be self-routing under B")
+
+	// Fetch the sandbox from the NON-OWNER (A). A must forward to B and return
+	// 200 with B's data — NOT a local 404.
+	getURL := fmt.Sprintf("https://%s/v1/sandboxes/%s", nodeA.Addr(), sbxID)
 	resp := authedGet(t, client, getURL, "adm")
 	defer resp.Body.Close()
-	// 200 OK = forward succeeded; 404 = sandbox not found (acceptable if Fake
-	// backend doesn't persist across the forward); anything else is a failure.
-	require.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound,
-		"expected 200 or 404 from forwarded request, got %d", resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "non-owner A must forward GET to owner B")
+
+	var got struct {
+		ID        string `json:"id"`
+		OwnerNode string `json:"owner_node"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	require.Equal(t, sbxID, got.ID)
+	require.Equal(t, nodeB.NodeID(), got.OwnerNode, "forwarded response must carry B's ownership")
+}
+
+// TestCluster_ForwardLogsSSE verifies that a logs SSE stream for a B-owned
+// sandbox, requested on non-owner A, is relayed from B (C2).
+func TestCluster_ForwardLogsSSE(t *testing.T) {
+	nodeA := startNode(t, "127.0.0.1:19553", "127.0.0.1:17976", nil)
+	nodeB := startNode(t, "127.0.0.1:19554", "127.0.0.1:17977", []string{"127.0.0.1:17976"})
+
+	waitForPeer(t, nodeA, nodeB.NodeID(), 10*time.Second)
+
+	client := tlsClient()
+	sbxID := createSandboxOnB(t, client, nodeB)
+
+	// Request logs SSE on A (non-owner) — must be reverse-proxied to B.
+	logsURL := fmt.Sprintf("https://%s/v1/sandboxes/%s/logs", nodeA.Addr(), sbxID)
+	req, err := http.NewRequest(http.MethodGet, logsURL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer adm")
+	req.Header.Set("Accept", "text/event-stream")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := client.Do(req.WithContext(ctx))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "text/event-stream")
+
+	// Read until we see a relayed log data frame from B's fake backend.
+	buf := make([]byte, 256)
+	deadline := time.Now().Add(4 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			got += string(buf[:n])
+			if strings.Contains(got, "data:") {
+				break
+			}
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	require.Contains(t, got, "data:", "expected an SSE log frame relayed from B, got %q", got)
 }
 
 // TestCluster_NodeDeadRemovesFromPeers stops node B and verifies that A's

@@ -13,14 +13,21 @@ import (
 
 const bucket = "sandboxes"
 
+// OwnedIDsNotifier is notified when this node's owned-sandbox set changes, so
+// the cluster can re-gossip OwnedSandboxIDs. Implemented by membership.Cluster.
+type OwnedIDsNotifier interface {
+	UpdateLocalSandboxIDs(ids []string)
+}
+
 // Manager owns this node's sandbox records and drives the Backend.
 type Manager struct {
-	nodeID  string
-	backend Backend
-	store   *store.Store
-	ids     *ids.Gen
-	pub     events.Publisher
-	now     func() time.Time
+	nodeID   string
+	backend  Backend
+	store    *store.Store
+	ids      *ids.Gen
+	pub      events.Publisher
+	ownedSub OwnedIDsNotifier
+	now      func() time.Time
 }
 
 // NewManager builds a Manager.
@@ -31,10 +38,31 @@ func NewManager(nodeID string, backend Backend, st *store.Store, gen *ids.Gen) *
 // SetPublisher wires an event publisher (optional; nil disables events).
 func (m *Manager) SetPublisher(p events.Publisher) { m.pub = p }
 
+// SetOwnedIDsNotifier wires the cluster notifier (optional; nil disables
+// owned-id re-gossip for non-cluster nodes).
+func (m *Manager) SetOwnedIDsNotifier(n OwnedIDsNotifier) { m.ownedSub = n }
+
 func (m *Manager) emit(eventType, sandboxID string, payload any) {
 	if m.pub != nil {
 		m.pub.Publish(eventType, sandboxID, payload)
 	}
+}
+
+// notifyOwnedChanged recomputes the owned-id set and pushes it to the cluster
+// notifier (if wired) so peers receive the updated OwnedSandboxIDs via gossip.
+func (m *Manager) notifyOwnedChanged() {
+	if m.ownedSub == nil {
+		return
+	}
+	recs, err := m.List(context.Background())
+	if err != nil {
+		return
+	}
+	ids := make([]string, 0, len(recs))
+	for _, r := range recs {
+		ids = append(ids, r.ID)
+	}
+	m.ownedSub.UpdateLocalSandboxIDs(ids)
 }
 
 func (m *Manager) save(rec *Record) error {
@@ -64,6 +92,7 @@ func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) 
 		return nil, err
 	}
 	m.emit("sandbox.created", rec.ID, map[string]string{"status": rec.Status})
+	m.notifyOwnedChanged()
 	return rec, nil
 }
 
@@ -134,6 +163,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	m.emit("sandbox.deleted", id, nil)
+	m.notifyOwnedChanged()
 	return nil
 }
 

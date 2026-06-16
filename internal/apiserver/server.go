@@ -92,6 +92,14 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	if opts.Sandboxes != nil && opts.Sandboxes.observeStreamReady() {
 		v1 = observeStreamMux(opts.Sandboxes.obs, gw)
 	}
+	// In cluster mode, reverse-proxy REST/SSE requests for remote sandboxes to
+	// their owning node (the in-process gateway never traverses the gRPC
+	// forwarding interceptor, so REST/SSE need an HTTP-layer proxy). The proxy
+	// runs after authentication (the caller is authenticated at this node) but
+	// before the local handlers; local ids fall through unchanged. Nil-safe.
+	if opts.Routing != nil {
+		v1 = OwnerProxy(opts.Routing, v1)
+	}
 
 	rest := http.NewServeMux()
 	rest.Handle("/v1/auth/session", sessionHandler(opts.Keys, opts.Signer)) // unauthenticated exchange

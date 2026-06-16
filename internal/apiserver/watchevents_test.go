@@ -25,8 +25,8 @@ func TestMerger_DedupsByID(t *testing.T) {
 	out := make(chan events.Event, 8)
 	m := NewMerger(out)
 	a, b := make(chan events.Event, 4), make(chan events.Event, 4)
-	go m.Consume(a)
-	go m.Consume(b)
+	go m.Consume(t.Context(), a)
+	go m.Consume(t.Context(), b)
 
 	e := events.Event{ID: "n1-1", Type: "x"}
 	a <- e
@@ -43,6 +43,28 @@ func TestMerger_DedupsByID(t *testing.T) {
 	case dup := <-out:
 		t.Fatalf("unexpected duplicate %v", dup)
 	default:
+	}
+}
+
+// TestMerger_ConsumeStopsOnCtxCancel: when out is unread and the context is
+// cancelled, Consume returns instead of blocking forever (no goroutine leak).
+func TestMerger_ConsumeStopsOnCtxCancel(t *testing.T) {
+	out := make(chan events.Event) // unbuffered, never read
+	m := NewMerger(out)
+	in := make(chan events.Event, 1)
+	in <- events.Event{ID: "x-1"} // will be markSeen'd, then block on out send
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { m.Consume(ctx, in); close(done) }()
+
+	cancel() // unblock the pending out-send
+
+	select {
+	case <-done:
+		// Consume returned: no leak.
+	case <-time.After(time.Second):
+		t.Fatal("Consume did not return after ctx cancel — goroutine leak")
 	}
 }
 

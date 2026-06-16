@@ -8,6 +8,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // Forwarder routes unary RPCs to the owning node when the sandbox id is remote.
@@ -46,6 +47,11 @@ func (f *Forwarder) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		out := newReplyFor(info.FullMethod)
 		if out == nil {
 			return handler(ctx, req) // method not in forward map
+		}
+		// Promote the caller's incoming metadata (auth, idempotency-key) to the
+		// outgoing context so the owner re-authenticates the forwarded call.
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			ctx = metadata.NewOutgoingContext(ctx, md)
 		}
 		if err := conn.Invoke(ctx, info.FullMethod, req, out); err != nil {
 			return nil, err

@@ -48,7 +48,7 @@ type Node struct {
 	grpcSrv *grpc.Server
 	cert    tls.Certificate
 	ln      net.Listener
-	cancel  context.CancelFunc // cancels background collector goroutines
+	cancel  context.CancelFunc  // cancels background collector goroutines
 	cluster *membership.Cluster // nil when not in cluster mode
 	pool    *peer.Pool          // nil when not in cluster mode
 }
@@ -140,14 +140,19 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	fwd := apiserver.NewForwarder(tbl, pool)
 
 	// Build the initial local NodeState from config + current sandbox list.
+	swarmName := cfg.SwarmName
+	if swarmName == "" {
+		swarmName = si.SwarmName
+	}
 	ownedIDs := ownedSandboxIDs(context.Background(), mgr)
 	localNS := membership.NodeState{
 		NodeID:          id.NodeID,
 		Addr:            dialableAddr(cfg.ListenAddr),
-		ProtocolVersion: 1,
+		ProtocolVersion: membership.ProtocolVersion,
 		Capabilities:    []string{"clone", "stats", "exec"},
 		OwnedSandboxIDs: ownedIDs,
 		SwarmID:         si.SwarmID,
+		SwarmName:       swarmName,
 		Labels:          cfg.Labels,
 		LimitCPU:        cfg.ProvisionLimits.CPUCores,
 		LimitMemKB:      float64(cfg.ProvisionLimits.MemoryBytes / 1024),
@@ -174,6 +179,9 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		}
 		clusterInstance = cl
 		nodeSvc.SetCordoner(cl)
+		// Re-gossip OwnedSandboxIDs on create/delete so peer node-state stays
+		// fresh (M5 scheduling reads gossiped owned-id sets).
+		mgr.SetOwnedIDsNotifier(cl)
 	}
 
 	handler, grpcSrv, err := apiserver.Build(apiserver.Options{

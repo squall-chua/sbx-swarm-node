@@ -41,6 +41,39 @@ func TestManager_CreateGetListDelete(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+// fakeNotifier records the owned-id sets pushed by the Manager.
+type fakeNotifier struct{ sets [][]string }
+
+func (f *fakeNotifier) UpdateLocalSandboxIDs(ids []string) {
+	cp := append([]string(nil), ids...)
+	f.sets = append(f.sets, cp)
+}
+
+func TestManager_NotifiesOwnedIDsOnCreateDelete(t *testing.T) {
+	m, _ := newMgr(t)
+	n := &fakeNotifier{}
+	m.SetOwnedIDsNotifier(n)
+	ctx := context.Background()
+
+	rec, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+	require.Len(t, n.sets, 1, "create should notify once")
+	require.Equal(t, []string{rec.ID}, n.sets[0])
+
+	require.NoError(t, m.Delete(ctx, rec.ID))
+	require.Len(t, n.sets, 2, "delete should notify once")
+	require.Empty(t, n.sets[1], "owned set is empty after delete")
+}
+
+func TestManager_OwnedIDsNotifier_NilSafe(t *testing.T) {
+	m, _ := newMgr(t)
+	ctx := context.Background()
+	// No notifier wired — must not panic.
+	rec, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+	require.NoError(t, m.Delete(ctx, rec.ID))
+}
+
 func TestManager_ReconcileDropsVanishedRecords(t *testing.T) {
 	m, f := newMgr(t)
 	ctx := context.Background()

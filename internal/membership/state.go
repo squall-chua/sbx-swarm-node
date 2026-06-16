@@ -7,12 +7,13 @@ import "encoding/json"
 type NodeState struct {
 	// meta (tiny, UDP)
 	NodeID          string `json:"id"`
-	Addr            string `json:"a"`  // gRPC/REST address for routing
+	Addr            string `json:"a"` // gRPC/REST address for routing
 	Cordoned        bool   `json:"c"`
 	StateVersion    uint64 `json:"v"`
 	ProtocolVersion uint32 `json:"p"`
 	// bulk (TCP push/pull)
 	SwarmID         string            `json:"swarm_id,omitempty"`
+	SwarmName       string            `json:"swarm_name,omitempty"`
 	PubKey          []byte            `json:"pubkey,omitempty"`
 	Capabilities    []string          `json:"caps,omitempty"`
 	OwnedSandboxIDs []string          `json:"owned,omitempty"`

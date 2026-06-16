@@ -11,6 +11,10 @@ import (
 	"os"
 )
 
+// ProtocolVersion is this node's swarm wire-protocol version (ADR-0009). For
+// v1 peers must match exactly; mismatched peers are skipped on merge.
+const ProtocolVersion uint32 = 1
+
 // Mode is how the node starts up relative to a swarm (spec §7).
 type Mode int
 
