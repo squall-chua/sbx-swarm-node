@@ -126,7 +126,7 @@ func SSEHandlerWithPeers(bus *events.Bus, tbl *routing.Table, pool *peer.Pool) h
 			if !ok {
 				continue
 			}
-			conn, err := pool.Conn(addr)
+			conn, err := pool.Conn(addr, nodeID)
 			if err != nil {
 				continue
 			}

@@ -28,13 +28,13 @@ func TestPool_DialAndReuse(t *testing.T) {
 	dial := func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }
 	p := NewPool(WithContextDialer(dial), WithCreds(insecure.NewCredentials()))
 
-	c1, err := p.Conn("bufnet")
+	c1, err := p.Conn("bufnet", "peer")
 	require.NoError(t, err)
 	out, err := sbxv1.NewNodeServiceClient(c1).GetNodeInfo(context.Background(), &sbxv1.GetNodeInfoRequest{})
 	require.NoError(t, err)
 	require.Equal(t, "peer", out.NodeId)
 
-	c2, err := p.Conn("bufnet")
+	c2, err := p.Conn("bufnet", "peer")
 	require.NoError(t, err)
 	require.Same(t, c1, c2) // cached
 }

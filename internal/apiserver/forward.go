@@ -40,7 +40,7 @@ func (f *Forwarder) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		if !ok {
 			return handler(ctx, req) // unknown owner: let local handler return 404
 		}
-		conn, err := f.pool.Conn(addr)
+		conn, err := f.pool.Conn(addr, owner)
 		if err != nil {
 			return nil, err
 		}
