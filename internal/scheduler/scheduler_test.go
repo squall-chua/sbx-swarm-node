@@ -107,3 +107,21 @@ func TestSchedule_LoadedLocalStillOffloads(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "A", order[0]) // lighter peer beats the loaded local node
 }
+
+func TestSchedule_NodeAffinityFiltersByLabel(t *testing.T) {
+	cands := []Candidate{
+		{NodeID: "A", Labels: map[string]string{"zone": "us"}, LimitCPU: 10, LimitMem: 10, LimitDisk: 10},
+		{NodeID: "B", Labels: map[string]string{"zone": "eu"}, LimitCPU: 10, LimitMem: 10, LimitDisk: 10},
+	}
+	req := Request{CPU: 1, Mem: 1, Disk: 1, Strategy: "least-loaded", RequestID: "r",
+		Affinity: map[string]string{"zone": "eu"}}
+	order, err := Schedule(req, cands)
+	require.NoError(t, err)
+	require.Equal(t, []string{"B"}, order) // only the eu node is eligible
+
+	req.Affinity = nil
+	req.AntiAffinity = map[string]string{"zone": "eu"}
+	order, err = Schedule(req, cands)
+	require.NoError(t, err)
+	require.Equal(t, []string{"A"}, order) // eu excluded
+}

@@ -92,3 +92,14 @@ func TestEffectiveSizing_BuiltinFloorWhenNoDefault(t *testing.T) {
 	require.Equal(t, floorMemoryBytes, got.MemoryBytes)
 	require.Equal(t, floorDiskGB, got.DiskGb)
 }
+
+func TestRequestFromSpec_CarriesNodeAffinity(t *testing.T) {
+	spec := &sbxv1.CreateSandboxRequest{
+		Cpus: 1, MemoryBytes: 1,
+		NodeAffinity:     map[string]string{"zone": "eu"},
+		NodeAntiAffinity: map[string]string{"gpu": "true"},
+	}
+	req := requestFromSpec(spec, "least-loaded", "r1")
+	require.Equal(t, map[string]string{"zone": "eu"}, req.Affinity)
+	require.Equal(t, map[string]string{"gpu": "true"}, req.AntiAffinity)
+}
