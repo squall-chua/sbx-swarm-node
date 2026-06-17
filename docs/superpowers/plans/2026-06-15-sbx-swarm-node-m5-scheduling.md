@@ -1,3 +1,9 @@
+> **SUPERSEDED (2026-06-17).** This forward-looking draft drifted from the real
+> M4/security code (signatures, units, auth model). Use
+> `docs/superpowers/plans/2026-06-17-m5-scheduling.md` (reconciled against code +
+> hardened via spec/grill) and `docs/superpowers/specs/2026-06-17-m5-scheduling-design.md`.
+> Kept for history only.
+
 # sbx-swarm-node M5 — Scheduling Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Checkbox steps.
