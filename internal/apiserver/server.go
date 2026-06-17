@@ -35,6 +35,7 @@ type Options struct {
 	Routing                   *routing.Table  // optional; used for SSE peer-merge when combined with Peers
 	Peers                     *peer.Pool      // optional; used for SSE peer-merge when Routing is set
 	Pins                      PinResolver     // optional; resolves per-node TLS pin for OwnerProxy
+	Internal                  *InternalService // optional; node->node provision RPC (grpc-only, no gateway)
 	NodeSvc                   *NodeService    // optional; if set, used instead of creating a new one (allows pre-wired Cordoner)
 	Denylist                  func(nodeID string) bool
 	PubKeyFor                 func(nodeID string) ([]byte, bool)
@@ -71,6 +72,9 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	}
 	if opts.Events != nil {
 		sbxv1.RegisterEventServiceServer(grpcSrv, NewEventService(opts.Events))
+	}
+	if opts.Internal != nil {
+		sbxv1.RegisterInternalServiceServer(grpcSrv, opts.Internal)
 	}
 
 	// Loopback: the gateway dials the local gRPC server so REST traverses the
