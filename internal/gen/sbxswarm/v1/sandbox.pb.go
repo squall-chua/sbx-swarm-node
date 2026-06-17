@@ -84,6 +84,8 @@ type CreateSandboxRequest struct {
 	Workspaces    []*WorkspaceMount      `protobuf:"bytes,6,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
 	Env           map[string]string      `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Labels        map[string]string      `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DiskGb        float64                `protobuf:"fixed64,9,opt,name=disk_gb,json=diskGb,proto3" json:"disk_gb,omitempty"`
+	Strategy      string                 `protobuf:"bytes,10,opt,name=strategy,proto3" json:"strategy,omitempty"` // optional: least-loaded|bin-pack|spread (empty = node default)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -172,6 +174,20 @@ func (x *CreateSandboxRequest) GetLabels() map[string]string {
 		return x.Labels
 	}
 	return nil
+}
+
+func (x *CreateSandboxRequest) GetDiskGb() float64 {
+	if x != nil {
+		return x.DiskGb
+	}
+	return 0
+}
+
+func (x *CreateSandboxRequest) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
 }
 
 type Sandbox struct {
@@ -1093,7 +1109,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x19sbxswarm/v1/sandbox.proto\x12\vsbxswarm.v1\x1a\x1cgoogle/api/annotations.proto\"A\n" +
 	"\x0eWorkspaceMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\xca\x03\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\xff\x03\n" +
 	"\x14CreateSandboxRequest\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1a\n" +
 	"\btemplate\x18\x02 \x01(\tR\btemplate\x12\x12\n" +
@@ -1104,7 +1120,10 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"workspaces\x18\x06 \x03(\v2\x1b.sbxswarm.v1.WorkspaceMountR\n" +
 	"workspaces\x12<\n" +
 	"\x03env\x18\a \x03(\v2*.sbxswarm.v1.CreateSandboxRequest.EnvEntryR\x03env\x12E\n" +
-	"\x06labels\x18\b \x03(\v2-.sbxswarm.v1.CreateSandboxRequest.LabelsEntryR\x06labels\x1a6\n" +
+	"\x06labels\x18\b \x03(\v2-.sbxswarm.v1.CreateSandboxRequest.LabelsEntryR\x06labels\x12\x17\n" +
+	"\adisk_gb\x18\t \x01(\x01R\x06diskGb\x12\x1a\n" +
+	"\bstrategy\x18\n" +
+	" \x01(\tR\bstrategy\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +

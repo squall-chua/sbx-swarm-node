@@ -59,6 +59,8 @@ message CreateSandboxRequest {
   repeated WorkspaceMount workspaces = 6;
   map<string, string> env = 7;
   map<string, string> labels = 8;
+  double disk_gb = 9;
+  string strategy = 10; // optional: least-loaded|bin-pack|spread (empty = node default)
 }
 
 message Sandbox {

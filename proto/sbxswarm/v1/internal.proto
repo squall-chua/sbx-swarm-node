@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package sbxswarm.v1;
+
+import "sbxswarm/v1/sandbox.proto";
+
+option go_package = "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1";
+
+// InternalService carries node->node RPCs. No google.api.http annotations: it is
+// never exposed over REST, and is authorized by node identity (ADR-0011).
+service InternalService {
+  rpc Provision(ProvisionRequest) returns (ProvisionReply);
+}
+
+message ProvisionRequest {
+  CreateSandboxRequest spec = 1; // already-sized create spec (effective sizing applied at the entry node)
+  string request_id = 2;
+}
+
+message ProvisionReply {
+  bool accepted = 1;
+  string sandbox_id = 2;
+  string reason = 3;
+}
