@@ -14,6 +14,7 @@ import (
 	sdkpolicy "github.com/squall-chua/sbx-go-sdk/policy"
 	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
 	sdksecret "github.com/squall-chua/sbx-go-sdk/secret"
+	sdktemplate "github.com/squall-chua/sbx-go-sdk/template"
 )
 
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
@@ -432,6 +433,25 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 // set-custom entry needs a live-daemon integration test to confirm.
 func (b *SDKBackend) SecretRemove(ctx context.Context, scope, host string) error {
 	return sdksecret.Remove(ctx, b.cl, scope, host)
+}
+
+// ListTemplates returns the template refs the daemon holds (repository:tag).
+// ponytail: ref format assumed repository:tag to match WithTemplate; confirm
+// against a live daemon (integration-only) before relying on exact matching.
+func (b *SDKBackend) ListTemplates(ctx context.Context) ([]string, error) {
+	imgs, err := sdktemplate.List(ctx, b.cl)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(imgs))
+	for _, im := range imgs {
+		ref := im.Repository
+		if im.Tag != "" {
+			ref += ":" + im.Tag
+		}
+		out = append(out, ref)
+	}
+	return out, nil
 }
 
 var _ Backend = (*SDKBackend)(nil)

@@ -125,6 +125,8 @@ type Backend interface {
 	Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error)
 	Get(ctx context.Context, name string) (BackendSandbox, error)
 	List(ctx context.Context) ([]BackendSandbox, error)
+	// ListTemplates returns the template refs this node's daemon holds.
+	ListTemplates(ctx context.Context) ([]string, error)
 	Start(ctx context.Context, name string) error
 	Stop(ctx context.Context, name string) error
 	Remove(ctx context.Context, name string) error

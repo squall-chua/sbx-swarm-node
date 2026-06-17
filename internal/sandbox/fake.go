@@ -16,6 +16,7 @@ type Fake struct {
 	blocked   []BlockedHost
 	rules     []PolicyRule
 	secrets   map[string][]CustomSecret
+	templates []string
 }
 
 // NewFake returns an empty fake backend.
@@ -166,6 +167,16 @@ func (f *Fake) Logs(ctx context.Context, name, _ string, out chan<- LogLine) err
 		}
 	}()
 	return nil
+}
+
+// SetTemplates sets the advertised template refs (tests).
+func (f *Fake) SetTemplates(t []string) { f.mu.Lock(); f.templates = append([]string(nil), t...); f.mu.Unlock() }
+
+// ListTemplates returns the configured template refs.
+func (f *Fake) ListTemplates(_ context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.templates...), nil
 }
 
 // SetBlocked sets the fake's blocked-egress list (test helper).
