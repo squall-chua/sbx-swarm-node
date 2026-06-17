@@ -1,9 +1,15 @@
 # Multi-resource scoring by dominant resource, hash tie-break
 
-The scheduler scores each candidate node on its **post-placement dominant-resource ratio**:
-`max((allocated.cpu+req.cpu)/limit.cpu, (allocated.mem+req.mem)/limit.mem)`. `least-loaded` minimizes
-it, `bin-pack` maximizes it (subject to ≤ 1.0), `spread` minimizes by sandbox count / label
-distribution. **Ties are broken by `hash(request_id ⊕ node_id)`.**
+The scheduler scores each candidate node on its **post-placement dominant-resource ratio** across
+**three** provisionable resources — CPU (cores), memory (KB), disk (GB):
+`max((alloc.cpu+req.cpu)/limit.cpu, (alloc.mem+req.mem)/limit.mem, (alloc.disk+req.disk)/limit.disk)`.
+`least-loaded` minimizes it, `bin-pack` maximizes it (subject to ≤ 1.0), `spread` minimizes by sandbox
+count. **Ties are broken by `hash(request_id ⊕ node_id)`.** A zero/unknown limit yields ratio 1 (sorts
+as fully loaded) and is non-binding in the eligibility filter — a node with an unknown limit is eligible
+but deprioritized. Disk participates in filtering and scoring (and target admission), but is
+**scheduling-only**: sbx-go-sdk v0.1.2 `sandbox.Create` has no disk option, so the daemon does not
+hard-cap per-sandbox disk yet (the scheduler accounts requested `disk_gb`; `exec.Stats` exposes actual
+usage).
 
 Why: ratios make heterogeneous nodes comparable; taking the dominant (most-constrained) resource
 prevents packing a node that's fine on cpu but saturated on mem (or vice-versa). The hash tie-break

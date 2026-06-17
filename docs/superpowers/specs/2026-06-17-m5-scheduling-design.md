@@ -53,16 +53,17 @@ CreateSandbox (entry node A — authz=admin enforced here, synchronously)
 ```
 
 - **`candidates()`** is built fresh per request from: **self** (local
-  `Capacity().Snapshot()` for alloc; config workspaces/templates + capabilities
-  for predicates) **+** gossiped `cluster.PeerStates()`. In standalone mode (no
-  cluster) it returns self only, so single-node placement degrades to pure local
-  admission — preserving M1–M4 behavior.
+  `Capacity().Snapshot()` for alloc; config workspaces + backend-derived
+  templates + capabilities for predicates) **+** gossiped `cluster.PeerStates()`.
+  In standalone mode (no cluster) it returns self only, so single-node placement
+  degrades to pure local admission — preserving M1–M4 behavior.
 - **Over-admission** (two concurrent A-requests both pick B before gossip
   refreshes B's alloc) is resolved by the **target**: B's `AdmitAndCreate`
   re-checks its *real* local capacity and returns `accepted=false`; the
-  coordinator retries the next candidate. ADR-0007's hash tie-break makes
-  independent coordinators rank the same node first for a given request,
-  minimizing these bounces.
+  coordinator retries the next candidate. The hash tie-break (ADR-0007) spreads
+  ties across nodes per request rather than hotspotting the lowest node id; its
+  "independent coordinators rank the same node first" property is latent in M5
+  (each request has a single entry-node coordinator) but harmless.
 - The entry node's `CreateSandbox` op records the returned sandbox id (which
   carries the **target's** node prefix, ADR-0002), so later Get/Delete/Exec
   route to the owner via the existing forwarder. The op itself lives on the
@@ -115,15 +116,20 @@ window.
 - **State:** `limit{CPU,Mem,Disk}`, `base{CPU,Mem,Disk}` (reconciled from
   durable records), and a map of soft `reservation{cpu,mem,disk}` keyed by an
   int id. `used = base + Σ reservations`.
-- **`CanAdmit(cpu,mem,disk) bool`** — `used+req ≤ limit` for all three (a 0
-  limit is non-binding).
-- **`Reserve(cpu,mem,disk) int` / `Release(id)`** — hold/free during a create.
+- **`TryReserve(cpu,mem,disk) (id int, ok bool)`** — checks `used+req ≤ limit`
+  for all three (a 0 limit is non-binding) **and reserves under a single mutex
+  hold**, returning `ok=false` if it doesn't fit. Admission MUST be one atomic
+  op: a split `CanAdmit`-then-`Reserve` is a TOCTOU race that lets two concurrent
+  Provisions both pass the check and both reserve, over-admitting and defeating
+  target-authoritative admission (the leaderless-correctness backstop). `Release(id)`
+  frees a reservation.
 - **Convert-on-success (the lifecycle rule):** `Manager.AdmitAndCreate` does
-  `CanAdmit → Reserve → backend.Create →` on success **`base += cost` and
-  `Release(id)` atomically**, on failure **`Release(id)`**. This avoids both
-  double-counting (reservation *and* base) and the over-admission gap
-  (release-then-wait-for-reconcile). *Rejected alternative: reconcile-only base
-  updates, which leaves a window where a just-created sandbox is uncounted.*
+  `TryReserve →` (not ok → `ErrNoCapacity`) `→ backend.Create →` on success
+  **`base += cost` and `Release(id)` atomically**, on failure **`Release(id)`**.
+  This avoids both double-counting (reservation *and* base) and the
+  over-admission gap (release-then-wait-for-reconcile). *Rejected alternative:
+  reconcile-only base updates, which leaves a window where a just-created
+  sandbox is uncounted.*
 - **Drift correction:** `SetBase` recomputes base from durable non-terminal
   records (`List()`, sum each record's `Spec` CPU/mem/disk, exclude `lost`),
   piggybacked on the **existing 10s stats ticker** in `node.go` and at boot.
@@ -168,7 +174,30 @@ message ProvisionReply   { bool accepted = 1; string sandbox_id = 2; string reas
 
 `ProvisionRequest.spec` **reuses** the existing `CreateSandboxRequest` (it
 already carries agent/template/cpus/memory_bytes/clone/workspaces/env/labels);
-M5 adds `disk_gb` to that message and to `sandbox.CreateSpec` (additive).
+M5 adds two fields to that message (additive): `disk_gb` (also added to
+`sandbox.CreateSpec`) and `strategy` (client-selectable placement strategy).
+
+**Request assembly** (entry node, `CreateSandbox`):
+- **Effective sizing (no untracked sandboxes):** each resource's effective size
+  = `request value` if >0, else `config.DefaultSandboxResources` if set, else a
+  **built-in floor** (`// ponytail:` constant ~1 core / 512 MiB / 1 GiB; upgrade
+  path: source from the daemon once the SDK exposes its defaults — `DaemonInfo`
+  in v0.1.2 returns only socket paths, and `sandbox.Create` omits `--cpus`/
+  `--memory` when zero, applying *hidden* daemon defaults). The filled-in size is
+  applied once at `toSpec` so the **same** values flow to the scheduler,
+  `Capacity` reservation, **and** `backend.Create` (passed explicitly to
+  `WithCPUs`/`WithMemory`) — the daemon creates exactly that footprint and swarm
+  accounting matches reality. Disk stays scheduling-only (no daemon flag) but its
+  effective value still feeds disk capacity gating.
+- **Strategy precedence:** `request.strategy` → `config.DefaultStrategy` →
+  `"least-loaded"`. A non-empty `request.strategy` outside
+  `{least-loaded, bin-pack, spread}` is rejected with `InvalidArgument` (input
+  validation at the trust boundary — not silently defaulted).
+- **RequestID = the operation id.** It is idempotency-deduped (a retried
+  same-key `CreateSandbox` returns the existing op, so it never re-places with a
+  different tie-break), unique per logical request, and stable — exactly what
+  the ADR-0007 hash tie-break needs. (The sandbox id can't serve: the target
+  assigns it only *after* placement.)
 
 `apiserver/provision.go` — `InternalService.Provision` maps `spec`→`CreateSpec`,
 calls `mgr.AdmitAndCreate`; `ErrNoCapacity`→`{accepted:false,reason:"no
@@ -197,7 +226,7 @@ provision would outlive the token and fail. The narrow relaxation (a verified
 node may trigger an internal provision without a user role) is bounded by:
 node-key is already the swarm membership boundary; target admission caps
 resource blast radius; and revocation via the existing denylist hook (gossiped
-propagation is vNext). Recorded as a new ADR.
+propagation is vNext). Recorded as **ADR-0011**.
 
 The drift-guard `TestAuthz_AllMethodsClassified` adds
 `sbxv1.InternalService_ServiceDesc` to its enumerated descriptors so `Provision`
@@ -215,10 +244,17 @@ must stay classified.
 `config.Config`:
 - `Workspaces []WorkspaceConfig{Name, HostPath, ReadOnly}` — names advertised
   for filtering; `HostPath` also feeds the `SDKBackend` `WorkspaceResolver`.
-- `Templates []string` — advertised template names (config-sourced for v1;
-  backend-derived discovery is future).
 - `DefaultStrategy string` (default `least-loaded`).
+- `DefaultSandboxResources{CPUCores float64, MemoryBytes int64, DiskGB float64}`
+  — per-sandbox defaults for unsized requests (see §6 effective sizing); operator
+  tunes to mirror the daemon's real defaults.
 - `ProvisionLimits.DiskGB float64`.
+
+Templates are **backend-derived**, not config (matches CONTEXT.md glossary): the
+`Backend` interface gains `ListTemplates(ctx) ([]string, error)` — `SDKBackend`
+wraps the SDK's `template.List`; the `Fake` returns a test-settable set.
+`node.go` advertises that list in `NodeState.Templates`, refreshed on the same
+periodic tick as capacity.
 
 `node.go` populates the new `NodeState` fields from config + `Capacity()`. The
 gossiped `LimitCPU/LimitMemKB/LimitDiskGB` come from the **resolved** capacity
@@ -234,8 +270,10 @@ existing gossip-update path.
   - scheduler — workspace/template/capability/label/capacity filtering;
     dominant-resource scoring across all three resources; bin-pack vs
     least-loaded ordering; deterministic hash tie-break.
-  - capacity — admit/reserve/release; convert-on-success base update;
-    SetBase-from-records; auto-detect fallback to unlimited.
+  - capacity — TryReserve/release; convert-on-success base update;
+    SetBase-from-records; auto-detect fallback to unlimited; **atomic-admission
+    race test** (`-race`: N goroutines TryReserve a limit that fits only K,
+    assert exactly K succeed).
   - coordinator — tries in scheduler order; retries on NACK; `ErrNoCapacity`
     when all nack; surfaces hard errors.
 - **Integration (`//go:build integration`, 2 nodes, fresh ports):** node A

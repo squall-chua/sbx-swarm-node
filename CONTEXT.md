@@ -88,8 +88,14 @@ A distinct (host, sandbox) pair the egress proxy denied, surfaced as a security 
 synthesized first/last-seen timestamps. Attempt frequency is not available from the SDK (v0.1.2).
 _Avoid_: block count, denied request (as a rate)
 
+**Placement constraint**:
+A hard predicate a node must satisfy to be eligible for a sandbox — required workspaces, template,
+capabilities, label affinity/anti-affinity, free capacity, and not cordoned. Constraints filter the
+candidate set; a Placement strategy then ranks the survivors.
+_Avoid_: filter (bare), selector, rule
+
 **Placement strategy**:
-The scoring rule that picks among nodes passing the scheduler's hard filters — least-loaded (default),
-bin-pack, spread, or label-affinity. Round-robin is intentionally excluded (no honest semantics without
-a shared cursor in a leaderless swarm).
+The scoring rule that ranks the nodes passing every Placement constraint — least-loaded (default),
+bin-pack, or spread. Round-robin is intentionally excluded (no honest semantics without a shared cursor
+in a leaderless swarm). Label affinity is a Placement constraint, not a strategy.
 _Avoid_: scheduling policy, algorithm
