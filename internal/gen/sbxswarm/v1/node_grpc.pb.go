@@ -23,6 +23,8 @@ const (
 	NodeService_Cordon_FullMethodName      = "/sbxswarm.v1.NodeService/Cordon"
 	NodeService_Uncordon_FullMethodName    = "/sbxswarm.v1.NodeService/Uncordon"
 	NodeService_Drain_FullMethodName       = "/sbxswarm.v1.NodeService/Drain"
+	NodeService_RevokeNode_FullMethodName  = "/sbxswarm.v1.NodeService/RevokeNode"
+	NodeService_ListRevoked_FullMethodName = "/sbxswarm.v1.NodeService/ListRevoked"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -35,6 +37,8 @@ type NodeServiceClient interface {
 	Cordon(ctx context.Context, in *CordonRequest, opts ...grpc.CallOption) (*NodeInfo, error)
 	Uncordon(ctx context.Context, in *CordonRequest, opts ...grpc.CallOption) (*NodeInfo, error)
 	Drain(ctx context.Context, in *DrainRequest, opts ...grpc.CallOption) (*NodeInfo, error)
+	RevokeNode(ctx context.Context, in *RevokeNodeRequest, opts ...grpc.CallOption) (*RevokedList, error)
+	ListRevoked(ctx context.Context, in *ListRevokedRequest, opts ...grpc.CallOption) (*RevokedList, error)
 }
 
 type nodeServiceClient struct {
@@ -85,6 +89,26 @@ func (c *nodeServiceClient) Drain(ctx context.Context, in *DrainRequest, opts ..
 	return out, nil
 }
 
+func (c *nodeServiceClient) RevokeNode(ctx context.Context, in *RevokeNodeRequest, opts ...grpc.CallOption) (*RevokedList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokedList)
+	err := c.cc.Invoke(ctx, NodeService_RevokeNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) ListRevoked(ctx context.Context, in *ListRevokedRequest, opts ...grpc.CallOption) (*RevokedList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokedList)
+	err := c.cc.Invoke(ctx, NodeService_ListRevoked_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -95,6 +119,8 @@ type NodeServiceServer interface {
 	Cordon(context.Context, *CordonRequest) (*NodeInfo, error)
 	Uncordon(context.Context, *CordonRequest) (*NodeInfo, error)
 	Drain(context.Context, *DrainRequest) (*NodeInfo, error)
+	RevokeNode(context.Context, *RevokeNodeRequest) (*RevokedList, error)
+	ListRevoked(context.Context, *ListRevokedRequest) (*RevokedList, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -116,6 +142,12 @@ func (UnimplementedNodeServiceServer) Uncordon(context.Context, *CordonRequest) 
 }
 func (UnimplementedNodeServiceServer) Drain(context.Context, *DrainRequest) (*NodeInfo, error) {
 	return nil, status.Error(codes.Unimplemented, "method Drain not implemented")
+}
+func (UnimplementedNodeServiceServer) RevokeNode(context.Context, *RevokeNodeRequest) (*RevokedList, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeNode not implemented")
+}
+func (UnimplementedNodeServiceServer) ListRevoked(context.Context, *ListRevokedRequest) (*RevokedList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRevoked not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -210,6 +242,42 @@ func _NodeService_Drain_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_RevokeNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).RevokeNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_RevokeNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).RevokeNode(ctx, req.(*RevokeNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_ListRevoked_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRevokedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).ListRevoked(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_ListRevoked_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).ListRevoked(ctx, req.(*ListRevokedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -232,6 +300,14 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Drain",
 			Handler:    _NodeService_Drain_Handler,
+		},
+		{
+			MethodName: "RevokeNode",
+			Handler:    _NodeService_RevokeNode_Handler,
+		},
+		{
+			MethodName: "ListRevoked",
+			Handler:    _NodeService_ListRevoked_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

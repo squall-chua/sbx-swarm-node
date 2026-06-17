@@ -130,6 +130,130 @@ func (*DrainRequest) Descriptor() ([]byte, []int) {
 	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{2}
 }
 
+type RevokeNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeNodeRequest) Reset() {
+	*x = RevokeNodeRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeNodeRequest) ProtoMessage() {}
+
+func (x *RevokeNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeNodeRequest.ProtoReflect.Descriptor instead.
+func (*RevokeNodeRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RevokeNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type ListRevokedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRevokedRequest) Reset() {
+	*x = ListRevokedRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRevokedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRevokedRequest) ProtoMessage() {}
+
+func (x *ListRevokedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRevokedRequest.ProtoReflect.Descriptor instead.
+func (*ListRevokedRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{4}
+}
+
+type RevokedList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeIds       []string               `protobuf:"bytes,1,rep,name=node_ids,json=nodeIds,proto3" json:"node_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokedList) Reset() {
+	*x = RevokedList{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokedList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokedList) ProtoMessage() {}
+
+func (x *RevokedList) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokedList.ProtoReflect.Descriptor instead.
+func (*RevokedList) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RevokedList) GetNodeIds() []string {
+	if x != nil {
+		return x.NodeIds
+	}
+	return nil
+}
+
 type NodeInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
@@ -143,7 +267,7 @@ type NodeInfo struct {
 
 func (x *NodeInfo) Reset() {
 	*x = NodeInfo{}
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[3]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -155,7 +279,7 @@ func (x *NodeInfo) String() string {
 func (*NodeInfo) ProtoMessage() {}
 
 func (x *NodeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[3]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -168,7 +292,7 @@ func (x *NodeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeInfo.ProtoReflect.Descriptor instead.
 func (*NodeInfo) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{3}
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *NodeInfo) GetNodeId() string {
@@ -213,19 +337,27 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\x16sbxswarm/v1/node.proto\x12\vsbxswarm.v1\x1a\x1cgoogle/api/annotations.proto\"\x14\n" +
 	"\x12GetNodeInfoRequest\"\x0f\n" +
 	"\rCordonRequest\"\x0e\n" +
-	"\fDrainRequest\"\x92\x01\n" +
+	"\fDrainRequest\",\n" +
+	"\x11RevokeNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x14\n" +
+	"\x12ListRevokedRequest\"(\n" +
+	"\vRevokedList\x12\x19\n" +
+	"\bnode_ids\x18\x01 \x03(\tR\anodeIds\"\x92\x01\n" +
 	"\bNodeInfo\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1a\n" +
 	"\bcordoned\x18\x04 \x01(\bR\bcordoned\x12\x1a\n" +
-	"\bdraining\x18\x05 \x01(\bR\bdraining2\xe9\x02\n" +
+	"\bdraining\x18\x05 \x01(\bR\bdraining2\xb1\x04\n" +
 	"\vNodeService\x12W\n" +
 	"\vGetNodeInfo\x12\x1f.sbxswarm.v1.GetNodeInfoRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/node\x12T\n" +
 	"\x06Cordon\x12\x1a.sbxswarm.v1.CordonRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x17\x82\xd3\xe4\x93\x02\x11\"\x0f/v1/node/cordon\x12X\n" +
 	"\bUncordon\x12\x1a.sbxswarm.v1.CordonRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x19\x82\xd3\xe4\x93\x02\x13\"\x11/v1/node/uncordon\x12Q\n" +
-	"\x05Drain\x12\x19.sbxswarm.v1.DrainRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x16\x82\xd3\xe4\x93\x02\x10\"\x0e/v1/node/drainB\xb4\x01\n" +
+	"\x05Drain\x12\x19.sbxswarm.v1.DrainRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x16\x82\xd3\xe4\x93\x02\x10\"\x0e/v1/node/drain\x12b\n" +
+	"\n" +
+	"RevokeNode\x12\x1e.sbxswarm.v1.RevokeNodeRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/node/revoke\x12b\n" +
+	"\vListRevoked\x12\x1f.sbxswarm.v1.ListRevokedRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/node/revokedB\xb4\x01\n" +
 	"\x0fcom.sbxswarm.v1B\tNodeProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -240,24 +372,31 @@ func file_sbxswarm_v1_node_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_node_proto_rawDescData
 }
 
-var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_sbxswarm_v1_node_proto_goTypes = []any{
 	(*GetNodeInfoRequest)(nil), // 0: sbxswarm.v1.GetNodeInfoRequest
 	(*CordonRequest)(nil),      // 1: sbxswarm.v1.CordonRequest
 	(*DrainRequest)(nil),       // 2: sbxswarm.v1.DrainRequest
-	(*NodeInfo)(nil),           // 3: sbxswarm.v1.NodeInfo
+	(*RevokeNodeRequest)(nil),  // 3: sbxswarm.v1.RevokeNodeRequest
+	(*ListRevokedRequest)(nil), // 4: sbxswarm.v1.ListRevokedRequest
+	(*RevokedList)(nil),        // 5: sbxswarm.v1.RevokedList
+	(*NodeInfo)(nil),           // 6: sbxswarm.v1.NodeInfo
 }
 var file_sbxswarm_v1_node_proto_depIdxs = []int32{
 	0, // 0: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
 	1, // 1: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
 	1, // 2: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
 	2, // 3: sbxswarm.v1.NodeService.Drain:input_type -> sbxswarm.v1.DrainRequest
-	3, // 4: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
-	3, // 5: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
-	3, // 6: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
-	3, // 7: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
+	3, // 4: sbxswarm.v1.NodeService.RevokeNode:input_type -> sbxswarm.v1.RevokeNodeRequest
+	4, // 5: sbxswarm.v1.NodeService.ListRevoked:input_type -> sbxswarm.v1.ListRevokedRequest
+	6, // 6: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
+	6, // 7: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
+	6, // 8: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
+	6, // 9: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
+	5, // 10: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
+	5, // 11: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
+	6, // [6:12] is the sub-list for method output_type
+	0, // [0:6] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -274,7 +413,7 @@ func file_sbxswarm_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_node_proto_rawDesc), len(file_sbxswarm_v1_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

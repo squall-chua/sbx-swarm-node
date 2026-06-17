@@ -34,6 +34,7 @@ var mutatingMethods = map[string]bool{
 	"/sbxswarm.v1.NodeService/Cordon":           true,
 	"/sbxswarm.v1.NodeService/Uncordon":         true,
 	"/sbxswarm.v1.NodeService/Drain":            true,
+	"/sbxswarm.v1.NodeService/RevokeNode":       true,
 }
 
 // internalMethods are node->node RPCs authorized by node identity alone
@@ -51,6 +52,7 @@ var readMethods = map[string]bool{
 	"/sbxswarm.v1.SandboxService/GetStats":      true,
 	"/sbxswarm.v1.SandboxService/ListBlocked":   true,
 	"/sbxswarm.v1.NodeService/GetNodeInfo":      true,
+	"/sbxswarm.v1.NodeService/ListRevoked":      true,
 	"/sbxswarm.v1.PolicyService/ListPolicy":     true,
 	"/sbxswarm.v1.PolicyService/ListSecrets":    true,
 	"/sbxswarm.v1.EventService/WatchEvents":     true,

@@ -20,6 +20,15 @@ service NodeService {
   rpc Drain(DrainRequest) returns (NodeInfo) {
     option (google.api.http) = {post: "/v1/node/drain"};
   }
+  rpc RevokeNode(RevokeNodeRequest) returns (RevokedList) {
+    option (google.api.http) = {
+      post: "/v1/node/revoke"
+      body: "*"
+    };
+  }
+  rpc ListRevoked(ListRevokedRequest) returns (RevokedList) {
+    option (google.api.http) = {get: "/v1/node/revoked"};
+  }
 }
 
 message GetNodeInfoRequest {}
@@ -27,6 +36,16 @@ message GetNodeInfoRequest {}
 message CordonRequest {}
 
 message DrainRequest {}
+
+message RevokeNodeRequest {
+  string node_id = 1;
+}
+
+message ListRevokedRequest {}
+
+message RevokedList {
+  repeated string node_ids = 1;
+}
 
 message NodeInfo {
   string node_id = 1;
