@@ -1,10 +1,11 @@
 # Operability hardening — ops crash-recovery + gossiped denylist revocation
 
-**Date:** 2026-06-17 · **Status:** approved, pre-plan · **Builds on:**
+**Date:** 2026-06-17 · **Status:** approved + grilled, pre-plan · **Builds on:**
 **ADR-0004** (node trust: shared secret + per-node key; "Revocation is a gossiped
-per-node key denylist", eventually-consistent), ADR-0005 (gossip tiers),
-ADR-0011 (node-authorized internal Provision). Glossary: no new CONTEXT.md term;
-this realises ADR-0004's already-stated revocation mechanism.
+per-node key denylist", eventually-consistent), **ADR-0013** (the denylist trusts
+any cluster-secret holder; remedy for a compromised secret is rotation), ADR-0005
+(gossip tiers), ADR-0011 (node-authorized internal Provision). Glossary:
+CONTEXT.md gained **Revoke / Revoked (node)** (distinct from Cordon).
 
 Two independent, additive operability gaps left after M5. Each preserves the
 node's invariants: node-gated `Provision`, additive wire evolution, no secret
@@ -58,12 +59,19 @@ reach a terminal state.
   Implementation: `m.mu.Lock()`; `store.ForEach(opBucket, …)` collecting the ids of
   non-terminal ops (don't mutate the bucket inside its own iterator); then for each,
   set `State="error"`, `Error="interrupted: node restarted during operation"`, and
-  `put(op)` (which stamps `UpdatedAt`). After the lock, for each swept op call
-  `m.emit(op)` and `m.metrics.IncOp(op.Type, "error")` (nil-safe) — parity with
-  `Run`'s terminal path. Return the count.
+  `put(op)` (which stamps `UpdatedAt`). Return the count.
 
   Terminal states are exactly `done` and `error`; treat anything else
   (`pending`/`running`, or an unknown legacy value) as interrupted.
+
+  **Log-only, no event/metric (grill finding).** `RecoverInterrupted` does **not**
+  `emit` or `IncOp`. The event bus replays its ring to every new subscriber
+  (`events/bus.go`), so emitting at boot would replay `operation.error` events for
+  ops that died in a *previous* process — a phantom live failure to the first SSE
+  client. And `IncOp(type,"error")` would conflate restart-interruptions with
+  genuine op errors in `op_total`. The boot count is surfaced via the `node.New`
+  log line below; a dedicated `interrupted_ops_recovered_total` metric is
+  carry-forward if alerting is ever wanted.
 
 - **`node.New`** — after the existing boot reconcile (node.go:267):
   ```go
@@ -114,7 +122,10 @@ must not evaporate when the revoker leaves).
   ```
   - `Revoke`: reject `nodeID == ""` (`errors.New`, mapped to `InvalidArgument`) and
     `nodeID == self` (reject self-revoke — it would brick the node's own node-auth
-    to peers). Idempotent (already-present → return nil, no churn). On a new id:
+    to peers). Accepts **any other** non-empty id — does *not* require it to be a
+    current member, since revoking a departed/offline/partitioned node is a core
+    use case (a typo'd id becomes permanent but harmless cruft, denying an id no
+    one holds). Idempotent (already-present → return nil, no churn). On a new id:
     add to map → `store.Put(revokedBucket, id, []byte{1})` → `local.Revoked =
     sortedUnion` → `StateVersion++` → `ml.UpdateNode` (nil-safe).
   - `IsRevoked`: `RLock` map membership, O(1).
@@ -169,7 +180,9 @@ func (s *NodeService) SetRevoker(r Revoker) { s.revoker = r }   // nil-safe, lik
 
 - In the cluster-built block (next to `SetCordoner`/`SetOwnedIDsNotifier`):
   `nodeSvc.SetRevoker(cl)`.
-- `NewCluster(...)` gains the `*store.Store` argument (`st`).
+- `NewCluster(...)` gains the `*store.Store` argument (`st`). Single production
+  caller (`node.go:195`); no `membership` test constructs it directly, so the
+  signature change ripple is one line.
 - The `apiserver.Build` options:
   ```go
   Denylist: func(id string) bool { return clusterInstance != nil && clusterInstance.IsRevoked(id) },
@@ -190,6 +203,15 @@ RPCs (e.g. `Provision`) or (b) authenticate as a node-key read peer. It is **not
 evicted from routing/memberlist (it stays in gossip but is auth-dead). Routing
 eviction is a bigger hammer (memberlist re-adds on gossip) and beyond ADR-0004's
 stated mechanism — **carry-forward**.
+
+Node-auth is `PerRPCCredentials` (`internal/peer/nodekey_creds.go`), sent and
+verified on **every** RPC, so revocation takes effect on the revoked node's **next
+call even over an existing pooled connection** — no connection teardown needed.
+
+**Trust boundary (ADR-0013).** The union folds any peer's gossiped `Revoked` set
+and trusts it, so a `cluster_secret`-holder can revoke healthy nodes; the denylist
+inherits ADR-0004's secret-only trust boundary and does not raise it. The remedy
+for a compromised secret is rotation, not revocation. See ADR-0013.
 
 ### 2.7 Tests
 
@@ -225,5 +247,10 @@ on existing records — no new persisted data.
   ADR-0004 mechanism; the node stays in gossip but is auth-dead).
 - **Un-revoke / reinstatement** of the same `node_id` (grow-only by design; return
   via a new keypair).
+- **Admin-signed revocations** (the ADR-0013 upgrade path — only worth it if the
+  threat model ever needs to survive a compromised `cluster_secret`-holder).
+- **Denylist size cap** (unbounded but rare by design; revisit only if poisoning
+  becomes a concern, which secret rotation already addresses).
+- **`interrupted_ops_recovered_total` metric** (recovery is log-only in v1).
 - **Ops reconcile-and-reattach** (mark-as-error is the chosen v1 semantics).
 - **Per-sandbox disk enforcement** (unblocked only by an sbx-go-sdk change).

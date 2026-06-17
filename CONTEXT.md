@@ -15,6 +15,13 @@ A per-node keypair generated on first run. Its public key is pinned across the s
 its hash forms the `node_id` — giving each node a self-certifying identity.
 _Avoid_: cert, certificate
 
+**Revoke / Revoked** (node):
+An operator action that places a Node key's `node_id` on a swarm-wide denylist, permanently rejecting
+that node's authentication across the swarm (eventually consistent). A revoked node can no longer make
+node-to-node calls; it returns only by generating a new Node key. Distinct from Cordon, which merely
+stops new placements on a still-trusted node.
+_Avoid_: ban, block, evict (evicting a revoked node from routing is separate and deferred)
+
 **Swarm**:
 The set of nodes that gossip together as one peer-to-peer group, identified by a Swarm ID. A node can
 run solo (a swarm of one) or join others.
