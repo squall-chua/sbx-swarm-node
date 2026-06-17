@@ -2,8 +2,11 @@ package membership
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"time"
+
+	"github.com/hashicorp/memberlist"
 )
 
 // revokedBucket persists the grow-only denylist of revoked node ids (ADR-0013).
@@ -27,8 +30,27 @@ func (c *Cluster) Revoke(nodeID string) error {
 	c.mu.Unlock()
 	if grew && ml != nil {
 		_ = ml.UpdateNode(5 * time.Second)
+		// Bulk state (Revoked field) rides TCP push/pull, not UDP meta. Trigger
+		// an immediate push/pull with each live peer so the revocation reaches
+		// them within seconds rather than waiting for the next scheduled round
+		// (DefaultLANConfig uses a 30s interval).
+		go c.pushPullPeers(ml)
 	}
 	return nil
+}
+
+// pushPullPeers initiates a push/pull exchange with every live member
+// so that the updated bulk state (e.g. a newly added revocation) is
+// propagated immediately rather than waiting for the periodic timer.
+func (c *Cluster) pushPullPeers(ml *memberlist.Memberlist) {
+	localName := ml.LocalNode().Name
+	for _, m := range ml.Members() {
+		if m.Name == localName {
+			continue
+		}
+		addr := fmt.Sprintf("%s:%d", m.Addr.String(), m.Port)
+		_, _ = ml.Join([]string{addr})
+	}
 }
 
 // IsRevoked reports whether nodeID is on the denylist. Wired as the nodekey
