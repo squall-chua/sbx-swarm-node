@@ -87,3 +87,23 @@ func TestSchedule_TieBreakDeterministicAcrossCalls(t *testing.T) {
 	o2, _ := Schedule(req, cands)
 	require.Equal(t, o1, o2) // hash(requestID ⊕ nodeID) is stable
 }
+
+func TestSchedule_PrefersLocalOnTie(t *testing.T) {
+	// A and B are equally unloaded -> score tie. The local (entry) node wins,
+	// so an unconstrained create stays where it was requested.
+	req := Request{CPU: 1, Mem: 1, Disk: 1, Strategy: "least-loaded", RequestID: "r", Local: "B"}
+	cands := []Candidate{cand("A", 10, 0, 10, 0, 10, 0), cand("B", 10, 0, 10, 0, 10, 0)}
+	order, err := Schedule(req, cands)
+	require.NoError(t, err)
+	require.Equal(t, "B", order[0]) // local B preferred over A on the tie
+}
+
+func TestSchedule_LoadedLocalStillOffloads(t *testing.T) {
+	// Local B is heavily loaded; A is lighter, so A wins on score despite the
+	// locality bias (which only breaks exact ties).
+	req := Request{CPU: 1, Mem: 1, Disk: 1, Strategy: "least-loaded", RequestID: "r", Local: "B"}
+	cands := []Candidate{cand("A", 10, 0, 10, 0, 10, 0), cand("B", 10, 8, 10, 8, 10, 8)}
+	order, err := Schedule(req, cands)
+	require.NoError(t, err)
+	require.Equal(t, "A", order[0]) // lighter peer beats the loaded local node
+}

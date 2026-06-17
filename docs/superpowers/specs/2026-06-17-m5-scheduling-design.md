@@ -90,8 +90,12 @@ are chosen to match their advertised source (gossip `*MemKB`, `Usage.Disk*GB`).
   `ratio(_,0)=1` (a zero/unknown limit sorts as fully loaded so real nodes win).
   `spread` strategy scores by sandbox count instead.
 - **Sort** — `least-loaded` (default) and `spread` put the lighter node first;
-  `bin-pack` puts the fuller node first. Ties break by
-  `hash(requestID ⊕ nodeID)` (stable across calls, varies per request).
+  `bin-pack` puts the fuller node first. **Score ties break by locality first**
+  (the entry node `req.Local` wins, so an unconstrained create stays where it was
+  requested when that node can take it; a loaded entry node is beaten on score and
+  offloads), **then by `hash(requestID ⊕ nodeID)`** among remaining peers (stable
+  across calls, varies per request). This preserves the POST-to-node model without
+  losing balancing under load (ADR-0007).
 - `ErrNoEligibleNode` when no candidate passes the filter.
 
 `Candidate` carries `NodeID, Workspaces/Templates/Capabilities (map[string]bool),

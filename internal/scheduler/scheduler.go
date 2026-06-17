@@ -41,6 +41,7 @@ type Request struct {
 	AntiAffinity   map[string]string
 	Strategy       string // least-loaded(default)|bin-pack|spread
 	RequestID      string
+	Local          string // the entry/coordinating node id; preferred on a score tie (locality bias)
 }
 
 // Schedule returns eligible node ids best-first.
@@ -62,6 +63,13 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 			}
 			return si < sj // least-loaded / spread: lighter first
 		}
+		// Score tie: prefer the local (entry) node so an unconstrained create
+		// stays where it was requested when that node can take it; an unloaded
+		// node ties for best, a loaded one is beaten on score and offloads.
+		if li, lj := ok[i].NodeID == req.Local, ok[j].NodeID == req.Local; li != lj {
+			return li
+		}
+		// Otherwise hash(requestID ⊕ nodeID) spreads ties across peers (ADR-0007).
 		return tie(req.RequestID, ok[i].NodeID) < tie(req.RequestID, ok[j].NodeID)
 	})
 	out := make([]string, len(ok))

@@ -4,7 +4,12 @@ The scheduler scores each candidate node on its **post-placement dominant-resour
 **three** provisionable resources — CPU (cores), memory (KB), disk (GB):
 `max((alloc.cpu+req.cpu)/limit.cpu, (alloc.mem+req.mem)/limit.mem, (alloc.disk+req.disk)/limit.disk)`.
 `least-loaded` minimizes it, `bin-pack` maximizes it (subject to ≤ 1.0), `spread` minimizes by sandbox
-count. **Ties are broken by `hash(request_id ⊕ node_id)`.** A zero/unknown limit yields ratio 1 (sorts
+count. **Score ties are broken by, in order: (1) locality — the entry/coordinating node wins, so an
+unconstrained create stays where it was requested when that node can take it; (2) `hash(request_id ⊕
+node_id)` among the remaining peers.** The locality bias only breaks exact ties: an unloaded entry node
+ties for best and keeps the work, while a loaded entry node is beaten on score and offloads to a lighter
+peer. This preserves the POST-to-node model (least surprise) without sacrificing balancing under load;
+the hash tier still spreads ties across peers when the entry node is ineligible or not tied. A zero/unknown limit yields ratio 1 (sorts
 as fully loaded) and is non-binding in the eligibility filter — a node with an unknown limit is eligible
 but deprioritized. Disk participates in filtering and scoring (and target admission), but is
 **scheduling-only**: sbx-go-sdk v0.1.2 `sandbox.Create` has no disk option, so the daemon does not

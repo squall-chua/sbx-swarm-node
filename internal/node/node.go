@@ -216,6 +216,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	})
 	sandboxes.WithPlacement(
 		func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (string, error) {
+			req.Local = id.NodeID // prefer this (entry) node on a score tie
 			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, mgr, tbl, pool))
 		},
 		cfg.DefaultStrategy,
