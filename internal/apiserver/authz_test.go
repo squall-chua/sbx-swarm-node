@@ -29,6 +29,13 @@ func TestAuthorize_ReadsAndWatchAllowAnyAuthenticated(t *testing.T) {
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
+func TestAuthorize_InternalProvisionNodeGated(t *testing.T) {
+	const m = "/sbxswarm.v1.InternalService/Provision"
+	require.NoError(t, authorize(m, principal{node: true}))      // verified peer: allowed
+	require.Error(t, authorize(m, principal{userRole: "admin"})) // user (even admin): denied
+	require.Error(t, authorize(m, principal{}))                  // unauthenticated: denied
+}
+
 // Drift guard: every registered method must be classified.
 func TestAuthz_AllMethodsClassified(t *testing.T) {
 	descs := []grpc.ServiceDesc{
@@ -36,6 +43,7 @@ func TestAuthz_AllMethodsClassified(t *testing.T) {
 		sbxv1.NodeService_ServiceDesc,
 		sbxv1.PolicyService_ServiceDesc,
 		sbxv1.EventService_ServiceDesc,
+		sbxv1.InternalService_ServiceDesc,
 	}
 	for _, d := range descs {
 		names := []string{}
