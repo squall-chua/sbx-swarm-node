@@ -217,7 +217,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	sandboxes.WithPlacement(
 		func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (string, error) {
 			req.Local = id.NodeID // prefer this (entry) node on a score tie
-			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, mgr, tbl, pool, log))
+			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, req.RequestID, mgr, tbl, pool, log))
 		},
 		cfg.DefaultStrategy,
 		sandbox.Resources{
@@ -477,9 +477,22 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 	return out
 }
 
+// callProvisionWithRetry sends a Provision and, on a post-dial RPC error, retries
+// the SAME target once — safe because the target dedups by request_id, so a lost
+// response will not create a duplicate. It NEVER falls through to another
+// candidate after an ambiguous error (a different node does not share the dedup
+// map). With no request_id it does not retry (can't dedup -> duplicate risk).
+func callProvisionWithRetry(ctx context.Context, client sbxv1.InternalServiceClient, msg *sbxv1.ProvisionRequest) (*sbxv1.ProvisionReply, error) {
+	reply, err := client.Provision(ctx, msg)
+	if err != nil && msg.RequestId != "" {
+		reply, err = client.Provision(ctx, msg)
+	}
+	return reply, err
+}
+
 // attemptFor builds the per-request attempt closure: local admit+create, or a
 // remote Provision RPC over the pinned peer pool.
-func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, mgr *sandbox.Manager, tbl *routing.Table, pool *peer.Pool, log *slog.Logger) coordinator.AttemptFunc {
+func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, requestID string, mgr *sandbox.Manager, tbl *routing.Table, pool *peer.Pool, log *slog.Logger) coordinator.AttemptFunc {
 	return func(ctx context.Context, nodeID string) (string, error) {
 		if nodeID == self {
 			rec, err := mgr.AdmitAndCreate(ctx, apiserver.ToSpecForProvision(spec))
@@ -502,7 +515,8 @@ func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, mgr *sandbox.Mana
 			log.Warn("provision: peer unreachable, skipping", "node_id", nodeID, "err", err)
 			return "", coordinator.ErrNack
 		}
-		reply, err := sbxv1.NewInternalServiceClient(conn).Provision(ctx, &sbxv1.ProvisionRequest{Spec: spec})
+		reply, err := callProvisionWithRetry(ctx, sbxv1.NewInternalServiceClient(conn),
+			&sbxv1.ProvisionRequest{Spec: spec, RequestId: requestID})
 		if err != nil {
 			return "", err
 		}

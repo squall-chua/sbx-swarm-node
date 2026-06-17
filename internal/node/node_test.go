@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 func TestNode_BootServeStop(t *testing.T) {
@@ -76,6 +78,36 @@ func TestNode_SSEEndpointAuthed(t *testing.T) {
 	resp.Body.Close()
 }
 
+type flakyProvisionClient struct {
+	calls     int
+	sandboxID string
+}
+
+func (f *flakyProvisionClient) Provision(_ context.Context, _ *sbxv1.ProvisionRequest, _ ...grpc.CallOption) (*sbxv1.ProvisionReply, error) {
+	f.calls++
+	if f.calls == 1 {
+		return nil, errors.New("transport reset")
+	}
+	return &sbxv1.ProvisionReply{Accepted: true, SandboxId: f.sandboxID}, nil
+}
+
+func TestCallProvisionWithRetry_RetriesOnceWhenIdempotent(t *testing.T) {
+	c := &flakyProvisionClient{sandboxID: "sb-1"}
+	reply, err := callProvisionWithRetry(context.Background(), c,
+		&sbxv1.ProvisionRequest{RequestId: "op-1", Spec: &sbxv1.CreateSandboxRequest{Cpus: 1}})
+	require.NoError(t, err)
+	require.Equal(t, 2, c.calls, "must retry the same target once")
+	require.Equal(t, "sb-1", reply.SandboxId)
+}
+
+func TestCallProvisionWithRetry_NoRetryWithoutRequestID(t *testing.T) {
+	c := &flakyProvisionClient{sandboxID: "sb-1"}
+	_, err := callProvisionWithRetry(context.Background(), c,
+		&sbxv1.ProvisionRequest{Spec: &sbxv1.CreateSandboxRequest{Cpus: 1}}) // empty RequestId
+	require.Error(t, err, "no idempotency key => must not retry (duplicate risk)")
+	require.Equal(t, 1, c.calls)
+}
+
 func TestAttemptFor_DialFailureNacks(t *testing.T) {
 	// A peer in the routing table whose pin is unknown makes pool.Conn fail-closed.
 	// The attempt must NACK so the coordinator falls through to the next candidate,
@@ -90,7 +122,7 @@ func TestAttemptFor_DialFailureNacks(t *testing.T) {
 	tbl.Upsert("peerB", "127.0.0.1:1", false, nil)
 
 	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
-		nil, tbl, pool, obs.NewLogger("error", io.Discard))
+		"op-x", nil, tbl, pool, obs.NewLogger("error", io.Discard))
 	_, err = attempt(context.Background(), "peerB")
 	require.ErrorIs(t, err, coordinator.ErrNack)
 }
