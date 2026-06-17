@@ -104,3 +104,37 @@ func TestOps_EmitsStateEvents(t *testing.T) {
 		return false
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestOps_RecoverInterrupted(t *testing.T) {
+	m := newMgr(t)
+
+	// Seed three ops directly in the store: pending, running, done.
+	pending := &Operation{ID: "op-pending", Type: "provision", State: "pending", CreatedAt: m.now()}
+	running := &Operation{ID: "op-running", Type: "agent-run", State: "running", CreatedAt: m.now()}
+	done := &Operation{ID: "op-done", Type: "remove", State: "done", SandboxID: "sb1", CreatedAt: m.now()}
+	for _, op := range []*Operation{pending, running, done} {
+		require.NoError(t, m.put(op))
+	}
+	// An idempotency key mapped to the pending op must still resolve afterwards.
+	require.NoError(t, m.store.Put(idemBucket, "key-1", []byte("op-pending")))
+
+	n, err := m.RecoverInterrupted()
+	require.NoError(t, err)
+	require.Equal(t, 2, n, "pending + running swept; done left alone")
+
+	gotPending, _ := m.Get("op-pending")
+	require.Equal(t, "error", gotPending.State)
+	require.Contains(t, gotPending.Error, "interrupted")
+
+	gotRunning, _ := m.Get("op-running")
+	require.Equal(t, "error", gotRunning.State)
+
+	gotDone, _ := m.Get("op-done")
+	require.Equal(t, "done", gotDone.State, "terminal ops are untouched")
+	require.Empty(t, gotDone.Error)
+
+	raw, ok, err := m.store.Get(idemBucket, "key-1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "op-pending", string(raw), "idempotency mapping survives recovery")
+}

@@ -268,6 +268,13 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		log.Warn("initial reconcile failed", "err", err)
 	}
 
+	// Unstick operations left non-terminal by a previous crash (ops crash-recovery).
+	if n, rerr := opsM.RecoverInterrupted(); rerr != nil {
+		log.Warn("op recovery failed", "err", rerr)
+	} else if n > 0 {
+		log.Info("recovered interrupted operations", "count", n)
+	}
+
 	return &Node{
 		cfg:     cfg,
 		log:     log,

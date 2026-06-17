@@ -126,6 +126,44 @@ func (m *Manager) Run(opID string, fn func() (sandboxID string, err error)) {
 	}()
 }
 
+// RecoverInterrupted marks every operation left in a non-terminal state
+// (pending/running) as error, so a node restart does not strand an in-flight
+// operation forever (a polling client would hang; a same-idempotency-key retry
+// returns the stuck op). Call once at boot, before serving. Returns the number
+// of operations swept. Terminal states (done/error) are left untouched.
+//
+// Log-only: it does NOT emit events (would pollute the SSE replay ring with
+// phantom failures from a previous process) or IncOp (would conflate restart
+// interruptions with genuine op errors). See spec §1.
+func (m *Manager) RecoverInterrupted() (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Collect first — do not mutate the bucket inside its own read iterator.
+	var stranded []*Operation
+	err := m.store.ForEach(opBucket, func(_, v []byte) error {
+		var op Operation
+		if uerr := json.Unmarshal(v, &op); uerr != nil {
+			return uerr
+		}
+		if op.State != "done" && op.State != "error" {
+			stranded = append(stranded, &op)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, op := range stranded {
+		op.State = "error"
+		op.Error = "interrupted: node restarted during operation"
+		if perr := m.put(op); perr != nil {
+			return 0, perr
+		}
+	}
+	return len(stranded), nil
+}
+
 // Get returns an operation by ID.
 func (m *Manager) Get(opID string) (*Operation, error) {
 	raw, ok, err := m.store.Get(opBucket, opID)
