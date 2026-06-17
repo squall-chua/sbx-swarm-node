@@ -60,9 +60,9 @@ message CreateSandboxRequest {
   map<string, string> env = 7;
   map<string, string> labels = 8;
   double disk_gb = 9;
-  string strategy = 10; // optional: least-loaded|bin-pack|spread (empty = node default)
+  string strategy = 10; // optional: least-loaded|bin-pack|spread|least-actual-load (empty = node default)
   map<string, string> node_affinity = 11;       // match node labels (zone/rack/gpu), not the sandbox's own labels
-  map<string, string> node_anti_affinity = 12;
+  map<string, string> node_anti_affinity = 12;  // exclude nodes whose labels match (node labels, not the sandbox's own)
 }
 
 message Sandbox {

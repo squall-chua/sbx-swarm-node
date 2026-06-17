@@ -85,7 +85,11 @@ func NewInternalService(mgr *sandbox.Manager, cordoned func() bool) *InternalSer
 func (s *InternalService) Provision(ctx context.Context, r *sbxv1.ProvisionRequest) (*sbxv1.ProvisionReply, error) {
 	// Self-cordon recheck: a node cordoned after the entry node's candidate
 	// snapshot must refuse a forwarded provision until gossip propagates (the
-	// coordinator treats this NACK as a retry on the next candidate).
+	// coordinator treats this NACK as a retry on the next candidate). The cordon
+	// recheck deliberately precedes the dedup lookup (spec §2.2): a node cordoned
+	// after recording a request_id NACKs a re-send rather than returning the
+	// cached id. That's within the accepted double-fault window (§2.1) and only
+	// reachable if the cordon flips inside the same-target retry's microsecond gap.
 	if s.cordoned != nil && s.cordoned() {
 		return &sbxv1.ProvisionReply{Accepted: false, Reason: "cordoned"}, nil
 	}

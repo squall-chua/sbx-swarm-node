@@ -85,9 +85,9 @@ type CreateSandboxRequest struct {
 	Env              map[string]string      `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Labels           map[string]string      `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	DiskGb           float64                `protobuf:"fixed64,9,opt,name=disk_gb,json=diskGb,proto3" json:"disk_gb,omitempty"`
-	Strategy         string                 `protobuf:"bytes,10,opt,name=strategy,proto3" json:"strategy,omitempty"`                                                                                                       // optional: least-loaded|bin-pack|spread (empty = node default)
-	NodeAffinity     map[string]string      `protobuf:"bytes,11,rep,name=node_affinity,json=nodeAffinity,proto3" json:"node_affinity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // match node labels (zone/rack/gpu), not the sandbox's own labels
-	NodeAntiAffinity map[string]string      `protobuf:"bytes,12,rep,name=node_anti_affinity,json=nodeAntiAffinity,proto3" json:"node_anti_affinity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Strategy         string                 `protobuf:"bytes,10,opt,name=strategy,proto3" json:"strategy,omitempty"`                                                                                                                     // optional: least-loaded|bin-pack|spread|least-actual-load (empty = node default)
+	NodeAffinity     map[string]string      `protobuf:"bytes,11,rep,name=node_affinity,json=nodeAffinity,proto3" json:"node_affinity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`               // match node labels (zone/rack/gpu), not the sandbox's own labels
+	NodeAntiAffinity map[string]string      `protobuf:"bytes,12,rep,name=node_anti_affinity,json=nodeAntiAffinity,proto3" json:"node_anti_affinity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // exclude nodes whose labels match (node labels, not the sandbox's own)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
