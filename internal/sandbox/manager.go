@@ -51,6 +51,20 @@ func costOf(spec CreateSpec) (cpu, mem, disk float64) {
 	return float64(spec.CPUs), float64(spec.MemoryBytes) / 1024, spec.DiskGB
 }
 
+// costSum totals the resource cost (cores/KB/GB) of all non-terminal records.
+func costSum(recs []*Record) (cpu, mem, disk float64) {
+	for _, rec := range recs {
+		if rec.Status == "lost" {
+			continue
+		}
+		c, m, d := costOf(rec.Spec)
+		cpu += c
+		mem += m
+		disk += d
+	}
+	return
+}
+
 // AdmitAndCreate reserves capacity (atomic), creates, then commits the
 // reservation into the base on success (or releases it on failure). Returns
 // ErrNoCapacity when admission fails.
@@ -65,7 +79,15 @@ func (m *Manager) AdmitAndCreate(ctx context.Context, spec CreateSpec) (*Record,
 		m.capacity.Release(id)
 		return nil, err
 	}
-	m.capacity.Commit(id)
+	// Resync base absolutely from durable records (now incl. rec), then drop the
+	// reservation — consistent with Reconcile, so no double-count. If the list
+	// fails, fall back to the incremental commit (base += reserved cost).
+	if recs, lerr := m.List(ctx); lerr == nil {
+		bc, bm, bd := costSum(recs)
+		m.capacity.CommitBase(bc, bm, bd, id)
+	} else {
+		m.capacity.Commit(id)
+	}
 	return rec, nil
 }
 
@@ -273,16 +295,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			m.emit("sandbox.lost", rec.ID, nil)
 		}
 	}
-	var bc, bm, bd float64
-	for _, rec := range recs {
-		if rec.Status == "lost" {
-			continue
-		}
-		c, mm, d := costOf(rec.Spec)
-		bc += c
-		bm += mm
-		bd += d
-	}
+	bc, bm, bd := costSum(recs)
 	m.capacity.SetBase(bc, bm, bd)
 	return nil
 }

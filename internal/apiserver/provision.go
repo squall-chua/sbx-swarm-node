@@ -20,7 +20,13 @@ func NewInternalService(mgr *sandbox.Manager) *InternalService { return &Interna
 // Provision performs target-authoritative admission against real local capacity,
 // then creates. A capacity miss returns accepted=false (the coordinator's NACK).
 func (s *InternalService) Provision(ctx context.Context, r *sbxv1.ProvisionRequest) (*sbxv1.ProvisionReply, error) {
-	spec := toSpec(r.Spec)
+	in := r.Spec
+	if in == nil {
+		in = &sbxv1.CreateSandboxRequest{}
+	}
+	// Defensive: re-apply the built-in floor at the node->node trust boundary so a
+	// peer that sends an unsized spec cannot bypass capacity accounting (ADR-0011).
+	spec := toSpec(effectiveSpec(in, sandbox.Resources{}))
 	rec, err := s.mgr.AdmitAndCreate(ctx, spec)
 	if err == sandbox.ErrNoCapacity {
 		return &sbxv1.ProvisionReply{Accepted: false, Reason: "no capacity"}, nil

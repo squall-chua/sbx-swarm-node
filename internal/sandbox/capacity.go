@@ -67,6 +67,18 @@ func (c *Capacity) Commit(id int) {
 	delete(c.resv, id)
 }
 
+// CommitBase sets the absolute base (from reconciled durable records) and drops
+// the reservation in one lock hold. Used on create success: the new record is
+// reflected in base exactly once — never double-counted with its reservation,
+// never dropped — and because it is absolute (like SetBase), a concurrent
+// Reconcile cannot double-count it.
+func (c *Capacity) CommitBase(cpu, mem, disk float64, id int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.baseCPU, c.baseMem, c.baseDisk = cpu, mem, disk
+	delete(c.resv, id)
+}
+
 // Release frees a reservation (create failed).
 func (c *Capacity) Release(id int) { c.mu.Lock(); delete(c.resv, id); c.mu.Unlock() }
 

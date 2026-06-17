@@ -53,6 +53,16 @@ func TestCapacity_ZeroLimitIsUnlimited(t *testing.T) {
 	require.True(t, ok)
 }
 
+func TestCapacity_CommitBaseSetsAbsoluteAndReleases(t *testing.T) {
+	c := NewCapacity(10, 1e9, 1e9)
+	id, ok := c.TryReserve(3, 0, 0)
+	require.True(t, ok)
+	// Resync base absolutely (e.g. records total 3 cpu) and drop the reservation.
+	c.CommitBase(3, 0, 0, id)
+	cpu, _, _ := c.Snapshot()
+	require.Equal(t, 3.0, cpu) // exactly 3 (not 3 reservation + 3 base = 6)
+}
+
 func TestCapacity_TryReserveAtomicUnderRace(t *testing.T) {
 	c := NewCapacity(10, 1e9, 1e9) // exactly 5 of size-2 cpu fit
 	var wg sync.WaitGroup
