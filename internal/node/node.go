@@ -192,7 +192,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	if cfg.GossipAddr != "" && cfg.ClusterSecret != "" {
 		// Only build the cluster when a cluster_secret is configured. A pure
 		// standalone node (no secret, no seeds) skips gossip entirely.
-		cl, clErr := membership.NewCluster(cfg, localNS, tbl, si, siPath,
+		cl, clErr := membership.NewCluster(cfg, localNS, tbl, si, siPath, st,
 			func(deadNodeID string) {
 				mgr.MarkUnreachable(deadNodeID)
 			},

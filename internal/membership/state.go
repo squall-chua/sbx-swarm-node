@@ -28,6 +28,7 @@ type NodeState struct {
 	AllocDiskGB     float64           `json:"alloc_disk_gb,omitempty"`
 	ActualCPU       float64           `json:"util_cpu,omitempty"` // normalized 0..1+ vs this node's CPU limit
 	ActualMem       float64           `json:"util_mem,omitempty"` // normalized 0..1+ vs this node's mem limit
+	Revoked         []string          `json:"revoked,omitempty"`  // grow-only denylist of revoked node ids (ADR-0013)
 }
 
 type metaWire struct {

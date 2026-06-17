@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 )
 
 // Cluster wraps hashicorp/memberlist with swarm-aware delegate logic.
@@ -29,7 +30,9 @@ type Cluster struct {
 	bcast      *memberlist.TransmitLimitedQueue
 	tbl        *routing.Table
 	si         *SwarmIdentity
-	siPath     string // path to persist swarm.json on Adopt
+	siPath     string              // path to persist swarm.json on Adopt
+	st         *store.Store        // durable home for the revoked union
+	revoked    map[string]struct{} // grow-only union of revoked node ids (ADR-0013)
 	onNodeDead func(nodeID string)
 	log        *slog.Logger
 	shutdown   bool // guards Leave/Shutdown idempotency (memberlist.Leave panics after Shutdown)
@@ -42,6 +45,7 @@ func NewCluster(
 	tbl *routing.Table,
 	si *SwarmIdentity,
 	siPath string,
+	st *store.Store,
 	onNodeDead func(string),
 	log *slog.Logger,
 ) (*Cluster, error) {
@@ -51,9 +55,12 @@ func NewCluster(
 		tbl:        tbl,
 		si:         si,
 		siPath:     siPath,
+		st:         st,
+		revoked:    map[string]struct{}{},
 		onNodeDead: onNodeDead,
 		log:        log,
 	}
+	c.loadRevoked()
 
 	mlCfg := memberlist.DefaultLANConfig()
 	mlCfg.Name = local.NodeID
@@ -269,11 +276,17 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 		return
 	}
 
-	// Update peer map.
+	// Update peer map + fold any revocations the peer carries into our union.
 	d.c.mu.Lock()
 	d.c.peerStates[remote.NodeID] = remote
 	isPending := d.c.si.Mode == ModePendingJoin
+	grew := d.c.addRevokedLocked(remote.Revoked...)
+	ml := d.c.ml
 	d.c.mu.Unlock()
+
+	if grew && ml != nil {
+		_ = ml.UpdateNode(5 * time.Second) // propagate the learned revocation onward
+	}
 
 	// Update routing table.
 	d.c.tbl.Upsert(remote.NodeID, remote.Addr, remote.Cordoned, remote.PubKey)

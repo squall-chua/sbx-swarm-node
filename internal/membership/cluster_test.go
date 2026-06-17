@@ -18,6 +18,7 @@ func newTestDelegate(self string, si *SwarmIdentity) (*delegate, *Cluster, *rout
 		peerStates: map[string]NodeState{},
 		tbl:        tbl,
 		si:         si,
+		revoked:    map[string]struct{}{},
 		log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	return &delegate{c: c}, c, tbl
