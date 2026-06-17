@@ -88,3 +88,29 @@ func TestManager_ReconcileDropsVanishedRecords(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "lost", got.Status)
 }
+
+func TestManager_AdmitAndCreate_NacksOverLimit(t *testing.T) {
+	mgr, _ := newMgr(t)
+	mgr.SetCapacity(NewCapacity(2, 1e9, 1e9)) // 2 cores
+
+	_, err := mgr.AdmitAndCreate(context.Background(), CreateSpec{CPUs: 2, MemoryBytes: 1})
+	require.NoError(t, err)
+
+	_, err = mgr.AdmitAndCreate(context.Background(), CreateSpec{CPUs: 1, MemoryBytes: 1})
+	require.ErrorIs(t, err, ErrNoCapacity)
+}
+
+func TestManager_ReconcileSetsBaseFromRecords(t *testing.T) {
+	mgr, _ := newMgr(t)
+	capt := NewCapacity(0, 0, 0)
+	mgr.SetCapacity(capt)
+
+	_, err := mgr.AdmitAndCreate(context.Background(), CreateSpec{CPUs: 3, MemoryBytes: 2048, DiskGB: 4})
+	require.NoError(t, err)
+	require.NoError(t, mgr.Reconcile(context.Background()))
+
+	cpu, mem, disk := capt.Snapshot()
+	require.Equal(t, 3.0, cpu)
+	require.Equal(t, 2.0, mem) // 2048 bytes -> 2 KB
+	require.Equal(t, 4.0, disk)
+}

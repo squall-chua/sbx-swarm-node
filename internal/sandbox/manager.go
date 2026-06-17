@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,9 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 )
+
+// ErrNoCapacity means the node cannot admit the request within its provision limit.
+var ErrNoCapacity = errors.New("insufficient capacity")
 
 const bucket = "sandboxes"
 
@@ -28,11 +32,41 @@ type Manager struct {
 	pub      events.Publisher
 	ownedSub OwnedIDsNotifier
 	now      func() time.Time
+	capacity *Capacity
 }
 
 // NewManager builds a Manager.
 func NewManager(nodeID string, backend Backend, st *store.Store, gen *ids.Gen) *Manager {
-	return &Manager{nodeID: nodeID, backend: backend, store: st, ids: gen, now: time.Now}
+	return &Manager{nodeID: nodeID, backend: backend, store: st, ids: gen, now: time.Now, capacity: NewCapacity(0, 0, 0)}
+}
+
+// SetCapacity wires a capacity tracker (node.go passes resolved limits).
+func (m *Manager) SetCapacity(c *Capacity) { m.capacity = c }
+
+// Capacity returns the capacity tracker.
+func (m *Manager) Capacity() *Capacity { return m.capacity }
+
+// costOf is a spec's resource cost (cores / KB / GB).
+func costOf(spec CreateSpec) (cpu, mem, disk float64) {
+	return float64(spec.CPUs), float64(spec.MemoryBytes) / 1024, spec.DiskGB
+}
+
+// AdmitAndCreate reserves capacity (atomic), creates, then commits the
+// reservation into the base on success (or releases it on failure). Returns
+// ErrNoCapacity when admission fails.
+func (m *Manager) AdmitAndCreate(ctx context.Context, spec CreateSpec) (*Record, error) {
+	cpu, mem, disk := costOf(spec)
+	id, ok := m.capacity.TryReserve(cpu, mem, disk)
+	if !ok {
+		return nil, ErrNoCapacity
+	}
+	rec, err := m.Create(ctx, spec)
+	if err != nil {
+		m.capacity.Release(id)
+		return nil, err
+	}
+	m.capacity.Commit(id)
+	return rec, nil
 }
 
 // SetPublisher wires an event publisher (optional; nil disables events).
@@ -239,5 +273,16 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			m.emit("sandbox.lost", rec.ID, nil)
 		}
 	}
+	var bc, bm, bd float64
+	for _, rec := range recs {
+		if rec.Status == "lost" {
+			continue
+		}
+		c, mm, d := costOf(rec.Spec)
+		bc += c
+		bm += mm
+		bd += d
+	}
+	m.capacity.SetBase(bc, bm, bd)
 	return nil
 }
