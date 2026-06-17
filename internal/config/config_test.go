@@ -129,6 +129,12 @@ func TestValidate_ClusterWithCustomTLS(t *testing.T) {
 	}
 }
 
+func TestValidate_NegativeDiskLimitRejected(t *testing.T) {
+	c := Default()
+	c.ProvisionLimits.DiskGB = -1
+	require.Error(t, c.Validate())
+}
+
 func TestValidate_ClusterFields(t *testing.T) {
 	tests := []struct {
 		name    string

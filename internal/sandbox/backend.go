@@ -23,9 +23,18 @@ type CreateSpec struct {
 	Template    string
 	CPUs        int
 	MemoryBytes int64
+	DiskGB      float64 // requested disk (GB); scheduling-only in v1 (no SDK create option)
 	Clone       bool
 	Workspaces  []WorkspaceMount
 	Env         map[string]string
+}
+
+// Resources is a per-sandbox resource triple (cores / bytes / GB). Used for
+// the configured default applied to unsized requests.
+type Resources struct {
+	CPUCores    float64
+	MemoryBytes int64
+	DiskGB      float64
 }
 
 // BackendSandbox is the backend's view of a sandbox.

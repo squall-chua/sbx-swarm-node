@@ -26,14 +26,32 @@ type Config struct {
 	Join          []string          `yaml:"join"`
 	SwarmName     string            `yaml:"swarm_name"`
 	Labels        map[string]string `yaml:"labels"`
-	ProvisionLimits ProvisionLimits `yaml:"provision_limits"`
-	GossipAddr    string            `yaml:"gossip_addr"`
+	ProvisionLimits         ProvisionLimits   `yaml:"provision_limits"`
+	GossipAddr              string            `yaml:"gossip_addr"`
+	Workspaces              []WorkspaceConfig `yaml:"workspaces"`
+	DefaultStrategy         string            `yaml:"default_strategy"`
+	DefaultSandboxResources SandboxResources  `yaml:"default_sandbox_resources"`
 }
 
-// ProvisionLimits caps how much CPU/memory this node offers to the swarm.
+// ProvisionLimits caps how much CPU/memory/disk this node offers to the swarm.
 type ProvisionLimits struct {
 	CPUCores    float64 `yaml:"cpu_cores"`
 	MemoryBytes int64   `yaml:"memory_bytes"`
+	DiskGB      float64 `yaml:"disk_gb"`
+}
+
+// WorkspaceConfig is a named host directory advertised for mounting/cloning.
+type WorkspaceConfig struct {
+	Name     string `yaml:"name"`
+	HostPath string `yaml:"host_path"`
+	ReadOnly bool   `yaml:"read_only"`
+}
+
+// SandboxResources is the per-sandbox default applied when a request omits a resource.
+type SandboxResources struct {
+	CPUCores    float64 `yaml:"cpu_cores"`
+	MemoryBytes int64   `yaml:"memory_bytes"`
+	DiskGB      float64 `yaml:"disk_gb"`
 }
 
 // APIKey is a bearer credential mapped to a role ("admin"|"read-only").
@@ -159,6 +177,14 @@ func (c *Config) Validate() error {
 	}
 	if c.GossipAddr == "" {
 		return fmt.Errorf("gossip_addr must not be empty")
+	}
+	if c.ProvisionLimits.CPUCores < 0 || c.ProvisionLimits.MemoryBytes < 0 || c.ProvisionLimits.DiskGB < 0 {
+		return fmt.Errorf("provision_limits must not be negative")
+	}
+	switch c.DefaultStrategy {
+	case "", "least-loaded", "bin-pack", "spread":
+	default:
+		return fmt.Errorf("default_strategy must be one of least-loaded|bin-pack|spread, got %q", c.DefaultStrategy)
 	}
 	return nil
 }

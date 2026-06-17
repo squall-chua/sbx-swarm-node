@@ -22,6 +22,10 @@ type NodeState struct {
 	LimitMemKB      float64           `json:"limit_mem_kb,omitempty"`
 	AllocCPU        float64           `json:"alloc_cpu,omitempty"`
 	AllocMemKB      float64           `json:"alloc_mem_kb,omitempty"`
+	Workspaces      []string          `json:"workspaces,omitempty"`
+	Templates       []string          `json:"templates,omitempty"`
+	LimitDiskGB     float64           `json:"limit_disk_gb,omitempty"`
+	AllocDiskGB     float64           `json:"alloc_disk_gb,omitempty"`
 }
 
 type metaWire struct {

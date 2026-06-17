@@ -6,6 +6,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNodeState_BulkRoundTripSchedulingFields(t *testing.T) {
+	in := NodeState{
+		NodeID: "n1", ProtocolVersion: ProtocolVersion,
+		Workspaces:  []string{"repo-foo"},
+		Templates:   []string{"base:1"},
+		LimitDiskGB: 100, AllocDiskGB: 12,
+	}
+	out, err := DecodeBulk(in.EncodeBulk())
+	require.NoError(t, err)
+	require.Equal(t, []string{"repo-foo"}, out.Workspaces)
+	require.Equal(t, []string{"base:1"}, out.Templates)
+	require.Equal(t, 100.0, out.LimitDiskGB)
+	require.Equal(t, 12.0, out.AllocDiskGB)
+}
+
 func TestNodeState_MetaTinyAndBulkRoundTrip(t *testing.T) {
 	ns := NodeState{
 		NodeID: "n1", Addr: "10.0.0.1:8443", Cordoned: true, StateVersion: 7, ProtocolVersion: 1,
