@@ -7,17 +7,104 @@ import (
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/ops"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/scheduler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+// PlaceFunc places a sized request and returns the created sandbox id. Injected
+// by node.go (coordinator-backed); nil falls back to a local admit+create.
+type PlaceFunc func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (sandboxID string, err error)
 
 // SandboxService implements sbxv1.SandboxServiceServer over the sandbox Manager.
 type SandboxService struct {
 	sbxv1.UnimplementedSandboxServiceServer
-	mgr *sandbox.Manager
-	ops *ops.Manager
-	obs ObserveDeps
+	mgr             *sandbox.Manager
+	ops             *ops.Manager
+	obs             ObserveDeps
+	place           PlaceFunc
+	defaultStrategy string
+	defaultResources sandbox.Resources
+}
+
+// WithPlacement wires placement (coordinator) + sizing defaults.
+func (s *SandboxService) WithPlacement(place PlaceFunc, defaultStrategy string, defaults sandbox.Resources) {
+	s.place = place
+	s.defaultStrategy = defaultStrategy
+	s.defaultResources = defaults
+}
+
+const (
+	floorCPUCores    int32 = 1
+	floorMemoryBytes int64 = 512 << 20 // 512 MiB
+	floorDiskGB            = 1.0
+)
+
+// effectiveSpec returns a copy of r with each unset resource filled from the
+// configured default, else the built-in floor (no untracked sandboxes).
+// ponytail: floor approximates the daemon's hidden default; source it from the
+// daemon once the SDK exposes it.
+func effectiveSpec(r *sbxv1.CreateSandboxRequest, defaults sandbox.Resources) *sbxv1.CreateSandboxRequest {
+	out := proto.Clone(r).(*sbxv1.CreateSandboxRequest)
+	if out.Cpus <= 0 {
+		if defaults.CPUCores > 0 {
+			out.Cpus = int32(defaults.CPUCores)
+		} else {
+			out.Cpus = floorCPUCores
+		}
+	}
+	if out.MemoryBytes <= 0 {
+		if defaults.MemoryBytes > 0 {
+			out.MemoryBytes = defaults.MemoryBytes
+		} else {
+			out.MemoryBytes = floorMemoryBytes
+		}
+	}
+	if out.DiskGb <= 0 {
+		if defaults.DiskGB > 0 {
+			out.DiskGb = defaults.DiskGB
+		} else {
+			out.DiskGb = floorDiskGB
+		}
+	}
+	return out
+}
+
+// resolveStrategy applies precedence request -> config default -> least-loaded
+// and validates the result.
+func resolveStrategy(reqStrategy, defaultStrategy string) (string, error) {
+	s := reqStrategy
+	if s == "" {
+		s = defaultStrategy
+	}
+	if s == "" {
+		s = "least-loaded"
+	}
+	switch s {
+	case "least-loaded", "bin-pack", "spread":
+		return s, nil
+	default:
+		return "", status.Errorf(codes.InvalidArgument, "unknown strategy %q", reqStrategy)
+	}
+}
+
+// requestFromSpec builds the scheduler Request from a sized spec.
+func requestFromSpec(spec *sbxv1.CreateSandboxRequest, strategy, requestID string) scheduler.Request {
+	ws := make([]string, 0, len(spec.Workspaces))
+	for _, w := range spec.Workspaces {
+		ws = append(ws, w.Name)
+	}
+	var caps []string
+	if spec.Clone {
+		caps = append(caps, "clone") // ADR-0009 capability predicate
+	}
+	return scheduler.Request{
+		CPU: float64(spec.Cpus), Mem: float64(spec.MemoryBytes) / 1024, Disk: spec.DiskGb,
+		Workspaces: ws, Template: spec.Template, Capabilities: caps,
+		Strategy: strategy, RequestID: requestID,
+	}
 }
 
 // NewSandboxService builds the service.
@@ -32,7 +119,7 @@ func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 	}
 	return sandbox.CreateSpec{
 		Agent: r.Agent, Template: r.Template, CPUs: int(r.Cpus),
-		MemoryBytes: r.MemoryBytes, Clone: r.Clone, Workspaces: ws, Env: r.Env,
+		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Workspaces: ws, Env: r.Env,
 	}
 }
 
@@ -60,6 +147,10 @@ func idempotencyKey(ctx context.Context) string {
 
 // CreateSandbox starts an async provision operation (idempotent).
 func (s *SandboxService) CreateSandbox(ctx context.Context, r *sbxv1.CreateSandboxRequest) (*sbxv1.Operation, error) {
+	strategy, err := resolveStrategy(r.Strategy, s.defaultStrategy)
+	if err != nil {
+		return nil, err
+	}
 	op, existed, err := s.ops.Start(ctx, "provision", idempotencyKey(ctx))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -67,9 +158,14 @@ func (s *SandboxService) CreateSandbox(ctx context.Context, r *sbxv1.CreateSandb
 	if existed {
 		return opProto(op), nil
 	}
-	spec := toSpec(r)
+	sized := effectiveSpec(r, s.defaultResources)
+	req := requestFromSpec(sized, strategy, op.ID)
 	s.ops.Run(op.ID, func() (string, error) {
-		rec, cerr := s.mgr.Create(context.Background(), spec)
+		if s.place != nil {
+			return s.place(context.Background(), req, sized)
+		}
+		// Fallback (no coordinator wired, e.g. unit tests): local admit+create.
+		rec, cerr := s.mgr.AdmitAndCreate(context.Background(), toSpec(sized))
 		if cerr != nil {
 			return "", cerr
 		}

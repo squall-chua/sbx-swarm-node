@@ -12,6 +12,8 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func newSandboxSvc(t *testing.T) *SandboxService {
@@ -62,4 +64,31 @@ func TestSandboxService_Exec(t *testing.T) {
 	res, err := svc.Exec(ctx, &sbxv1.ExecRequest{Id: rec.ID, Cmd: []string{"echo", "hi"}})
 	require.NoError(t, err)
 	require.Equal(t, int32(0), res.ExitCode)
+}
+
+func TestCreateSandbox_RejectsBadStrategy(t *testing.T) {
+	svc := newSandboxSvc(t)
+	_, err := svc.CreateSandbox(context.Background(), &sbxv1.CreateSandboxRequest{Strategy: "bogus"})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestEffectiveSizing_FillsUnsized(t *testing.T) {
+	defaults := sandbox.Resources{CPUCores: 2, MemoryBytes: 1024, DiskGB: 3}
+	got := effectiveSpec(&sbxv1.CreateSandboxRequest{}, defaults)
+	require.Equal(t, int32(2), got.Cpus)
+	require.Equal(t, int64(1024), got.MemoryBytes)
+	require.Equal(t, 3.0, got.DiskGb)
+
+	got = effectiveSpec(&sbxv1.CreateSandboxRequest{Cpus: 8, MemoryBytes: 4096, DiskGb: 9}, defaults)
+	require.Equal(t, int32(8), got.Cpus)
+	require.Equal(t, int64(4096), got.MemoryBytes)
+	require.Equal(t, 9.0, got.DiskGb)
+}
+
+func TestEffectiveSizing_BuiltinFloorWhenNoDefault(t *testing.T) {
+	got := effectiveSpec(&sbxv1.CreateSandboxRequest{}, sandbox.Resources{})
+	require.Equal(t, floorCPUCores, got.Cpus)
+	require.Equal(t, floorMemoryBytes, got.MemoryBytes)
+	require.Equal(t, floorDiskGB, got.DiskGb)
 }
