@@ -165,7 +165,11 @@ retry are unit-tested without RPC.
   `ErrNoCapacity`.
 - In `node.go`, `attempt(nodeID)`: if `tbl.IsLocal`-equivalent (nodeID == self)
   call `mgr.AdmitAndCreate`; else `peer.Pool.Conn(addr,nodeID)` → `Provision`,
-  mapping `accepted=false`→`ErrNack`.
+  mapping `accepted=false`→`ErrNack`. A **dial failure** (addr-miss *or*
+  `Conn` error, e.g. pin not yet gossiped) is also mapped to `ErrNack` (logged)
+  so one unreachable peer doesn't abort placement — the loop tries the next
+  candidate. The post-dial RPC error stays surfaced (an in-flight create may have
+  succeeded; retrying could duplicate the sandbox).
 
 ---
 
@@ -305,12 +309,12 @@ existing gossip-update path.
 - **Gossiped reservation sharing** — coordinators don't share in-flight
   reservations; target-authoritative admission is the backstop. Acceptable in
   the leaderless model.
-- **Cordon staleness at the target** — the target's `Provision` re-checks
-  capacity but not its own cordon state, so a node cordoned *after* the entry
-  node's candidate snapshot can still receive a forwarded provision until gossip
-  propagates the cordon (seconds). Consistent with the swarm's eventually-
-  consistent membership model; a target-side self-cordon re-check is a vNext
-  hardening.
+- ~~**Cordon staleness at the target**~~ — **RESOLVED (post-M5 hardening).** The
+  target's `Provision` now re-checks its own cordon state (`tbl.IsCordoned(self)`,
+  updated synchronously by `Cluster.SetCordoned`) and returns
+  `accepted=false, reason="cordoned"` → the coordinator NACKs and retries the next
+  candidate. Closes the window where a node cordoned *after* the entry node's
+  snapshot could still receive a forwarded provision before gossip propagated.
 - **`ProvisionRequest.request_id`** is reserved (unused in v1): the hash
   tie-break runs at the entry node using the operation id, so the field is not
   populated/read yet — kept additively for future cross-node idempotency/trace.

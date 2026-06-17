@@ -11,15 +11,25 @@ import (
 // node identity (ADR-0011); never exposed over REST.
 type InternalService struct {
 	sbxv1.UnimplementedInternalServiceServer
-	mgr *sandbox.Manager
+	mgr      *sandbox.Manager
+	cordoned func() bool // self-cordon check; nil when standalone (never cordoned)
 }
 
-// NewInternalService builds the internal service.
-func NewInternalService(mgr *sandbox.Manager) *InternalService { return &InternalService{mgr: mgr} }
+// NewInternalService builds the internal service. cordoned reports this node's
+// own cordon state (nil = standalone, never cordoned).
+func NewInternalService(mgr *sandbox.Manager, cordoned func() bool) *InternalService {
+	return &InternalService{mgr: mgr, cordoned: cordoned}
+}
 
 // Provision performs target-authoritative admission against real local capacity,
 // then creates. A capacity miss returns accepted=false (the coordinator's NACK).
 func (s *InternalService) Provision(ctx context.Context, r *sbxv1.ProvisionRequest) (*sbxv1.ProvisionReply, error) {
+	// Self-cordon recheck: a node cordoned after the entry node's candidate
+	// snapshot must refuse a forwarded provision until gossip propagates (the
+	// coordinator treats this NACK as a retry on the next candidate).
+	if s.cordoned != nil && s.cordoned() {
+		return &sbxv1.ProvisionReply{Accepted: false, Reason: "cordoned"}, nil
+	}
 	in := r.Spec
 	if in == nil {
 		in = &sbxv1.CreateSandboxRequest{}

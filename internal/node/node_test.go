@@ -12,7 +12,11 @@ import (
 
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
+	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
+	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/peer"
+	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,6 +74,25 @@ func TestNode_SSEEndpointAuthed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	resp.Body.Close()
+}
+
+func TestAttemptFor_DialFailureNacks(t *testing.T) {
+	// A peer in the routing table whose pin is unknown makes pool.Conn fail-closed.
+	// The attempt must NACK so the coordinator falls through to the next candidate,
+	// rather than surfacing a hard error that aborts the whole placement.
+	_, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	pool := peer.NewPool(
+		peer.WithNodeKey("self", priv),
+		peer.WithPinResolver(func(string) ([]byte, bool) { return nil, false }),
+	)
+	tbl := routing.NewTable("self")
+	tbl.Upsert("peerB", "127.0.0.1:1", false, nil)
+
+	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
+		nil, tbl, pool, obs.NewLogger("error", io.Discard))
+	_, err = attempt(context.Background(), "peerB")
+	require.ErrorIs(t, err, coordinator.ErrNack)
 }
 
 func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {

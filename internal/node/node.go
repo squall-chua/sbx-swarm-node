@@ -217,7 +217,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	sandboxes.WithPlacement(
 		func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (string, error) {
 			req.Local = id.NodeID // prefer this (entry) node on a score tie
-			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, mgr, tbl, pool))
+			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, mgr, tbl, pool, log))
 		},
 		cfg.DefaultStrategy,
 		sandbox.Resources{
@@ -241,7 +241,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Forward:   fwd,
 		Routing:   tbl,
 		Peers:     pool,
-		Internal:  apiserver.NewInternalService(mgr),
+		Internal:  apiserver.NewInternalService(mgr, func() bool { return tbl.IsCordoned(id.NodeID) }),
 		NodeSvc:   nodeSvc, // pre-wired with Cordoner (nil-safe if no cluster)
 		Pins: func(nodeID string) (crypto.PublicKey, bool) {
 			pk, ok := tbl.PubKey(nodeID)
@@ -479,7 +479,7 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 
 // attemptFor builds the per-request attempt closure: local admit+create, or a
 // remote Provision RPC over the pinned peer pool.
-func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, mgr *sandbox.Manager, tbl *routing.Table, pool *peer.Pool) coordinator.AttemptFunc {
+func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, mgr *sandbox.Manager, tbl *routing.Table, pool *peer.Pool, log *slog.Logger) coordinator.AttemptFunc {
 	return func(ctx context.Context, nodeID string) (string, error) {
 		if nodeID == self {
 			rec, err := mgr.AdmitAndCreate(ctx, apiserver.ToSpecForProvision(spec))
@@ -497,7 +497,10 @@ func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, mgr *sandbox.Mana
 		}
 		conn, err := pool.Conn(addr, nodeID)
 		if err != nil {
-			return "", err
+			// Can't reach this peer (e.g. pin not yet gossiped): NACK so the
+			// coordinator tries the next candidate instead of aborting placement.
+			log.Warn("provision: peer unreachable, skipping", "node_id", nodeID, "err", err)
+			return "", coordinator.ErrNack
 		}
 		reply, err := sbxv1.NewInternalServiceClient(conn).Provision(ctx, &sbxv1.ProvisionRequest{Spec: spec})
 		if err != nil {
