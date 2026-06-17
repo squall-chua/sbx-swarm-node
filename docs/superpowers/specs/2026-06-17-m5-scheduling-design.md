@@ -129,8 +129,13 @@ window.
   frees a reservation.
 - **Convert-on-success (the lifecycle rule):** `Manager.AdmitAndCreate` does
   `TryReserve →` (not ok → `ErrNoCapacity`) `→ backend.Create →` on success
-  **`base += cost` and `Release(id)` atomically**, on failure **`Release(id)`**.
-  This avoids both double-counting (reservation *and* base) and the
+  **resync `base` *absolutely* from durable records (`CommitBase`, which sets
+  base from `List()` — now including the new record — and drops the reservation
+  in one lock hold)**, on failure **`Release(id)`**. Using an absolute resync
+  (identical to `SetBase`) rather than an incremental `base += cost` means a
+  concurrent `Reconcile` cannot double-count the just-persisted record. The
+  incremental `Commit` (base += cost) remains only as a fallback if the
+  post-create `List` fails. This avoids both double-counting and the
   over-admission gap (release-then-wait-for-reconcile). *Rejected alternative:
   reconcile-only base updates, which leaves a window where a just-created
   sandbox is uncounted.*
@@ -300,6 +305,15 @@ existing gossip-update path.
 - **Gossiped reservation sharing** — coordinators don't share in-flight
   reservations; target-authoritative admission is the backstop. Acceptable in
   the leaderless model.
+- **Cordon staleness at the target** — the target's `Provision` re-checks
+  capacity but not its own cordon state, so a node cordoned *after* the entry
+  node's candidate snapshot can still receive a forwarded provision until gossip
+  propagates the cordon (seconds). Consistent with the swarm's eventually-
+  consistent membership model; a target-side self-cordon re-check is a vNext
+  hardening.
+- **`ProvisionRequest.request_id`** is reserved (unused in v1): the hash
+  tie-break runs at the entry node using the operation id, so the field is not
+  populated/read yet — kept additively for future cross-node idempotency/trace.
 
 ---
 
