@@ -92,3 +92,16 @@ func TestMergeRemoteState_SkipsTrueSwarmMismatch(t *testing.T) {
 	_, ok := tbl.Addr("nB")
 	require.False(t, ok)
 }
+
+func TestUpdateLocalLoad_SetsUtilAndBumpsVersionOnce(t *testing.T) {
+	_, c, _ := newTestDelegate("n1", nil)
+	before := c.LocalNodeState().StateVersion
+	c.UpdateLocalLoad(2, 1024, 5, 0.4, 0.6)
+	ns := c.LocalNodeState()
+	require.Equal(t, 2.0, ns.AllocCPU)
+	require.Equal(t, 1024.0, ns.AllocMemKB)
+	require.Equal(t, 5.0, ns.AllocDiskGB)
+	require.Equal(t, 0.4, ns.ActualCPU)
+	require.Equal(t, 0.6, ns.ActualMem)
+	require.Equal(t, before+1, ns.StateVersion, "one combined re-advertise")
+}

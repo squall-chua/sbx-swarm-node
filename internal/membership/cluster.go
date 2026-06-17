@@ -186,12 +186,15 @@ func (c *Cluster) UpdateLocalSandboxIDs(ids []string) {
 	}
 }
 
-// UpdateLocalAlloc refreshes the gossiped allocation snapshot and re-advertises.
-func (c *Cluster) UpdateLocalAlloc(cpu, memKB, diskGB float64) {
+// UpdateLocalLoad refreshes the gossiped allocation + actual-utilization snapshot
+// and re-advertises (one StateVersion bump). Called from the node's 10s ticker.
+func (c *Cluster) UpdateLocalLoad(cpu, memKB, diskGB, utilCPU, utilMem float64) {
 	c.mu.Lock()
 	c.local.AllocCPU = cpu
 	c.local.AllocMemKB = memKB
 	c.local.AllocDiskGB = diskGB
+	c.local.ActualCPU = utilCPU
+	c.local.ActualMem = utilMem
 	c.local.StateVersion++
 	ml := c.ml
 	c.mu.Unlock()

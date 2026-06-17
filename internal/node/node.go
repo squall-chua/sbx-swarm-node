@@ -121,7 +121,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		_ = mgr.Reconcile(nctx)
 		if clusterInstance != nil {
 			rc, rm, rd := mgr.Capacity().Snapshot()
-			clusterInstance.UpdateLocalAlloc(rc, rm, rd)
+			clusterInstance.UpdateLocalLoad(rc, rm, rd, au.CPU, au.Mem)
 		}
 	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
