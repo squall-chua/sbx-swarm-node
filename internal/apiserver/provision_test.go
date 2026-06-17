@@ -69,3 +69,45 @@ func TestInternalProvision_CordonedTargetNacks(t *testing.T) {
 	require.False(t, r.Accepted)
 	require.Equal(t, "cordoned", r.Reason)
 }
+
+func TestInternalProvision_DedupsByRequestID(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	svc := NewInternalService(mgr, nil)
+
+	r1, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
+		RequestId: "op-123", Spec: &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
+	})
+	require.NoError(t, err)
+	require.True(t, r1.Accepted)
+
+	r2, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
+		RequestId: "op-123", Spec: &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
+	})
+	require.NoError(t, err)
+	require.True(t, r2.Accepted)
+	require.Equal(t, r1.SandboxId, r2.SandboxId, "same request_id must return the same sandbox")
+
+	recs, err := mgr.List(context.Background())
+	require.NoError(t, err)
+	require.Len(t, recs, 1, "duplicate request_id must not create a second sandbox")
+}
+
+func TestInternalProvision_EmptyRequestIDDoesNotDedup(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	svc := NewInternalService(mgr, nil)
+
+	for i := 0; i < 2; i++ {
+		_, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
+			Spec: &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
+		})
+		require.NoError(t, err)
+	}
+	recs, _ := mgr.List(context.Background())
+	require.Len(t, recs, 2, "empty request_id must not dedup (back-compat)")
+}
