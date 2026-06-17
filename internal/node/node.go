@@ -21,7 +21,9 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
+	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
+	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/membership"
@@ -31,6 +33,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/scheduler"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/squall-chua/sbx-swarm-node/internal/tlsutil"
 	"google.golang.org/grpc"
@@ -78,6 +81,13 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	backend := sandbox.NewFake() // M1c default backend so the node boots without a daemon
 	mgr := sandbox.NewManager(id.NodeID, backend, st, gen)
 	mgr.SetPublisher(bus)
+	dc, dm, dd := sandbox.DetectHostLimits(cfg.DataDir)
+	capt := sandbox.NewCapacity(
+		resolveCfgLimit(cfg.ProvisionLimits.CPUCores, dc),
+		resolveCfgLimit(float64(cfg.ProvisionLimits.MemoryBytes)/1024, dm),
+		resolveCfgLimit(cfg.ProvisionLimits.DiskGB, dd),
+	)
+	mgr.SetCapacity(capt)
 	opsM := ops.NewManager(st, gen)
 	opsM.SetPublisher(bus)
 	opsM.SetMetrics(metrics)
@@ -87,6 +97,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 
 	// Background observability collectors.
 	nctx, cancel := context.WithCancel(context.Background())
+	var clusterInstance *membership.Cluster
 	statsC := obsd.NewStatsCollector(backend, namesList(mgr), obsd.DefaultProvisionLimit(), 4)
 	netC := obsd.NewNetLogCollector(backend, mgr.ResolveVMToID)
 	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC, Backend: backend, Mgr: mgr})
@@ -106,6 +117,11 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			for status, n := range counts {
 				metrics.SetSandboxes(status, n)
 			}
+		}
+		_ = mgr.Reconcile(nctx)
+		if clusterInstance != nil {
+			rc, rm, rd := mgr.Capacity().Snapshot()
+			clusterInstance.UpdateLocalAlloc(rc, rm, rd)
 		}
 	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
@@ -147,6 +163,9 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		swarmName = si.SwarmName
 	}
 	ownedIDs := ownedSandboxIDs(context.Background(), mgr)
+	lc, lm, ld := capt.Limits()
+	ac, am, ad := capt.Snapshot()
+	tmpls, _ := backend.ListTemplates(context.Background())
 	localNS := membership.NodeState{
 		NodeID:          id.NodeID,
 		Addr:            dialableAddr(cfg.ListenAddr),
@@ -156,15 +175,20 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		SwarmID:         si.SwarmID,
 		SwarmName:       swarmName,
 		Labels:          cfg.Labels,
-		LimitCPU:        cfg.ProvisionLimits.CPUCores,
-		LimitMemKB:      float64(cfg.ProvisionLimits.MemoryBytes / 1024),
+		LimitCPU:        lc,
+		LimitMemKB:      lm,
+		LimitDiskGB:     ld,
+		AllocCPU:        ac,
+		AllocMemKB:      am,
+		AllocDiskGB:     ad,
+		Workspaces:      workspaceNames(cfg.Workspaces),
+		Templates:       tmpls,
 		PubKey:          id.PublicKey,
 	}
 
 	// Build NodeService before cluster so we can wire the Cordoner below.
 	nodeSvc := apiserver.NewNodeService(id.NodeID, cfg.NodeName, version)
 
-	var clusterInstance *membership.Cluster
 	if cfg.GossipAddr != "" && cfg.ClusterSecret != "" {
 		// Only build the cluster when a cluster_secret is configured. A pure
 		// standalone node (no secret, no seeds) skips gossip entirely.
@@ -187,6 +211,21 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		mgr.SetOwnedIDsNotifier(cl)
 	}
 
+	coord := coordinator.New(func() []scheduler.Candidate {
+		return buildCandidates(id.NodeID, cfg, capt, mgr, clusterInstance, tbl)
+	})
+	sandboxes.WithPlacement(
+		func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (string, error) {
+			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, mgr, tbl, pool))
+		},
+		cfg.DefaultStrategy,
+		sandbox.Resources{
+			CPUCores:    cfg.DefaultSandboxResources.CPUCores,
+			MemoryBytes: cfg.DefaultSandboxResources.MemoryBytes,
+			DiskGB:      cfg.DefaultSandboxResources.DiskGB,
+		},
+	)
+
 	handler, grpcSrv, err := apiserver.Build(apiserver.Options{
 		NodeID:    id.NodeID,
 		NodeName:  cfg.NodeName,
@@ -201,6 +240,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Forward:   fwd,
 		Routing:   tbl,
 		Peers:     pool,
+		Internal:  apiserver.NewInternalService(mgr),
 		NodeSvc:   nodeSvc, // pre-wired with Cordoner (nil-safe if no cluster)
 		Pins: func(nodeID string) (crypto.PublicKey, bool) {
 			pk, ok := tbl.PubKey(nodeID)
@@ -374,5 +414,97 @@ func runTicker(ctx context.Context, interval time.Duration, fn func()) {
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+func resolveCfgLimit(configured, detected float64) float64 {
+	if configured > 0 {
+		return configured
+	}
+	return detected
+}
+
+func workspaceNames(ws []config.WorkspaceConfig) []string {
+	out := make([]string, 0, len(ws))
+	for _, w := range ws {
+		out = append(out, w.Name)
+	}
+	return out
+}
+
+func nameSet(ss []string) map[string]bool {
+	m := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		m[s] = true
+	}
+	return m
+}
+
+// buildCandidates assembles the self candidate (live local capacity) + gossiped peers.
+func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mgr *sandbox.Manager, cl *membership.Cluster, tbl *routing.Table) []scheduler.Candidate {
+	lc, lm, ld := capt.Limits()
+	ac, am, ad := capt.Snapshot()
+	recs, _ := mgr.List(context.Background())
+	selfTmpls, _ := mgr.Backend().ListTemplates(context.Background())
+	out := []scheduler.Candidate{{
+		NodeID:       self,
+		Workspaces:   nameSet(workspaceNames(cfg.Workspaces)),
+		Templates:    nameSet(selfTmpls),
+		Capabilities: map[string]bool{"clone": true, "stats": true, "exec": true},
+		Labels:       cfg.Labels,
+		LimitCPU:     lc, LimitMem: lm, LimitDisk: ld,
+		AllocCPU: ac, AllocMem: am, AllocDisk: ad,
+		Sandboxes: len(recs),
+		Cordoned:  tbl.IsCordoned(self),
+	}}
+	if cl == nil {
+		return out
+	}
+	for _, ns := range cl.PeerStates() {
+		out = append(out, scheduler.Candidate{
+			NodeID:       ns.NodeID,
+			Workspaces:   nameSet(ns.Workspaces),
+			Templates:    nameSet(ns.Templates),
+			Capabilities: nameSet(ns.Capabilities),
+			Labels:       ns.Labels,
+			LimitCPU:     ns.LimitCPU, LimitMem: ns.LimitMemKB, LimitDisk: ns.LimitDiskGB,
+			AllocCPU: ns.AllocCPU, AllocMem: ns.AllocMemKB, AllocDisk: ns.AllocDiskGB,
+			Sandboxes: len(ns.OwnedSandboxIDs),
+			Cordoned:  ns.Cordoned,
+		})
+	}
+	return out
+}
+
+// attemptFor builds the per-request attempt closure: local admit+create, or a
+// remote Provision RPC over the pinned peer pool.
+func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, mgr *sandbox.Manager, tbl *routing.Table, pool *peer.Pool) coordinator.AttemptFunc {
+	return func(ctx context.Context, nodeID string) (string, error) {
+		if nodeID == self {
+			rec, err := mgr.AdmitAndCreate(ctx, apiserver.ToSpecForProvision(spec))
+			if err == sandbox.ErrNoCapacity {
+				return "", coordinator.ErrNack
+			}
+			if err != nil {
+				return "", err
+			}
+			return rec.ID, nil
+		}
+		addr, ok := tbl.Addr(nodeID)
+		if !ok {
+			return "", coordinator.ErrNack
+		}
+		conn, err := pool.Conn(addr, nodeID)
+		if err != nil {
+			return "", err
+		}
+		reply, err := sbxv1.NewInternalServiceClient(conn).Provision(ctx, &sbxv1.ProvisionRequest{Spec: spec})
+		if err != nil {
+			return "", err
+		}
+		if !reply.Accepted {
+			return "", coordinator.ErrNack
+		}
+		return reply.SandboxId, nil
 	}
 }

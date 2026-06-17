@@ -21,11 +21,11 @@ type PlaceFunc func(ctx context.Context, req scheduler.Request, spec *sbxv1.Crea
 // SandboxService implements sbxv1.SandboxServiceServer over the sandbox Manager.
 type SandboxService struct {
 	sbxv1.UnimplementedSandboxServiceServer
-	mgr             *sandbox.Manager
-	ops             *ops.Manager
-	obs             ObserveDeps
-	place           PlaceFunc
-	defaultStrategy string
+	mgr              *sandbox.Manager
+	ops              *ops.Manager
+	obs              ObserveDeps
+	place            PlaceFunc
+	defaultStrategy  string
 	defaultResources sandbox.Resources
 }
 
@@ -111,6 +111,9 @@ func requestFromSpec(spec *sbxv1.CreateSandboxRequest, strategy, requestID strin
 func NewSandboxService(mgr *sandbox.Manager, opsM *ops.Manager) *SandboxService {
 	return &SandboxService{mgr: mgr, ops: opsM}
 }
+
+// ToSpecForProvision maps a proto create request to a sandbox.CreateSpec.
+func ToSpecForProvision(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec { return toSpec(r) }
 
 func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 	ws := make([]sandbox.WorkspaceMount, 0, len(r.Workspaces))
