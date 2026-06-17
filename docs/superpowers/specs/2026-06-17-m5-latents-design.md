@@ -1,8 +1,10 @@
 # M5 scheduling latents — design
 
-**Date:** 2026-06-17 · **Status:** approved, pre-plan · **Builds on:**
+**Date:** 2026-06-17 · **Status:** approved + grilled, pre-plan · **Builds on:**
 `2026-06-17-m5-scheduling-design.md` (M5 placement), ADR-0007, ADR-0009,
-ADR-0011.
+ADR-0011, **ADR-0012** (least-actual-load ranks on actual util). Glossary:
+CONTEXT.md "Placement strategy" (+least-actual-load) and "Placement constraint"
+(node-label affinity) updated.
 
 Closes the three latent items left after M5 + the post-M5 carry-forward
 hardening (target self-cordon recheck + dial-failure NACK, already merged at
@@ -32,14 +34,18 @@ evolution, no secret leakage).
 
 - **Proto** (`sandbox.proto`, `CreateSandboxRequest`):
   ```proto
-  map<string, string> affinity = 11;
-  map<string, string> anti_affinity = 12;
+  map<string, string> node_affinity = 11;
+  map<string, string> node_anti_affinity = 12;
   ```
-  `buf generate` → commit regenerated `internal/gen/...`.
+  Named `node_*` because they match a node's own labels (`zone`/`rack`/`gpu`),
+  a distinct namespace from `CreateSandboxRequest.labels` (the sandbox's own
+  labels, field 8). There is no sandbox-to-sandbox affinity. `buf generate` →
+  commit regenerated `internal/gen/...`.
 - **Wiring** (`apiserver/sandboxservice.go`, `requestFromSpec`): set
-  `Affinity: spec.Affinity, AntiAffinity: spec.AntiAffinity` on the
-  `scheduler.Request`. No scheduler-logic change — `fits()` already evaluates
-  both maps against `Candidate.Labels`.
+  `Affinity: spec.NodeAffinity, AntiAffinity: spec.NodeAntiAffinity` on the
+  `scheduler.Request` (the internal `scheduler.Request.Affinity/AntiAffinity`
+  names stay — not on the wire). No scheduler-logic change — `fits()` already
+  evaluates both maps against `Candidate.Labels`.
 - **Placement-only:** affinity is resolved at the **entry node** during
   `scheduler.Schedule`; the chosen target just creates. `ProvisionRequest` is
   untouched, so affinity never crosses the node→node hop.
@@ -67,6 +73,18 @@ duplicate sandbox. Closes the gap documented in §5/§9 of the M5 spec.
   NACKs), retry the **same target once**. If the retry also errors, surface the
   error (unchanged outer contract). One retry is enough to cover a dropped
   response; idempotency makes it safe.
+- **Same-target-only — never fall through after an RPC error.** An ambiguous RPC
+  error means the request may have created the sandbox; a *different* candidate
+  does not share the target's dedup map, so falling through could create a
+  second sandbox. The retry stays on the same target; on second failure the op
+  fails. (This must be an explicit code comment, not just spec text.)
+- **Double-fault orphan (accepted, not new).** If the first RPC creates the
+  sandbox but its response is lost *and* the retry also errors, the op reports
+  failure while a real sandbox exists on the target. This is the exact risk the
+  pre-carry-forward single-RPC path already had; the retry strictly improves the
+  common lost-response case. The orphan is fully tracked (owner + durable record +
+  swarm-wide `ListSandboxes`), just unlinked from the failed op. Orphan
+  reconciliation is out of scope (separate operability concern).
 
 ### 2.2 Target side (`InternalService`)
 - Add an in-memory **bounded TTL dedup map**: `request_id → sandbox_id`.
@@ -118,9 +136,14 @@ so idle-but-reserved sandboxes don't make a node look full.
   removed (single caller) or kept as a thin wrapper; the plan removes it since it
   has exactly one call site.
 - **Candidate** (`scheduler.Candidate`): add `ActualCPU, ActualMem float64`.
-  `buildCandidates`: self from live `statsC.ActualUtil()` (freshest); peers from
-  `ns.ActualCPU/ns.ActualMem`. Standalone (no cluster) ⇒ self-only, util from
-  local statsC.
+  `buildCandidates` fills **both self and peers from the gossiped `NodeState`** —
+  self via `cluster.LocalState()`, peers via `ns.ActualCPU/ns.ActualMem` — so the
+  candidate representation is symmetric and independent coordinators rank a node
+  consistently (ADR-0012; ADR-0007's "same node first" intent). Self-util is then
+  ≤10s stale (the existing ticker refreshes it), same as peers — fine for a usage
+  heuristic. Standalone (no cluster) ⇒ self-only candidate, so its util value is
+  moot (the one node always wins); `0` is acceptable. **Not** sourced from live
+  `statsC` (rejected: asymmetric, breaks cross-coordinator consistency).
 - **Score** (`scheduler.score`): add a branch
   ```go
   if req.Strategy == "least-actual-load" {
@@ -140,8 +163,8 @@ so idle-but-reserved sandboxes don't make a node look full.
 - `score` with `least-actual-load`: candidate with lower `max(util)` ranks first;
   ties fall through to locality/hash (existing tiebreak).
 - `least-loaded` (reserved) unchanged when reservations are equal but util differs.
-- `buildCandidates` populates self util from statsC and peer util from NodeState
-  (light unit/integration check).
+- `buildCandidates` populates self util from `LocalState()` and peer util from
+  `PeerStates()` (light unit/integration check — both from gossiped `NodeState`).
 
 ---
 
@@ -160,5 +183,5 @@ so idle-but-reserved sandboxes don't make a node look full.
   surface (still inside `internalMethods`).
 - Reserved-capacity admission unchanged — least-actual-load only affects ranking.
 - Secrets/keys/tokens never logged/persisted/gossiped — util is non-sensitive.
-- Standalone (no cluster) keeps working: self-only candidates, util from local
-  statsC, no gossip.
+- Standalone (no cluster) keeps working: self-only candidate (util value moot,
+  `0` ok), no gossip.

@@ -90,12 +90,16 @@ _Avoid_: block count, denied request (as a rate)
 
 **Placement constraint**:
 A hard predicate a node must satisfy to be eligible for a sandbox — required workspaces, template,
-capabilities, label affinity/anti-affinity, free capacity, and not cordoned. Constraints filter the
-candidate set; a Placement strategy then ranks the survivors.
-_Avoid_: filter (bare), selector, rule
+capabilities, node-label affinity/anti-affinity, free capacity, and not cordoned. Constraints filter the
+candidate set; a Placement strategy then ranks the survivors. Affinity matches a node's own labels
+(`zone`, `rack`, `gpu`, …), not the sandbox's labels — the two are distinct namespaces (wire fields
+`node_affinity`/`node_anti_affinity`).
+_Avoid_: filter (bare), selector, rule, pod-affinity (no sandbox-to-sandbox affinity exists)
 
 **Placement strategy**:
 The scoring rule that ranks the nodes passing every Placement constraint — least-loaded (default),
-bin-pack, or spread. Round-robin is intentionally excluded (no honest semantics without a shared cursor
-in a leaderless swarm). Label affinity is a Placement constraint, not a strategy.
+bin-pack, spread, or least-actual-load. The first three score on **reserved** allocation; least-actual-load
+scores on **actual** gossiped CPU/mem utilization (packs by real usage, not reservations). Round-robin is
+intentionally excluded (no honest semantics without a shared cursor in a leaderless swarm). Label affinity
+is a Placement constraint, not a strategy.
 _Avoid_: scheduling policy, algorithm
