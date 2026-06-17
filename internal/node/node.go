@@ -206,6 +206,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		}
 		clusterInstance = cl
 		nodeSvc.SetCordoner(cl)
+		nodeSvc.SetRevoker(cl)
 		// Re-gossip OwnedSandboxIDs on create/delete so peer node-state stays
 		// fresh (M5 scheduling reads gossiped owned-id sets).
 		mgr.SetOwnedIDsNotifier(cl)
@@ -251,7 +252,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			return ed25519.PublicKey(pk), true
 		},
 		PubKeyFor: func(nodeID string) ([]byte, bool) { return tbl.PubKey(nodeID) },
-		// Denylist: nil for v1 (local-only hook; gossiped revocation is vNext).
+		Denylist:  func(nodeID string) bool { return clusterInstance != nil && clusterInstance.IsRevoked(nodeID) },
 	})
 	if err != nil {
 		cancel()
