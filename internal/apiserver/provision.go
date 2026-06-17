@@ -32,7 +32,10 @@ func (d *dedup) get(id string) (string, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	e, ok := d.m[id]
-	if !ok || time.Since(e.at) > d.ttl {
+	if !ok {
+		return "", false
+	}
+	if time.Since(e.at) > d.ttl {
 		delete(d.m, id)
 		return "", false
 	}
@@ -49,15 +52,15 @@ func (d *dedup) put(id, sandboxID string) {
 		}
 	}
 	if len(d.m) >= d.max { // evict oldest
-		var ok string
-		var ot time.Time
+		var oldestKey string
+		var oldestAt time.Time
 		first := true
 		for k, e := range d.m {
-			if first || e.at.Before(ot) {
-				ok, ot, first = k, e.at, false
+			if first || e.at.Before(oldestAt) {
+				oldestKey, oldestAt, first = k, e.at, false
 			}
 		}
-		delete(d.m, ok)
+		delete(d.m, oldestKey)
 	}
 	d.m[id] = dedupEntry{sandboxID: sandboxID, at: now}
 }

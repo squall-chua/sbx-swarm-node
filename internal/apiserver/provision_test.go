@@ -108,6 +108,7 @@ func TestInternalProvision_EmptyRequestIDDoesNotDedup(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	recs, _ := mgr.List(context.Background())
+	recs, err := mgr.List(context.Background())
+	require.NoError(t, err)
 	require.Len(t, recs, 2, "empty request_id must not dedup (back-compat)")
 }
