@@ -45,7 +45,7 @@
 - Create: `internal/scheduler/scheduler.go`
 - Test: `internal/scheduler/scheduler_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package scheduler
@@ -139,12 +139,12 @@ func TestSchedule_TieBreakDeterministicAcrossCalls(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/scheduler/ -v`
 Expected: FAIL (package/types undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // Package scheduler performs constraint-based placement: filter by hard
@@ -292,12 +292,12 @@ func tie(requestID, nodeID string) uint64 {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/scheduler/ -v`
 Expected: PASS (all cases).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/scheduler/
@@ -312,7 +312,7 @@ git commit -m "feat(scheduler): filter/score/tiebreak placement over cpu/mem/dis
 - Create: `internal/sandbox/capacity.go`
 - Test: `internal/sandbox/capacity_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package sandbox
@@ -391,12 +391,12 @@ func TestCapacity_TryReserveAtomicUnderRace(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run TestCapacity -v`
 Expected: FAIL (`NewCapacity` undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 package sandbox
@@ -490,12 +490,12 @@ func (c *Capacity) Snapshot() (cpu, mem, disk float64) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/sandbox/ -run TestCapacity -race -v`
 Expected: PASS, no race.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sandbox/capacity.go internal/sandbox/capacity_test.go
@@ -511,7 +511,7 @@ git commit -m "feat(sandbox): atomic soft-reservation capacity accounting (cpu/m
 - Create: `internal/sandbox/hostlimits_other.go` (`//go:build !linux`)
 - Test: `internal/sandbox/hostlimits_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package sandbox
@@ -538,12 +538,12 @@ func TestDetectHostLimits_PositiveOnThisHost(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run 'TestResolveLimit|TestDetectHostLimits' -v`
 Expected: FAIL (`resolveLimit`/`detectHostLimits` undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/sandbox/hostlimits.go`:
 
@@ -609,12 +609,12 @@ import "runtime" // add to capacity.go's import block
 func numCPU() int { return runtime.NumCPU() }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/sandbox/ -run 'TestResolveLimit|TestDetectHostLimits' -v && go vet ./internal/sandbox/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sandbox/hostlimits.go internal/sandbox/hostlimits_other.go internal/sandbox/hostlimits_test.go internal/sandbox/capacity.go
@@ -629,7 +629,7 @@ git commit -m "feat(sandbox): host cpu/mem/disk limit auto-detection (linux + fa
 - Create: `internal/coordinator/coordinator.go`
 - Test: `internal/coordinator/coordinator_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package coordinator
@@ -693,12 +693,12 @@ func TestCoordinator_HardErrorSurfaces(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/coordinator/ -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // Package coordinator places provision requests: it scores candidates and
@@ -753,12 +753,12 @@ func (c *Coordinator) Provision(ctx context.Context, req scheduler.Request, atte
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/coordinator/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/coordinator/
@@ -775,7 +775,7 @@ git commit -m "feat(coordinator): scheduler-driven placement with NACK retry"
 - Modify: `internal/config/config.go` (config fields + validate)
 - Test: `internal/membership/state_test.go` (round-trip), `internal/config/config_test.go` (validate)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/membership/state_test.go` (create if absent — package `membership`):
 
@@ -808,12 +808,12 @@ func TestValidate_NegativeDiskLimitRejected(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/membership/ -run TestNodeState_BulkRoundTrip ./internal/config/ -run TestValidate_NegativeDisk -v`
 Expected: FAIL (unknown fields).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `internal/sandbox/backend.go`, add `DiskGB` to `CreateSpec` and a `Resources` type:
 
@@ -901,12 +901,12 @@ type ProvisionLimits struct {
 	}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/membership/ ./internal/config/ -v && go build ./...`
 Expected: PASS, build OK.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sandbox/backend.go internal/membership/state.go internal/membership/state_test.go internal/config/config.go internal/config/config_test.go
@@ -923,7 +923,7 @@ git commit -m "feat(model): scheduling fields on CreateSpec/NodeState/Config (+d
 - Modify: `internal/sandbox/sdkbackend.go` (wrap `template.List`)
 - Test: `internal/sandbox/fake_test.go` (or existing fake test file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/sandbox/fake_test.go` (create if absent — package `sandbox`):
 
@@ -943,12 +943,12 @@ func TestFake_ListTemplates(t *testing.T) {
 
 (Imports: `"context"`, `"testing"`, `"github.com/stretchr/testify/require"`.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run TestFake_ListTemplates -v`
 Expected: FAIL (`ListTemplates`/`SetTemplates` undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `internal/sandbox/backend.go`, add to the `Backend` interface (near `List`):
 
@@ -997,12 +997,12 @@ func (b *SDKBackend) ListTemplates(ctx context.Context) ([]string, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/sandbox/ -run TestFake_ListTemplates -v && go build ./...`
 Expected: PASS, build OK (both backends satisfy `Backend`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sandbox/backend.go internal/sandbox/fake.go internal/sandbox/sdkbackend.go internal/sandbox/fake_test.go
@@ -1017,7 +1017,7 @@ git commit -m "feat(sandbox): Backend.ListTemplates (daemon-derived template adv
 - Modify: `internal/sandbox/manager.go`
 - Test: `internal/sandbox/manager_test.go` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestManager_AdmitAndCreate_NacksOverLimit(t *testing.T) {
@@ -1051,12 +1051,12 @@ func TestManager_ReconcileSetsBaseFromRecords(t *testing.T) {
 
 > If `newTestStore`/`ids` import don't already exist in `manager_test.go`, mirror the existing test setup in that file (it already constructs a `Manager` with a `store.Store` and `ids.Gen`). Match the helper actually present.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/sandbox/ -run 'TestManager_AdmitAndCreate|TestManager_Reconcile' -v`
 Expected: FAIL (`SetCapacity`/`AdmitAndCreate`/`ErrNoCapacity` undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `internal/sandbox/manager.go`:
 
@@ -1131,12 +1131,12 @@ func (m *Manager) AdmitAndCreate(ctx context.Context, spec CreateSpec) (*Record,
 
 (`recs` is already in scope from the reconcile loop; reuse it.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/sandbox/ -v && go build ./...`
 Expected: PASS (existing manager tests unaffected — default capacity is unlimited).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sandbox/manager.go internal/sandbox/manager_test.go
@@ -1152,14 +1152,14 @@ git commit -m "feat(sandbox): Manager.AdmitAndCreate + reconcile-derived capacit
 - Create: `proto/sbxswarm/v1/internal.proto`
 - Generated (committed): `internal/gen/sbxswarm/v1/*`
 
-- [ ] **Step 1: Edit `sandbox.proto`** — add two fields to `CreateSandboxRequest` (next free numbers after `labels = 8`):
+- [x] **Step 1: Edit `sandbox.proto`** — add two fields to `CreateSandboxRequest` (next free numbers after `labels = 8`):
 
 ```proto
   double disk_gb = 9;
   string strategy = 10; // optional: least-loaded|bin-pack|spread (empty = node default)
 ```
 
-- [ ] **Step 2: Create `proto/sbxswarm/v1/internal.proto`**:
+- [x] **Step 2: Create `proto/sbxswarm/v1/internal.proto`**:
 
 ```proto
 syntax = "proto3";
@@ -1188,7 +1188,7 @@ message ProvisionReply {
 }
 ```
 
-- [ ] **Step 3: Regenerate + build**
+- [x] **Step 3: Regenerate + build**
 
 Run:
 ```bash
@@ -1196,7 +1196,7 @@ buf generate && go build ./...
 ```
 Expected: regenerates `internal/gen/sbxswarm/v1/*` (new `internal.pb.go`, `internal_grpc.pb.go`; `sandbox.pb.go` gains `DiskGb`/`Strategy`); build OK. No gateway file for internal (no http annotation).
 
-- [ ] **Step 4: Verify the generated symbols exist**
+- [x] **Step 4: Verify the generated symbols exist**
 
 Run:
 ```bash
@@ -1205,7 +1205,7 @@ grep -n "DiskGb\|Strategy" internal/gen/sbxswarm/v1/sandbox.pb.go | head
 ```
 Expected: a grpc file lists `InternalService_ServiceDesc`; `CreateSandboxRequest` has `GetDiskGb()`/`GetStrategy()`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add proto/ internal/gen/
@@ -1221,7 +1221,7 @@ git commit -m "feat(proto): CreateSandboxRequest disk_gb/strategy; InternalServi
 - Modify: `internal/apiserver/server.go` (`Options.Internal`, register on grpcSrv only)
 - Test: `internal/apiserver/provision_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package apiserver
@@ -1260,12 +1260,12 @@ func TestInternalProvision_AdmitsThenNacks(t *testing.T) {
 
 > Provide `newProvisionTestStore` by mirroring how other `internal/apiserver` tests open a temp `store.Store` (e.g. via `store.Open(filepath.Join(t.TempDir(), "x.db"))`). Match the existing pattern in the package.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestInternalProvision -v`
 Expected: FAIL (`NewInternalService` undefined).
 
-- [ ] **Step 3: Write `provision.go`**
+- [x] **Step 3: Write `provision.go`**
 
 ```go
 package apiserver
@@ -1304,7 +1304,7 @@ func (s *InternalService) Provision(ctx context.Context, r *sbxv1.ProvisionReque
 
 (`toSpec(*sbxv1.CreateSandboxRequest) sandbox.CreateSpec` already exists in `sandboxservice.go`; Task 11 extends it to also map `DiskGB`.)
 
-- [ ] **Step 4: Register on the gRPC server (grpc-only, no gateway)**
+- [x] **Step 4: Register on the gRPC server (grpc-only, no gateway)**
 
 In `internal/apiserver/server.go`:
 - Add to `Options`: `Internal *InternalService // optional; node→node provision RPC`
@@ -1318,7 +1318,7 @@ In `internal/apiserver/server.go`:
 
 Do **not** add a gateway handler for it.
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `go test ./internal/apiserver/ -run TestInternalProvision -v && go build ./...`
 Expected: PASS, build OK.
@@ -1336,7 +1336,7 @@ git commit -m "feat(apiserver): InternalService.Provision target admission + reg
 - Modify: `internal/apiserver/authz.go`
 - Modify: `internal/apiserver/authz_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/apiserver/authz_test.go`:
 
@@ -1361,12 +1361,12 @@ And add `sbxv1.InternalService_ServiceDesc` to the `descs` slice in `TestAuthz_A
 	}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestAuthorize_InternalProvision -v`
 Expected: FAIL (Provision unclassified / not node-gated). `TestAuthz_AllMethodsClassified` also fails until Step 3.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 In `internal/apiserver/authz.go`:
 - Add the bucket:
@@ -1411,12 +1411,12 @@ func authorize(fullMethod string, p principal) error {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -v`
 Expected: PASS (including `TestAuthz_AllMethodsClassified`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/authz.go internal/apiserver/authz_test.go
@@ -1431,7 +1431,7 @@ git commit -m "feat(apiserver): node-gated internalMethods authz for Provision (
 - Modify: `internal/apiserver/sandboxservice.go`
 - Test: `internal/apiserver/sandboxservice_test.go` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestCreateSandbox_RejectsBadStrategy(t *testing.T) {
@@ -1463,12 +1463,12 @@ func TestEffectiveSizing_BuiltinFloorWhenNoDefault(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run 'TestCreateSandbox_RejectsBadStrategy|TestEffectiveSizing' -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 In `internal/apiserver/sandboxservice.go`:
 
@@ -1608,12 +1608,12 @@ func (s *SandboxService) CreateSandbox(ctx context.Context, r *sbxv1.CreateSandb
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -v && go build ./...`
 Expected: PASS (existing CreateSandbox tests still pass via the fallback path; an unsized create now produces a floored, admitted sandbox).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/apiserver/sandboxservice.go internal/apiserver/sandboxservice_test.go
@@ -1629,7 +1629,7 @@ git commit -m "feat(apiserver): effective sizing, strategy validation, placement
 
 This task has no new unit test (it is pure wiring); verification is `build`/`vet`/the full suite, plus Task 13's integration test. Follow the existing structure in `node.New`.
 
-- [ ] **Step 1: Resolve capacity limits + wire into the Manager**
+- [x] **Step 1: Resolve capacity limits + wire into the Manager**
 
 After `backend`/`mgr` are created (around `mgr := sandbox.NewManager(...)`), add:
 
@@ -1643,7 +1643,7 @@ After `backend`/`mgr` are created (around `mgr := sandbox.NewManager(...)`), add
 	mgr.SetCapacity(capt)
 ```
 
-- [ ] **Step 2: Advertise scheduling fields in `localNS`**
+- [x] **Step 2: Advertise scheduling fields in `localNS`**
 
 Where `localNS := membership.NodeState{...}` is built, set limits from the resolved capacity and add workspaces/templates/alloc:
 
@@ -1667,7 +1667,7 @@ and in the struct literal replace the `LimitCPU`/`LimitMemKB` lines and add:
 		Templates:   tmpls,
 ```
 
-- [ ] **Step 3: Build the coordinator + placement, inject into `sandboxes`**
+- [x] **Step 3: Build the coordinator + placement, inject into `sandboxes`**
 
 After `tbl`, `pool`, `fwd` are constructed, add:
 
@@ -1690,7 +1690,7 @@ After `tbl`, `pool`, `fwd` are constructed, add:
 
 > `clusterInstance` is declared further down today; hoist its `var clusterInstance *membership.Cluster` declaration above this block (it is already a `var` — move the declaration up, keep the assignment where it is). `buildCandidates` reads `clusterInstance` (nil-safe).
 
-- [ ] **Step 4: Register `InternalService` in the `apiserver.Build` Options**
+- [x] **Step 4: Register `InternalService` in the `apiserver.Build` Options**
 
 Add to the `apiserver.Options{...}` literal:
 
@@ -1698,7 +1698,7 @@ Add to the `apiserver.Options{...}` literal:
 		Internal: apiserver.NewInternalService(mgr),
 ```
 
-- [ ] **Step 5: Add the node-local helpers (bottom of `node.go`)**
+- [x] **Step 5: Add the node-local helpers (bottom of `node.go`)**
 
 ```go
 // detectHostLimitsForNode exposes sandbox.detectHostLimits via a tiny wrapper so
@@ -1796,7 +1796,7 @@ func attemptFor(_ context.Context, self string, spec *sbxv1.CreateSandboxRequest
 }
 ```
 
-- [ ] **Step 6: Export the two `sandbox`/`apiserver` shims used above**
+- [x] **Step 6: Export the two `sandbox`/`apiserver` shims used above**
 
 - In `internal/sandbox/hostlimits.go` and `hostlimits_other.go`, add an exported wrapper so `node.go` (no build tags) can call it:
 
@@ -1814,7 +1814,7 @@ func DetectHostLimits(dataDir string) (cpuCores, memKB, diskGB float64) { return
 func ToSpecForProvision(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec { return toSpec(r) }
 ```
 
-- [ ] **Step 7: Periodic capacity/template refresh on the existing 10s ticker**
+- [x] **Step 7: Periodic capacity/template refresh on the existing 10s ticker**
 
 In the existing `go runTicker(nctx, 10*time.Second, func() {...})` block, add a periodic reconcile so capacity base + advertised state stay fresh:
 
@@ -1826,7 +1826,7 @@ In the existing `go runTicker(nctx, 10*time.Second, func() {...})` block, add a 
 		}
 ```
 
-- [ ] **Step 8: Add `Cluster.UpdateLocalAlloc`**
+- [x] **Step 8: Add `Cluster.UpdateLocalAlloc`**
 
 In `internal/membership/cluster.go`, mirroring `UpdateLocalSandboxIDs`:
 
@@ -1846,11 +1846,11 @@ func (c *Cluster) UpdateLocalAlloc(cpu, memKB, diskGB float64) {
 }
 ```
 
-- [ ] **Step 9: Add imports to node.go**
+- [x] **Step 9: Add imports to node.go**
 
 Add `"github.com/squall-chua/sbx-swarm-node/internal/coordinator"` and `"github.com/squall-chua/sbx-swarm-node/internal/scheduler"` and `sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"` to `node.go`'s import block.
 
-- [ ] **Step 10: Build + full suite**
+- [x] **Step 10: Build + full suite**
 
 Run:
 ```bash
@@ -1858,7 +1858,7 @@ go build ./... && go vet ./... && go test ./...
 ```
 Expected: build/vet clean; all existing tests pass.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add internal/node/node.go internal/membership/cluster.go internal/sandbox/hostlimits.go internal/sandbox/hostlimits_other.go internal/apiserver/sandboxservice.go
@@ -1874,7 +1874,7 @@ git commit -m "feat(node): wire capacity + coordinator placement; advertise sche
 
 Mirror the existing 2-node integration test harness in `internal/membership/` (same cluster bootstrap, **fresh ports** — use REST `19843`/`19853` and gossip `17996`/`18006`, none of which the existing suite uses). Each node is a real `node.New(...)` + `Start()` with a shared `cluster_secret`; one node configures a workspace the other lacks.
 
-- [ ] **Step 1: Write the integration test**
+- [x] **Step 1: Write the integration test**
 
 ```go
 //go:build integration
@@ -1897,12 +1897,12 @@ package membership_test
 
 Implement against the existing harness: build configs for A and B with `Workspaces`, `ProvisionLimits`, shared `ClusterSecret`, distinct ports; wait for gossip convergence (peer states non-empty) as the existing tests do; POST create; poll the op; assert the owning prefix / failure reason.
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `go test -tags integration ./internal/membership/ -run TestScheduling -timeout 120s -v`
 Expected: PASS (workspace-targeted create lands on B; over-limit create fails with a clear reason).
 
-- [ ] **Step 3: Full verification sweep**
+- [x] **Step 3: Full verification sweep**
 
 Run:
 ```bash
@@ -1913,7 +1913,7 @@ go test -tags integration ./internal/membership/ -timeout 120s
 ```
 Expected: all green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add internal/membership/scheduling_integration_test.go
