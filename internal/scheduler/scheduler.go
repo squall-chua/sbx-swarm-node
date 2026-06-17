@@ -28,6 +28,8 @@ type Candidate struct {
 	AllocMem     float64
 	AllocDisk    float64
 	Sandboxes    int
+	ActualCPU    float64
+	ActualMem    float64
 	Cordoned     bool
 }
 
@@ -118,6 +120,9 @@ func capFits(used, limit float64) bool { return limit == 0 || used <= limit }
 func score(req Request, c Candidate) float64 {
 	if req.Strategy == "spread" {
 		return float64(c.Sandboxes)
+	}
+	if req.Strategy == "least-actual-load" {
+		return max(c.ActualCPU, c.ActualMem) // dominant actual util; lighter-first
 	}
 	return max3(
 		ratio(c.AllocCPU+req.CPU, c.LimitCPU),

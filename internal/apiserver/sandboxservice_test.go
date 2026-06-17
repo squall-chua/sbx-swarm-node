@@ -93,6 +93,12 @@ func TestEffectiveSizing_BuiltinFloorWhenNoDefault(t *testing.T) {
 	require.Equal(t, floorDiskGB, got.DiskGb)
 }
 
+func TestResolveStrategy_AcceptsLeastActualLoad(t *testing.T) {
+	got, err := resolveStrategy("least-actual-load", "")
+	require.NoError(t, err)
+	require.Equal(t, "least-actual-load", got)
+}
+
 func TestRequestFromSpec_CarriesNodeAffinity(t *testing.T) {
 	spec := &sbxv1.CreateSandboxRequest{
 		Cpus: 1, MemoryBytes: 1,

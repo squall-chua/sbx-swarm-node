@@ -83,7 +83,7 @@ func resolveStrategy(reqStrategy, defaultStrategy string) (string, error) {
 		s = "least-loaded"
 	}
 	switch s {
-	case "least-loaded", "bin-pack", "spread":
+	case "least-loaded", "bin-pack", "spread", "least-actual-load":
 		return s, nil
 	default:
 		return "", status.Errorf(codes.InvalidArgument, "unknown strategy %q", reqStrategy)

@@ -447,6 +447,11 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 	ac, am, ad := capt.Snapshot()
 	recs, _ := mgr.List(context.Background())
 	selfTmpls, _ := mgr.Backend().ListTemplates(context.Background())
+	var selfUtilCPU, selfUtilMem float64
+	if cl != nil {
+		ls := cl.LocalNodeState()
+		selfUtilCPU, selfUtilMem = ls.ActualCPU, ls.ActualMem
+	}
 	out := []scheduler.Candidate{{
 		NodeID:       self,
 		Workspaces:   nameSet(workspaceNames(cfg.Workspaces)),
@@ -456,7 +461,8 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 		LimitCPU:     lc, LimitMem: lm, LimitDisk: ld,
 		AllocCPU: ac, AllocMem: am, AllocDisk: ad,
 		Sandboxes: len(recs),
-		Cordoned:  tbl.IsCordoned(self),
+		ActualCPU: selfUtilCPU, ActualMem: selfUtilMem,
+		Cordoned: tbl.IsCordoned(self),
 	}}
 	if cl == nil {
 		return out
@@ -471,7 +477,8 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 			LimitCPU:     ns.LimitCPU, LimitMem: ns.LimitMemKB, LimitDisk: ns.LimitDiskGB,
 			AllocCPU: ns.AllocCPU, AllocMem: ns.AllocMemKB, AllocDisk: ns.AllocDiskGB,
 			Sandboxes: len(ns.OwnedSandboxIDs),
-			Cordoned:  ns.Cordoned,
+			ActualCPU: ns.ActualCPU, ActualMem: ns.ActualMem,
+			Cordoned: ns.Cordoned,
 		})
 	}
 	return out

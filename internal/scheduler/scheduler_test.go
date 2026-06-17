@@ -108,6 +108,17 @@ func TestSchedule_LoadedLocalStillOffloads(t *testing.T) {
 	require.Equal(t, "A", order[0]) // lighter peer beats the loaded local node
 }
 
+func TestSchedule_LeastActualLoad(t *testing.T) {
+	cands := []Candidate{
+		{NodeID: "A", LimitCPU: 10, LimitMem: 10, LimitDisk: 10, ActualCPU: 0.8, ActualMem: 0.1},
+		{NodeID: "B", LimitCPU: 10, LimitMem: 10, LimitDisk: 10, ActualCPU: 0.2, ActualMem: 0.1},
+	}
+	req := Request{CPU: 1, Mem: 1, Disk: 1, Strategy: "least-actual-load", RequestID: "r"}
+	order, err := Schedule(req, cands)
+	require.NoError(t, err)
+	require.Equal(t, []string{"B", "A"}, order) // lower actual util first
+}
+
 func TestSchedule_NodeAffinityFiltersByLabel(t *testing.T) {
 	cands := []Candidate{
 		{NodeID: "A", Labels: map[string]string{"zone": "us"}, LimitCPU: 10, LimitMem: 10, LimitDisk: 10},
