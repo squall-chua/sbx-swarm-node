@@ -42,9 +42,42 @@ type ProvisionLimits struct {
 
 // WorkspaceConfig is a named host directory advertised for mounting/cloning.
 type WorkspaceConfig struct {
-	Name     string `yaml:"name"`
-	HostPath string `yaml:"host_path"`
-	ReadOnly bool   `yaml:"read_only"`
+	Name     string     `yaml:"name"`
+	HostPath string     `yaml:"host_path"`
+	ReadOnly bool       `yaml:"read_only"`
+	Git      *GitConfig `yaml:"git,omitempty"` // non-nil => git-backed (clone-only, ADR-0015)
+}
+
+// GitConfig configures a git-backed workspace's pre/publish pipelines (ADR-0003).
+// Credentials are operator host-side git config (ADR-0014) — there are no auth
+// fields here.
+type GitConfig struct {
+	Remote        string     `yaml:"remote"`
+	DefaultBranch string     `yaml:"default_branch"`
+	AllowPush     bool       `yaml:"allow_push"`
+	PreSteps      [][]string `yaml:"pre_steps"`
+	PublishSteps  [][]string `yaml:"publish_steps"`
+	ExecAllowlist []string   `yaml:"exec_allowlist"`
+}
+
+// WithDefaults returns a copy with unset fields filled with built-in defaults.
+func (g GitConfig) WithDefaults() GitConfig {
+	if g.Remote == "" {
+		g.Remote = "origin"
+	}
+	if len(g.ExecAllowlist) == 0 {
+		g.ExecAllowlist = []string{"git", "git-lfs"}
+	}
+	if len(g.PreSteps) == 0 {
+		g.PreSteps = [][]string{{"git", "fetch", "{remote}", "+refs/heads/*:refs/heads/*"}}
+	}
+	if len(g.PublishSteps) == 0 {
+		g.PublishSteps = [][]string{
+			{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"},
+			{"git", "push", "{remote}", "{branch}"},
+		}
+	}
+	return g
 }
 
 // SandboxResources is the per-sandbox default applied when a request omits a resource.
@@ -185,6 +218,11 @@ func (c *Config) Validate() error {
 	case "", "least-loaded", "bin-pack", "spread":
 	default:
 		return fmt.Errorf("default_strategy must be one of least-loaded|bin-pack|spread, got %q", c.DefaultStrategy)
+	}
+	for _, w := range c.Workspaces {
+		if w.Git != nil && w.HostPath == "" {
+			return fmt.Errorf("workspace %q is git-backed but has no host_path", w.Name)
+		}
 	}
 	return nil
 }

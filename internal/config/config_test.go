@@ -178,3 +178,25 @@ func TestValidate_ClusterFields(t *testing.T) {
 		})
 	}
 }
+
+func TestGitConfig_WithDefaults(t *testing.T) {
+	g := GitConfig{}.WithDefaults()
+	require.Equal(t, "origin", g.Remote)
+	require.Equal(t, []string{"git", "git-lfs"}, g.ExecAllowlist)
+	require.Equal(t, [][]string{{"git", "fetch", "{remote}", "+refs/heads/*:refs/heads/*"}}, g.PreSteps)
+	require.Equal(t, [][]string{
+		{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"},
+		{"git", "push", "{remote}", "{branch}"},
+	}, g.PublishSteps)
+
+	// Explicit values are preserved.
+	g2 := GitConfig{Remote: "up", ExecAllowlist: []string{"git"}}.WithDefaults()
+	require.Equal(t, "up", g2.Remote)
+	require.Equal(t, []string{"git"}, g2.ExecAllowlist)
+}
+
+func TestValidate_GitWorkspaceNeedsHostPath(t *testing.T) {
+	cfg := Default()
+	cfg.Workspaces = []WorkspaceConfig{{Name: "repo", Git: &GitConfig{}}}
+	require.ErrorContains(t, cfg.Validate(), "host_path")
+}
