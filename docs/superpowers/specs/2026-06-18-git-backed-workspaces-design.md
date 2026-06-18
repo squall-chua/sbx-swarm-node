@@ -84,7 +84,9 @@ A workspace is **git-backed** iff `Git != nil`; its `host_path` is the bare/mirr
 Defaults filled when unset:
 - `Remote = "origin"`; `ExecAllowlist = ["git","git-lfs"]`.
 - `PreSteps = [["git","fetch","{remote}","+refs/heads/*:refs/heads/*"]]`.
-- `PublishSteps = [["git","fetch","{sandbox_remote}","{branch}"],["git","push","{remote}","{branch}"]]`.
+- `PublishSteps = [["git","fetch","{sandbox_remote}","+refs/heads/{branch}:refs/heads/{branch}"],["git","push","{remote}","{branch}"]]`
+  (the refspec fetch lands the branch in `refs/heads/{branch}` so the push has a local ref — a bare
+  `git fetch {sandbox_remote} {branch}` would only update `FETCH_HEAD`).
 
 `config.Validate`: a git-backed workspace needs a non-empty `host_path`. At boot the node checks
 `host_path` exists; git-repo-ness surfaces at first PRE with a clear error (avoids a redundant probe).
