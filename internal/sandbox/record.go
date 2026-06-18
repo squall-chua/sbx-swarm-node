@@ -14,4 +14,5 @@ type Record struct {
 	IdempKey    string            `json:"idempotency_key,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+	LastPublish time.Time         `json:"last_publish,omitempty"`
 }

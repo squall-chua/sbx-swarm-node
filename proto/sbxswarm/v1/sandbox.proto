@@ -43,6 +43,9 @@ service SandboxService {
   rpc ListBlocked(IdRequest) returns (ListBlockedResponse) {
     option (google.api.http) = {get: "/v1/sandboxes/{id}/network/blocked"};
   }
+  rpc PublishSandbox(PublishSandboxRequest) returns (Operation) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish" body: "*"};
+  }
 }
 
 message WorkspaceMount {
@@ -63,6 +66,7 @@ message CreateSandboxRequest {
   string strategy = 10; // optional: least-loaded|bin-pack|spread|least-actual-load (empty = node default)
   map<string, string> node_affinity = 11;       // match node labels (zone/rack/gpu), not the sandbox's own labels
   map<string, string> node_anti_affinity = 12;  // exclude nodes whose labels match (node labels, not the sandbox's own)
+  string branch = 13; // clone-mode: branch the agent works on / auto-publish target
 }
 
 message Sandbox {
@@ -71,11 +75,18 @@ message Sandbox {
   string status = 3;
   repeated Port ports = 4;
   map<string, string> labels = 5;
+  string branch = 6;       // clone-mode recorded branch
+  string last_publish = 7; // RFC3339; empty if never published
 }
 
 message GetSandboxRequest { string id = 1; }
 message IdRequest { string id = 1; }
 message DeleteSandboxRequest { string id = 1; }
+
+message PublishSandboxRequest {
+  string id = 1;
+  string branch = 2; // optional: overrides the recorded branch
+}
 
 message ListSandboxesRequest {
   string status = 1;

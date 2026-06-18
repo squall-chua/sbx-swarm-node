@@ -88,6 +88,7 @@ type CreateSandboxRequest struct {
 	Strategy         string                 `protobuf:"bytes,10,opt,name=strategy,proto3" json:"strategy,omitempty"`                                                                                                                     // optional: least-loaded|bin-pack|spread|least-actual-load (empty = node default)
 	NodeAffinity     map[string]string      `protobuf:"bytes,11,rep,name=node_affinity,json=nodeAffinity,proto3" json:"node_affinity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`               // match node labels (zone/rack/gpu), not the sandbox's own labels
 	NodeAntiAffinity map[string]string      `protobuf:"bytes,12,rep,name=node_anti_affinity,json=nodeAntiAffinity,proto3" json:"node_anti_affinity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // exclude nodes whose labels match (node labels, not the sandbox's own)
+	Branch           string                 `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`                                                                                                                         // clone-mode: branch the agent works on / auto-publish target
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -206,6 +207,13 @@ func (x *CreateSandboxRequest) GetNodeAntiAffinity() map[string]string {
 	return nil
 }
 
+func (x *CreateSandboxRequest) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
 type Sandbox struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -213,6 +221,8 @@ type Sandbox struct {
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	Ports         []*Port                `protobuf:"bytes,4,rep,name=ports,proto3" json:"ports,omitempty"`
 	Labels        map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Branch        string                 `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                              // clone-mode recorded branch
+	LastPublish   string                 `protobuf:"bytes,7,opt,name=last_publish,json=lastPublish,proto3" json:"last_publish,omitempty"` // RFC3339; empty if never published
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -280,6 +290,20 @@ func (x *Sandbox) GetLabels() map[string]string {
 		return x.Labels
 	}
 	return nil
+}
+
+func (x *Sandbox) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *Sandbox) GetLastPublish() string {
+	if x != nil {
+		return x.LastPublish
+	}
+	return ""
 }
 
 type GetSandboxRequest struct {
@@ -414,6 +438,58 @@ func (x *DeleteSandboxRequest) GetId() string {
 	return ""
 }
 
+type PublishSandboxRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Branch        string                 `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"` // optional: overrides the recorded branch
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishSandboxRequest) Reset() {
+	*x = PublishSandboxRequest{}
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishSandboxRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishSandboxRequest) ProtoMessage() {}
+
+func (x *PublishSandboxRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishSandboxRequest.ProtoReflect.Descriptor instead.
+func (*PublishSandboxRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PublishSandboxRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PublishSandboxRequest) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
 type ListSandboxesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -424,7 +500,7 @@ type ListSandboxesRequest struct {
 
 func (x *ListSandboxesRequest) Reset() {
 	*x = ListSandboxesRequest{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[6]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -436,7 +512,7 @@ func (x *ListSandboxesRequest) String() string {
 func (*ListSandboxesRequest) ProtoMessage() {}
 
 func (x *ListSandboxesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[6]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,7 +525,7 @@ func (x *ListSandboxesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSandboxesRequest.ProtoReflect.Descriptor instead.
 func (*ListSandboxesRequest) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{6}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListSandboxesRequest) GetStatus() string {
@@ -475,7 +551,7 @@ type ListSandboxesResponse struct {
 
 func (x *ListSandboxesResponse) Reset() {
 	*x = ListSandboxesResponse{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[7]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +563,7 @@ func (x *ListSandboxesResponse) String() string {
 func (*ListSandboxesResponse) ProtoMessage() {}
 
 func (x *ListSandboxesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[7]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +576,7 @@ func (x *ListSandboxesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSandboxesResponse.ProtoReflect.Descriptor instead.
 func (*ListSandboxesResponse) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{7}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListSandboxesResponse) GetSandboxes() []*Sandbox {
@@ -522,7 +598,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[8]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -534,7 +610,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[8]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -547,7 +623,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{8}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ExecRequest) GetId() string {
@@ -589,7 +665,7 @@ type ExecResponse struct {
 
 func (x *ExecResponse) Reset() {
 	*x = ExecResponse{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[9]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -601,7 +677,7 @@ func (x *ExecResponse) String() string {
 func (*ExecResponse) ProtoMessage() {}
 
 func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[9]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -614,7 +690,7 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
 func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{9}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ExecResponse) GetExitCode() int32 {
@@ -651,7 +727,7 @@ type AgentRunRequest struct {
 
 func (x *AgentRunRequest) Reset() {
 	*x = AgentRunRequest{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[10]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -663,7 +739,7 @@ func (x *AgentRunRequest) String() string {
 func (*AgentRunRequest) ProtoMessage() {}
 
 func (x *AgentRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[10]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -676,7 +752,7 @@ func (x *AgentRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRunRequest.ProtoReflect.Descriptor instead.
 func (*AgentRunRequest) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{10}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AgentRunRequest) GetId() string {
@@ -724,7 +800,7 @@ type PublishPortRequest struct {
 
 func (x *PublishPortRequest) Reset() {
 	*x = PublishPortRequest{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[11]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +812,7 @@ func (x *PublishPortRequest) String() string {
 func (*PublishPortRequest) ProtoMessage() {}
 
 func (x *PublishPortRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[11]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +825,7 @@ func (x *PublishPortRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishPortRequest.ProtoReflect.Descriptor instead.
 func (*PublishPortRequest) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{11}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PublishPortRequest) GetId() string {
@@ -776,7 +852,7 @@ type Port struct {
 
 func (x *Port) Reset() {
 	*x = Port{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[12]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -788,7 +864,7 @@ func (x *Port) String() string {
 func (*Port) ProtoMessage() {}
 
 func (x *Port) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[12]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -801,7 +877,7 @@ func (x *Port) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Port.ProtoReflect.Descriptor instead.
 func (*Port) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{12}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Port) GetContainerPort() int32 {
@@ -827,7 +903,7 @@ type ListPortsResponse struct {
 
 func (x *ListPortsResponse) Reset() {
 	*x = ListPortsResponse{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[13]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -839,7 +915,7 @@ func (x *ListPortsResponse) String() string {
 func (*ListPortsResponse) ProtoMessage() {}
 
 func (x *ListPortsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[13]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -852,7 +928,7 @@ func (x *ListPortsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPortsResponse.ProtoReflect.Descriptor instead.
 func (*ListPortsResponse) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{13}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListPortsResponse) GetPorts() []*Port {
@@ -875,7 +951,7 @@ type Operation struct {
 
 func (x *Operation) Reset() {
 	*x = Operation{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[14]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -887,7 +963,7 @@ func (x *Operation) String() string {
 func (*Operation) ProtoMessage() {}
 
 func (x *Operation) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[14]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -900,7 +976,7 @@ func (x *Operation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Operation.ProtoReflect.Descriptor instead.
 func (*Operation) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{14}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Operation) GetId() string {
@@ -950,7 +1026,7 @@ type Stats struct {
 
 func (x *Stats) Reset() {
 	*x = Stats{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[15]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -962,7 +1038,7 @@ func (x *Stats) String() string {
 func (*Stats) ProtoMessage() {}
 
 func (x *Stats) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[15]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -975,7 +1051,7 @@ func (x *Stats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Stats.ProtoReflect.Descriptor instead.
 func (*Stats) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{15}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Stats) GetCores() int32 {
@@ -1017,7 +1093,7 @@ type Blocked struct {
 
 func (x *Blocked) Reset() {
 	*x = Blocked{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[16]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1029,7 +1105,7 @@ func (x *Blocked) String() string {
 func (*Blocked) ProtoMessage() {}
 
 func (x *Blocked) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[16]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1042,7 +1118,7 @@ func (x *Blocked) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Blocked.ProtoReflect.Descriptor instead.
 func (*Blocked) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{16}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Blocked) GetHost() string {
@@ -1076,7 +1152,7 @@ type ListBlockedResponse struct {
 
 func (x *ListBlockedResponse) Reset() {
 	*x = ListBlockedResponse{}
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[17]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1088,7 +1164,7 @@ func (x *ListBlockedResponse) String() string {
 func (*ListBlockedResponse) ProtoMessage() {}
 
 func (x *ListBlockedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[17]
+	mi := &file_sbxswarm_v1_sandbox_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1101,7 +1177,7 @@ func (x *ListBlockedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBlockedResponse.ProtoReflect.Descriptor instead.
 func (*ListBlockedResponse) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{17}
+	return file_sbxswarm_v1_sandbox_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListBlockedResponse) GetBlocked() []*Blocked {
@@ -1125,7 +1201,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x19sbxswarm/v1/sandbox.proto\x12\vsbxswarm.v1\x1a\x1cgoogle/api/annotations.proto\"A\n" +
 	"\x0eWorkspaceMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\xc6\x06\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\xde\x06\n" +
 	"\x14CreateSandboxRequest\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1a\n" +
 	"\btemplate\x18\x02 \x01(\tR\btemplate\x12\x12\n" +
@@ -1141,7 +1217,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\bstrategy\x18\n" +
 	" \x01(\tR\bstrategy\x12X\n" +
 	"\rnode_affinity\x18\v \x03(\v23.sbxswarm.v1.CreateSandboxRequest.NodeAffinityEntryR\fnodeAffinity\x12e\n" +
-	"\x12node_anti_affinity\x18\f \x03(\v27.sbxswarm.v1.CreateSandboxRequest.NodeAntiAffinityEntryR\x10nodeAntiAffinity\x1a6\n" +
+	"\x12node_anti_affinity\x18\f \x03(\v27.sbxswarm.v1.CreateSandboxRequest.NodeAntiAffinityEntryR\x10nodeAntiAffinity\x12\x16\n" +
+	"\x06branch\x18\r \x01(\tR\x06branch\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
@@ -1153,14 +1230,16 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15NodeAntiAffinityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xee\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa9\x02\n" +
 	"\aSandbox\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
 	"owner_node\x18\x02 \x01(\tR\townerNode\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12'\n" +
 	"\x05ports\x18\x04 \x03(\v2\x11.sbxswarm.v1.PortR\x05ports\x128\n" +
-	"\x06labels\x18\x05 \x03(\v2 .sbxswarm.v1.Sandbox.LabelsEntryR\x06labels\x1a9\n" +
+	"\x06labels\x18\x05 \x03(\v2 .sbxswarm.v1.Sandbox.LabelsEntryR\x06labels\x12\x16\n" +
+	"\x06branch\x18\x06 \x01(\tR\x06branch\x12!\n" +
+	"\flast_publish\x18\a \x01(\tR\vlastPublish\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"#\n" +
@@ -1169,7 +1248,10 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\tIdRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"&\n" +
 	"\x14DeleteSandboxRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"D\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
+	"\x15PublishSandboxRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\"D\n" +
 	"\x14ListSandboxesRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\"K\n" +
@@ -1225,7 +1307,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\tlast_seen\x18\x03 \x01(\tR\blastSeen\"l\n" +
 	"\x13ListBlockedResponse\x12.\n" +
 	"\ablocked\x18\x01 \x03(\v2\x14.sbxswarm.v1.BlockedR\ablocked\x12%\n" +
-	"\x0edistinct_count\x18\x02 \x01(\x05R\rdistinctCount2\xd5\t\n" +
+	"\x0edistinct_count\x18\x02 \x01(\x05R\rdistinctCount2\xce\n" +
+	"\n" +
 	"\x0eSandboxService\x12d\n" +
 	"\rCreateSandbox\x12!.sbxswarm.v1.CreateSandboxRequest\x1a\x16.sbxswarm.v1.Operation\"\x18\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/sandboxes\x12^\n" +
 	"\n" +
@@ -1239,7 +1322,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\vPublishPort\x12\x1f.sbxswarm.v1.PublishPortRequest\x1a\x11.sbxswarm.v1.Port\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/sandboxes/{id}/ports\x12e\n" +
 	"\tListPorts\x12\x16.sbxswarm.v1.IdRequest\x1a\x1e.sbxswarm.v1.ListPortsResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/sandboxes/{id}/ports\x12X\n" +
 	"\bGetStats\x12\x16.sbxswarm.v1.IdRequest\x1a\x12.sbxswarm.v1.Stats\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/sandboxes/{id}/stats\x12s\n" +
-	"\vListBlocked\x12\x16.sbxswarm.v1.IdRequest\x1a .sbxswarm.v1.ListBlockedResponse\"*\x82\xd3\xe4\x93\x02$\x12\"/v1/sandboxes/{id}/network/blockedB\xb7\x01\n" +
+	"\vListBlocked\x12\x16.sbxswarm.v1.IdRequest\x1a .sbxswarm.v1.ListBlockedResponse\"*\x82\xd3\xe4\x93\x02$\x12\"/v1/sandboxes/{id}/network/blocked\x12w\n" +
+	"\x0ePublishSandbox\x12\".sbxswarm.v1.PublishSandboxRequest\x1a\x16.sbxswarm.v1.Operation\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/sandboxes/{id}/git/publishB\xb7\x01\n" +
 	"\x0fcom.sbxswarm.v1B\fSandboxProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -1254,7 +1338,7 @@ func file_sbxswarm_v1_sandbox_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_sandbox_proto_rawDescData
 }
 
-var file_sbxswarm_v1_sandbox_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_sbxswarm_v1_sandbox_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_sbxswarm_v1_sandbox_proto_goTypes = []any{
 	(*WorkspaceMount)(nil),        // 0: sbxswarm.v1.WorkspaceMount
 	(*CreateSandboxRequest)(nil),  // 1: sbxswarm.v1.CreateSandboxRequest
@@ -1262,65 +1346,68 @@ var file_sbxswarm_v1_sandbox_proto_goTypes = []any{
 	(*GetSandboxRequest)(nil),     // 3: sbxswarm.v1.GetSandboxRequest
 	(*IdRequest)(nil),             // 4: sbxswarm.v1.IdRequest
 	(*DeleteSandboxRequest)(nil),  // 5: sbxswarm.v1.DeleteSandboxRequest
-	(*ListSandboxesRequest)(nil),  // 6: sbxswarm.v1.ListSandboxesRequest
-	(*ListSandboxesResponse)(nil), // 7: sbxswarm.v1.ListSandboxesResponse
-	(*ExecRequest)(nil),           // 8: sbxswarm.v1.ExecRequest
-	(*ExecResponse)(nil),          // 9: sbxswarm.v1.ExecResponse
-	(*AgentRunRequest)(nil),       // 10: sbxswarm.v1.AgentRunRequest
-	(*PublishPortRequest)(nil),    // 11: sbxswarm.v1.PublishPortRequest
-	(*Port)(nil),                  // 12: sbxswarm.v1.Port
-	(*ListPortsResponse)(nil),     // 13: sbxswarm.v1.ListPortsResponse
-	(*Operation)(nil),             // 14: sbxswarm.v1.Operation
-	(*Stats)(nil),                 // 15: sbxswarm.v1.Stats
-	(*Blocked)(nil),               // 16: sbxswarm.v1.Blocked
-	(*ListBlockedResponse)(nil),   // 17: sbxswarm.v1.ListBlockedResponse
-	nil,                           // 18: sbxswarm.v1.CreateSandboxRequest.EnvEntry
-	nil,                           // 19: sbxswarm.v1.CreateSandboxRequest.LabelsEntry
-	nil,                           // 20: sbxswarm.v1.CreateSandboxRequest.NodeAffinityEntry
-	nil,                           // 21: sbxswarm.v1.CreateSandboxRequest.NodeAntiAffinityEntry
-	nil,                           // 22: sbxswarm.v1.Sandbox.LabelsEntry
-	nil,                           // 23: sbxswarm.v1.ExecRequest.EnvEntry
-	nil,                           // 24: sbxswarm.v1.AgentRunRequest.EnvEntry
+	(*PublishSandboxRequest)(nil), // 6: sbxswarm.v1.PublishSandboxRequest
+	(*ListSandboxesRequest)(nil),  // 7: sbxswarm.v1.ListSandboxesRequest
+	(*ListSandboxesResponse)(nil), // 8: sbxswarm.v1.ListSandboxesResponse
+	(*ExecRequest)(nil),           // 9: sbxswarm.v1.ExecRequest
+	(*ExecResponse)(nil),          // 10: sbxswarm.v1.ExecResponse
+	(*AgentRunRequest)(nil),       // 11: sbxswarm.v1.AgentRunRequest
+	(*PublishPortRequest)(nil),    // 12: sbxswarm.v1.PublishPortRequest
+	(*Port)(nil),                  // 13: sbxswarm.v1.Port
+	(*ListPortsResponse)(nil),     // 14: sbxswarm.v1.ListPortsResponse
+	(*Operation)(nil),             // 15: sbxswarm.v1.Operation
+	(*Stats)(nil),                 // 16: sbxswarm.v1.Stats
+	(*Blocked)(nil),               // 17: sbxswarm.v1.Blocked
+	(*ListBlockedResponse)(nil),   // 18: sbxswarm.v1.ListBlockedResponse
+	nil,                           // 19: sbxswarm.v1.CreateSandboxRequest.EnvEntry
+	nil,                           // 20: sbxswarm.v1.CreateSandboxRequest.LabelsEntry
+	nil,                           // 21: sbxswarm.v1.CreateSandboxRequest.NodeAffinityEntry
+	nil,                           // 22: sbxswarm.v1.CreateSandboxRequest.NodeAntiAffinityEntry
+	nil,                           // 23: sbxswarm.v1.Sandbox.LabelsEntry
+	nil,                           // 24: sbxswarm.v1.ExecRequest.EnvEntry
+	nil,                           // 25: sbxswarm.v1.AgentRunRequest.EnvEntry
 }
 var file_sbxswarm_v1_sandbox_proto_depIdxs = []int32{
 	0,  // 0: sbxswarm.v1.CreateSandboxRequest.workspaces:type_name -> sbxswarm.v1.WorkspaceMount
-	18, // 1: sbxswarm.v1.CreateSandboxRequest.env:type_name -> sbxswarm.v1.CreateSandboxRequest.EnvEntry
-	19, // 2: sbxswarm.v1.CreateSandboxRequest.labels:type_name -> sbxswarm.v1.CreateSandboxRequest.LabelsEntry
-	20, // 3: sbxswarm.v1.CreateSandboxRequest.node_affinity:type_name -> sbxswarm.v1.CreateSandboxRequest.NodeAffinityEntry
-	21, // 4: sbxswarm.v1.CreateSandboxRequest.node_anti_affinity:type_name -> sbxswarm.v1.CreateSandboxRequest.NodeAntiAffinityEntry
-	12, // 5: sbxswarm.v1.Sandbox.ports:type_name -> sbxswarm.v1.Port
-	22, // 6: sbxswarm.v1.Sandbox.labels:type_name -> sbxswarm.v1.Sandbox.LabelsEntry
+	19, // 1: sbxswarm.v1.CreateSandboxRequest.env:type_name -> sbxswarm.v1.CreateSandboxRequest.EnvEntry
+	20, // 2: sbxswarm.v1.CreateSandboxRequest.labels:type_name -> sbxswarm.v1.CreateSandboxRequest.LabelsEntry
+	21, // 3: sbxswarm.v1.CreateSandboxRequest.node_affinity:type_name -> sbxswarm.v1.CreateSandboxRequest.NodeAffinityEntry
+	22, // 4: sbxswarm.v1.CreateSandboxRequest.node_anti_affinity:type_name -> sbxswarm.v1.CreateSandboxRequest.NodeAntiAffinityEntry
+	13, // 5: sbxswarm.v1.Sandbox.ports:type_name -> sbxswarm.v1.Port
+	23, // 6: sbxswarm.v1.Sandbox.labels:type_name -> sbxswarm.v1.Sandbox.LabelsEntry
 	2,  // 7: sbxswarm.v1.ListSandboxesResponse.sandboxes:type_name -> sbxswarm.v1.Sandbox
-	23, // 8: sbxswarm.v1.ExecRequest.env:type_name -> sbxswarm.v1.ExecRequest.EnvEntry
-	24, // 9: sbxswarm.v1.AgentRunRequest.env:type_name -> sbxswarm.v1.AgentRunRequest.EnvEntry
-	12, // 10: sbxswarm.v1.ListPortsResponse.ports:type_name -> sbxswarm.v1.Port
-	16, // 11: sbxswarm.v1.ListBlockedResponse.blocked:type_name -> sbxswarm.v1.Blocked
+	24, // 8: sbxswarm.v1.ExecRequest.env:type_name -> sbxswarm.v1.ExecRequest.EnvEntry
+	25, // 9: sbxswarm.v1.AgentRunRequest.env:type_name -> sbxswarm.v1.AgentRunRequest.EnvEntry
+	13, // 10: sbxswarm.v1.ListPortsResponse.ports:type_name -> sbxswarm.v1.Port
+	17, // 11: sbxswarm.v1.ListBlockedResponse.blocked:type_name -> sbxswarm.v1.Blocked
 	1,  // 12: sbxswarm.v1.SandboxService.CreateSandbox:input_type -> sbxswarm.v1.CreateSandboxRequest
 	3,  // 13: sbxswarm.v1.SandboxService.GetSandbox:input_type -> sbxswarm.v1.GetSandboxRequest
-	6,  // 14: sbxswarm.v1.SandboxService.ListSandboxes:input_type -> sbxswarm.v1.ListSandboxesRequest
+	7,  // 14: sbxswarm.v1.SandboxService.ListSandboxes:input_type -> sbxswarm.v1.ListSandboxesRequest
 	5,  // 15: sbxswarm.v1.SandboxService.DeleteSandbox:input_type -> sbxswarm.v1.DeleteSandboxRequest
 	4,  // 16: sbxswarm.v1.SandboxService.StartSandbox:input_type -> sbxswarm.v1.IdRequest
 	4,  // 17: sbxswarm.v1.SandboxService.StopSandbox:input_type -> sbxswarm.v1.IdRequest
-	8,  // 18: sbxswarm.v1.SandboxService.Exec:input_type -> sbxswarm.v1.ExecRequest
-	10, // 19: sbxswarm.v1.SandboxService.AgentRun:input_type -> sbxswarm.v1.AgentRunRequest
-	11, // 20: sbxswarm.v1.SandboxService.PublishPort:input_type -> sbxswarm.v1.PublishPortRequest
+	9,  // 18: sbxswarm.v1.SandboxService.Exec:input_type -> sbxswarm.v1.ExecRequest
+	11, // 19: sbxswarm.v1.SandboxService.AgentRun:input_type -> sbxswarm.v1.AgentRunRequest
+	12, // 20: sbxswarm.v1.SandboxService.PublishPort:input_type -> sbxswarm.v1.PublishPortRequest
 	4,  // 21: sbxswarm.v1.SandboxService.ListPorts:input_type -> sbxswarm.v1.IdRequest
 	4,  // 22: sbxswarm.v1.SandboxService.GetStats:input_type -> sbxswarm.v1.IdRequest
 	4,  // 23: sbxswarm.v1.SandboxService.ListBlocked:input_type -> sbxswarm.v1.IdRequest
-	14, // 24: sbxswarm.v1.SandboxService.CreateSandbox:output_type -> sbxswarm.v1.Operation
-	2,  // 25: sbxswarm.v1.SandboxService.GetSandbox:output_type -> sbxswarm.v1.Sandbox
-	7,  // 26: sbxswarm.v1.SandboxService.ListSandboxes:output_type -> sbxswarm.v1.ListSandboxesResponse
-	14, // 27: sbxswarm.v1.SandboxService.DeleteSandbox:output_type -> sbxswarm.v1.Operation
-	2,  // 28: sbxswarm.v1.SandboxService.StartSandbox:output_type -> sbxswarm.v1.Sandbox
-	2,  // 29: sbxswarm.v1.SandboxService.StopSandbox:output_type -> sbxswarm.v1.Sandbox
-	9,  // 30: sbxswarm.v1.SandboxService.Exec:output_type -> sbxswarm.v1.ExecResponse
-	14, // 31: sbxswarm.v1.SandboxService.AgentRun:output_type -> sbxswarm.v1.Operation
-	12, // 32: sbxswarm.v1.SandboxService.PublishPort:output_type -> sbxswarm.v1.Port
-	13, // 33: sbxswarm.v1.SandboxService.ListPorts:output_type -> sbxswarm.v1.ListPortsResponse
-	15, // 34: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
-	17, // 35: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
-	24, // [24:36] is the sub-list for method output_type
-	12, // [12:24] is the sub-list for method input_type
+	6,  // 24: sbxswarm.v1.SandboxService.PublishSandbox:input_type -> sbxswarm.v1.PublishSandboxRequest
+	15, // 25: sbxswarm.v1.SandboxService.CreateSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 26: sbxswarm.v1.SandboxService.GetSandbox:output_type -> sbxswarm.v1.Sandbox
+	8,  // 27: sbxswarm.v1.SandboxService.ListSandboxes:output_type -> sbxswarm.v1.ListSandboxesResponse
+	15, // 28: sbxswarm.v1.SandboxService.DeleteSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 29: sbxswarm.v1.SandboxService.StartSandbox:output_type -> sbxswarm.v1.Sandbox
+	2,  // 30: sbxswarm.v1.SandboxService.StopSandbox:output_type -> sbxswarm.v1.Sandbox
+	10, // 31: sbxswarm.v1.SandboxService.Exec:output_type -> sbxswarm.v1.ExecResponse
+	15, // 32: sbxswarm.v1.SandboxService.AgentRun:output_type -> sbxswarm.v1.Operation
+	13, // 33: sbxswarm.v1.SandboxService.PublishPort:output_type -> sbxswarm.v1.Port
+	14, // 34: sbxswarm.v1.SandboxService.ListPorts:output_type -> sbxswarm.v1.ListPortsResponse
+	16, // 35: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
+	18, // 36: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
+	15, // 37: sbxswarm.v1.SandboxService.PublishSandbox:output_type -> sbxswarm.v1.Operation
+	25, // [25:38] is the sub-list for method output_type
+	12, // [12:25] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name
 	12, // [12:12] is the sub-list for extension extendee
 	0,  // [0:12] is the sub-list for field type_name
@@ -1337,7 +1424,7 @@ func file_sbxswarm_v1_sandbox_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_sandbox_proto_rawDesc), len(file_sbxswarm_v1_sandbox_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   25,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

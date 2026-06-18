@@ -19,18 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SandboxService_CreateSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/CreateSandbox"
-	SandboxService_GetSandbox_FullMethodName    = "/sbxswarm.v1.SandboxService/GetSandbox"
-	SandboxService_ListSandboxes_FullMethodName = "/sbxswarm.v1.SandboxService/ListSandboxes"
-	SandboxService_DeleteSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/DeleteSandbox"
-	SandboxService_StartSandbox_FullMethodName  = "/sbxswarm.v1.SandboxService/StartSandbox"
-	SandboxService_StopSandbox_FullMethodName   = "/sbxswarm.v1.SandboxService/StopSandbox"
-	SandboxService_Exec_FullMethodName          = "/sbxswarm.v1.SandboxService/Exec"
-	SandboxService_AgentRun_FullMethodName      = "/sbxswarm.v1.SandboxService/AgentRun"
-	SandboxService_PublishPort_FullMethodName   = "/sbxswarm.v1.SandboxService/PublishPort"
-	SandboxService_ListPorts_FullMethodName     = "/sbxswarm.v1.SandboxService/ListPorts"
-	SandboxService_GetStats_FullMethodName      = "/sbxswarm.v1.SandboxService/GetStats"
-	SandboxService_ListBlocked_FullMethodName   = "/sbxswarm.v1.SandboxService/ListBlocked"
+	SandboxService_CreateSandbox_FullMethodName  = "/sbxswarm.v1.SandboxService/CreateSandbox"
+	SandboxService_GetSandbox_FullMethodName     = "/sbxswarm.v1.SandboxService/GetSandbox"
+	SandboxService_ListSandboxes_FullMethodName  = "/sbxswarm.v1.SandboxService/ListSandboxes"
+	SandboxService_DeleteSandbox_FullMethodName  = "/sbxswarm.v1.SandboxService/DeleteSandbox"
+	SandboxService_StartSandbox_FullMethodName   = "/sbxswarm.v1.SandboxService/StartSandbox"
+	SandboxService_StopSandbox_FullMethodName    = "/sbxswarm.v1.SandboxService/StopSandbox"
+	SandboxService_Exec_FullMethodName           = "/sbxswarm.v1.SandboxService/Exec"
+	SandboxService_AgentRun_FullMethodName       = "/sbxswarm.v1.SandboxService/AgentRun"
+	SandboxService_PublishPort_FullMethodName    = "/sbxswarm.v1.SandboxService/PublishPort"
+	SandboxService_ListPorts_FullMethodName      = "/sbxswarm.v1.SandboxService/ListPorts"
+	SandboxService_GetStats_FullMethodName       = "/sbxswarm.v1.SandboxService/GetStats"
+	SandboxService_ListBlocked_FullMethodName    = "/sbxswarm.v1.SandboxService/ListBlocked"
+	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
 )
 
 // SandboxServiceClient is the client API for SandboxService service.
@@ -49,6 +50,7 @@ type SandboxServiceClient interface {
 	ListPorts(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListPortsResponse, error)
 	GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error)
 	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
+	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
 }
 
 type sandboxServiceClient struct {
@@ -179,6 +181,16 @@ func (c *sandboxServiceClient) ListBlocked(ctx context.Context, in *IdRequest, o
 	return out, nil
 }
 
+func (c *sandboxServiceClient) PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Operation)
+	err := c.cc.Invoke(ctx, SandboxService_PublishSandbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxServiceServer is the server API for SandboxService service.
 // All implementations must embed UnimplementedSandboxServiceServer
 // for forward compatibility.
@@ -195,6 +207,7 @@ type SandboxServiceServer interface {
 	ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error)
 	GetStats(context.Context, *IdRequest) (*Stats, error)
 	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
+	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
 	mustEmbedUnimplementedSandboxServiceServer()
 }
 
@@ -240,6 +253,9 @@ func (UnimplementedSandboxServiceServer) GetStats(context.Context, *IdRequest) (
 }
 func (UnimplementedSandboxServiceServer) ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBlocked not implemented")
+}
+func (UnimplementedSandboxServiceServer) PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishSandbox not implemented")
 }
 func (UnimplementedSandboxServiceServer) mustEmbedUnimplementedSandboxServiceServer() {}
 func (UnimplementedSandboxServiceServer) testEmbeddedByValue()                        {}
@@ -478,6 +494,24 @@ func _SandboxService_ListBlocked_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_PublishSandbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishSandboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).PublishSandbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_PublishSandbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).PublishSandbox(ctx, req.(*PublishSandboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxService_ServiceDesc is the grpc.ServiceDesc for SandboxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -532,6 +566,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListBlocked",
 			Handler:    _SandboxService_ListBlocked_Handler,
+		},
+		{
+			MethodName: "PublishSandbox",
+			Handler:    _SandboxService_PublishSandbox_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

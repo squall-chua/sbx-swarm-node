@@ -123,7 +123,7 @@ func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 	}
 	return sandbox.CreateSpec{
 		Agent: r.Agent, Template: r.Template, CPUs: int(r.Cpus),
-		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Workspaces: ws, Env: r.Env,
+		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, Workspaces: ws, Env: r.Env,
 	}
 }
 
@@ -132,7 +132,14 @@ func toProto(rec *sandbox.Record) *sbxv1.Sandbox {
 	for _, p := range rec.Ports {
 		ports = append(ports, &sbxv1.Port{ContainerPort: int32(p.ContainerPort), HostPort: int32(p.HostPort)})
 	}
-	return &sbxv1.Sandbox{Id: rec.ID, OwnerNode: rec.OwnerNode, Status: rec.Status, Ports: ports, Labels: rec.Labels}
+	var lastPub string
+	if !rec.LastPublish.IsZero() {
+		lastPub = rec.LastPublish.UTC().Format(time.RFC3339)
+	}
+	return &sbxv1.Sandbox{
+		Id: rec.ID, OwnerNode: rec.OwnerNode, Status: rec.Status, Ports: ports, Labels: rec.Labels,
+		Branch: rec.Spec.Branch, LastPublish: lastPub,
+	}
 }
 
 func opProto(op *ops.Operation) *sbxv1.Operation {

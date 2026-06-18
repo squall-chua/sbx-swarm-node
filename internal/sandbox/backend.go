@@ -25,6 +25,7 @@ type CreateSpec struct {
 	MemoryBytes int64
 	DiskGB      float64 // requested disk (GB); scheduling-only in v1 (no SDK create option)
 	Clone       bool
+	Branch      string // clone-mode recorded branch (auto-publish target)
 	Workspaces  []WorkspaceMount
 	Env         map[string]string
 }

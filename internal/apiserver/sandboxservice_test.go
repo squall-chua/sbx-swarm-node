@@ -109,3 +109,13 @@ func TestRequestFromSpec_CarriesNodeAffinity(t *testing.T) {
 	require.Equal(t, map[string]string{"zone": "eu"}, req.Affinity)
 	require.Equal(t, map[string]string{"gpu": "true"}, req.AntiAffinity)
 }
+
+func TestToProto_GitFields(t *testing.T) {
+	rec := &sandbox.Record{ID: "n1.x", Status: "running", Spec: sandbox.CreateSpec{Branch: "agent/x"}}
+	p := toProto(rec)
+	require.Equal(t, "agent/x", p.Branch)
+	require.Empty(t, p.LastPublish)
+
+	rec.LastPublish = time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
+	require.Equal(t, "2026-06-18T09:00:00Z", toProto(rec).LastPublish)
+}
