@@ -4,9 +4,10 @@
 `docs/superpowers/plans/2026-06-15-sbx-swarm-node-m6-git-workspaces.md` (predates M5/security/operability;
 its in-process credential design is dropped here).
 
-Realizes §12 of `docs/superpowers/specs/2026-06-15-sbx-swarm-node-design.md` against current code, with
-two changes from that spec: (1) upstream credentials are operator host-side git config, not swarm-managed
-(ADR-0014); (2) auto-publish targets the branch recorded at provision (ADR-0015).
+Realizes §12 of `docs/superpowers/specs/2026-06-15-sbx-swarm-node-design.md` against current code. Two new
+ADRs: (1) upstream credentials are operator host-side git config, not swarm-managed (ADR-0014); (2)
+git-backed workspaces are clone-only — a strict bijection that guards the bare base (ADR-0015).
+Auto-publish targets the branch recorded at provision (a spec note, below — not an ADR).
 
 ## Goal
 
@@ -106,7 +107,7 @@ Codegen: edit `.proto` → `buf generate` (repo root) → commit regenerated `in
   routes to the **owner node** automatically (existing OwnerProxy forwarder).
 - `internal/apiserver/authz.go` — classify `PublishSandbox` as **mutating** (admin-only) or
   `TestAuthz_AllMethodsClassified` fails.
-- `internal/ops` — new `"publish"` operation type; reuses op tracking, the `RecoverInterrupted` boot
+- `internal/ops` — new `"git-publish"` operation type; reuses op tracking, the `RecoverInterrupted` boot
   sweep, and the M3 audit log.
 - `internal/node/node.go` — build one `git.Workspace` per git-backed workspace at boot; inject into
   `SandboxService`.
@@ -116,8 +117,10 @@ Codegen: edit `.proto` → `buf generate` (repo root) → commit regenerated `in
 
 ### A. Provision (clone mode) — owner node, in `CreateSandbox`
 
-1. **Validate** clone-mode constraints (§12): exactly **one** workspace and it must be git-backed
-   (`Git != nil`); reject otherwise (`InvalidArgument`). Non-clone provisions are unchanged.
+1. **Validate** the clone ⟺ git-backed **bijection** (ADR-0015): `clone:true` ⇒ exactly **one** workspace
+   and it must be git-backed (`Git != nil`); **and** a non-clone provision referencing *any* git-backed
+   workspace is rejected (it would expose the bare base as an agent-writable mount). Either violation →
+   `InvalidArgument`. Non-clone provisions of non-git workspaces are unchanged.
 2. **Record** the request's `branch` on the sandbox `Record` (`base_ref` is config-sourced).
 3. **PRE** (under the workspace lock): `git.Workspace.Pre` runs `PreSteps` in the bare base — refs only,
    no working tree.
@@ -125,12 +128,16 @@ Codegen: edit `.proto` → `buf generate` (repo root) → commit regenerated `in
    SDK adapter). `sbx` mounts the base read-only, clones it in-container, and wires the host
    `sandbox-<name>` remote.
 
-**Locking:** the per-workspace mutex is held across **PRE + the Create clone-sourcing** so a concurrent
-provision's PRE-write cannot race this one's clone-read (§12).
-`// ponytail: per-workspace lock spans PRE+Create; narrow to the clone-read window only if same-workspace
-provision throughput ever matters.`
+**Locking (creation-window only, never lifetime):** the per-workspace mutex is acquired for the **PRE +
+Create clone-sourcing** window and **released when `Create` returns** — it is *not* held while the agent
+runs. Safe because §12's clones are self-contained (no object dependency on the host base once cloned).
+Each publish (§B) later takes the same lock briefly. Holding it across `Create` (not just PRE) is
+deliberate: an operator's `pre_steps` could `gc`/`prune` (object deletion), which a concurrent clone-read
+cannot tolerate — so same-workspace *creations* are fully serialized.
+`// ponytail: lock spans PRE+Create (creation only); narrow to the clone-read window only if same-workspace
+creation throughput bites and pipelines are prune-free.`
 
-### B. Publish — owner node (forwarder routes by id), op type `"publish"`
+### B. Publish — owner node (forwarder routes by id), op type `"git-publish"`
 
 1. Resolve sandbox → workspace → `GitConfig`. Reject if not git-backed or `allow_push=false`
    (`FailedPrecondition`).
@@ -145,12 +152,15 @@ provision throughput ever matters.`
 
 ### C. Triggers (all converge on one internal `publishSandbox` helper)
 
-- **Explicit** — `PublishSandbox` RPC; branch from request or recorded.
+- **Explicit** — `PublishSandbox` RPC (op `git-publish`, idempotency-key honored like other mutating
+  RPCs); branch from request or recorded.
 - **Agent-run success** — in `AgentRun`, after the detached exec exits `0`, if `publish_on_success`:
   publish the **recorded** branch. Best-effort (see below).
 - **On graceful stop** — in `StopSandbox`, if clone-mode + `allow_push` + a recorded branch is present:
-  **publish first, then stop** (the `sandbox-<name>` fetch needs the live git-daemon). No recorded branch
-  → silent skip (audited as no-op), not an error.
+  **publish first, then stop** (the `sandbox-<name>` fetch needs the live git-daemon). The stop **proceeds
+  even if publish fails** — `sbx stop` (not `rm`) preserves the sandbox + its clone, so unpublished work is
+  recoverable by `start` + republish; failure is loud (op error + audit + `sandbox.publish_failed` event).
+  No recorded branch → silent skip (audited as no-op), not an error.
 
 ## Security
 
@@ -163,8 +173,10 @@ Removing remote code execution is the milestone's purpose:
   *values*, never argv. No API-key holder and no peer (even a compromised coordinator) can induce
   arbitrary execution on a node — only that node's pre-configured pipeline with validated values.
 - **Exec allowlist** (default `git`, `git-lfs`) — the runner refuses any other binary. Defense in depth.
-- **Credentials** are operator host-side git config (ADR-0014): never in our process, gossip, or logs; the
-  **agent sandbox never sees them** (push is host-side). `GIT_TERMINAL_PROMPT=0` fail-fast.
+- **Credentials** are operator host-side git config (ADR-0014): never in our process, gossip, or logs.
+  Both upstream ops — the **PRE fetch** and the **publish push** — run host-side with these creds; the
+  agent's in-container clone is sourced from the *local* bind-mounted base, so the **agent never needs or
+  sees upstream creds**. `GIT_TERMINAL_PROMPT=0` fail-fast on a missing/expired credential.
 - **authz:** `PublishSandbox` is mutating → admin-only; node-key peers cannot trigger publish. Every git
   op is audited (workspace/branch/remote/outcome, never secrets).
 
@@ -173,11 +185,11 @@ Removing remote code execution is the milestone's purpose:
 - **PRE fails** → provision fails before `Create`; no sandbox created; op errors cleanly.
 - **Explicit publish on a stopped sandbox** → `FailedPrecondition` (running-state precheck).
 - **`allow_push=false` / non-git-backed workspace** → `FailedPrecondition` before any git runs.
-- **Auto-publish is best-effort:** a failed `publish_on_success`/on-stop publish is audited and reflected
-  in the op, but does **not** roll back the agent run or block the stop. Explicit publish surfaces the
-  error directly.
-- **Crash mid-publish** → the boot sweep marks the `publish` op `error` (log-only, M3). Re-publish is safe:
-  `git fetch`/`push` of the same branch is idempotent.
+- **Auto-publish is best-effort + loud:** a failed `publish_on_success`/on-stop publish is recorded in the
+  op (error), audited, and emits a `sandbox.publish_failed` event — but does **not** roll back the agent
+  run or block the stop. Explicit publish surfaces the error directly to the caller.
+- **Crash mid-publish** → the boot sweep marks the `git-publish` op `error` (log-only, M3). Re-publish is
+  safe: `git fetch`/`push` of the same branch is idempotent.
 - **Standalone node** (no cluster) → publish runs locally (owner = self); git workspaces have **no cluster
   dependency** (honors the standalone-must-work invariant).
 - **Concurrent publishes, same workspace** → serialized by the per-workspace lock (per-workspace, not
@@ -191,7 +203,7 @@ Removing remote code execution is the milestone's purpose:
   "agent branch" and asserts PRE freshens the base and PUBLISH pushes the branch (the agent's clone stood
   in by a push to the base).
 - **apiserver (fake `git.Workspace` via interface):** `PublishSandbox` branch resolution + `allow_push`
-  gate + `FailedPrecondition` paths + op type `"publish"` + audit called; `AgentRun`
+  gate + `FailedPrecondition` paths + op type `"git-publish"` + audit called; `AgentRun`
   publish-on-success-exit-0 path; `StopSandbox` **publish-then-stop** ordering.
 - **Auto-covered:** the `authz` drift-guard test forces `PublishSandbox` classification.
 - **`-tags integration`:** publish **forwarding to owner** with a fake backend.
@@ -203,15 +215,20 @@ stand-in + a **manual** check — same posture as the m5-latents deferred integr
 **Verification bar:** `go build/vet/test ./...`; run the `-tags integration` suite (publish changes
 cross-node behavior); ff-merge to main locally; Opus whole-branch review before merge.
 
-## ADRs
+## ADRs (written alongside this spec)
 
-- **ADR-0014** (definite): *Upstream git credentials are operator host-side git config, not
-  swarm-managed.* Overrides §12's in-process `GIT_ASKPASS`/`auth_secret_ref` approach. Rationale: standard
-  host-side git credential setup (deploy SSH key, credential helper, authenticated `origin` URL) is
-  already node-local, per-remote-scoped, ungossiped, and invisible to the agent (push is host-side) — so
-  in-process token management is redundant. Same trust model as ADR-0003 (operator owns node-local config).
-- **ADR-0015** (decide during grill): *Auto-publish targets the branch recorded at provision.* Captures
-  the recorded-vs-pattern-vs-trigger choice and the best-effort policy for auto-triggers.
+- **ADR-0014** — *Upstream git credentials are operator host-side git config, not swarm-managed.* Overrides
+  §12's in-process `GIT_ASKPASS`/`auth_secret_ref` approach. Host-side git credential setup (deploy SSH
+  key, credential helper, authenticated `origin` URL) is already node-local, per-remote-scoped, ungossiped,
+  and invisible to the agent — so in-process token management is redundant. Same trust model as ADR-0003.
+- **ADR-0015** — *Git-backed workspaces are clone-only (the bijection).* A non-clone git-backed mount would
+  expose the swarm-owned bare base as an agent-writable directory; rejecting it guards against base
+  corruption. Recorded so a future engineer doesn't "fix" the deliberate rejection.
+
+**Spec note (not an ADR):** auto-publish targets the branch **recorded at provision**
+(`CreateSandboxRequest.branch`). Chosen over pattern-publish (glob over `sandbox-<name>` branches) and
+trigger-supplied branch. Pattern-publish stays a clean additive extension if ever needed — easy to
+reverse/extend, so not ADR-worthy.
 
 ## Scope boundary
 
@@ -220,11 +237,12 @@ cross-node behavior); ff-merge to main locally; Opus whole-branch review before 
 | `internal/git` (builder, runner, workspace) | Reaper idle-stop auto-publish → **M7** |
 | `GitConfig` + defaults + validation | In-process credential injection (dropped, ADR-0014) |
 | proto: `branch`, `PublishSandbox`, git fields on `Sandbox` | Clone + extra bind-mount workspaces (§12 defers vs sbx) |
-| clone-mode PRE + single-workspace constraint | Pattern/multi-branch publish (chose recorded-branch, ADR-0015) |
+| clone ⟺ git-backed bijection (ADR-0015) | Pattern/multi-branch publish (chose recorded-branch; additive later) |
 | publish: explicit + agent-run + on-stop (owner-local) | Cross-node workspace data replication (standing non-goal) |
-| `"publish"` op + audit + crash-recovery (reuse) | Automated CI of the real sbx clone fetch (env lacks docker/sbx) |
+| `"git-publish"` op + audit + crash-recovery (reuse) | Automated CI of the real sbx clone fetch (env lacks docker/sbx) |
 
 ## Glossary impact (CONTEXT.md)
 
-`Git-backed workspace` and `Publish` are already defined and remain accurate. Add a note that the upstream
-credential is operator host-side config (no swarm-managed secret). No new terms otherwise.
+No changes. `Git-backed workspace` and `Publish` are already defined and remain accurate; the clone-only
+bijection and host-side-credential decisions are constraints/decisions (ADR-0015/0014), not glossary terms
+— CONTEXT.md stays a pure glossary. No new terms.
