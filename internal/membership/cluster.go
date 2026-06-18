@@ -285,7 +285,12 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 	d.c.mu.Unlock()
 
 	if grew && ml != nil {
-		_ = ml.UpdateNode(5 * time.Second) // propagate the learned revocation onward
+		_ = ml.UpdateNode(5 * time.Second) // refresh meta (StateVersion bump)
+		// Bulk state (Revoked) rides TCP push/pull, not UDP meta. Fan out the
+		// learned revocation immediately so multi-hop swarms converge in seconds
+		// rather than waiting for the next scheduled push/pull round. grew-check
+		// makes this one-shot per unique revocation (no storm).
+		go d.c.pushPullPeers(ml)
 	}
 
 	// Update routing table.
