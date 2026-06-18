@@ -17,7 +17,7 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, string(out))
 }
 
-// build: upstream (bare) <- work (clone, has main) ; base = mirror of upstream ;
+// build: upstream (bare) <- work (clone, has main) ; base = bare clone of upstream ;
 // "sandbox" stood in by a second clone with branch agent/x registered as a
 // remote on base. PreLock fetches refs into base; Publish fetches agent/x from
 // the sandbox remote and pushes it upstream.
