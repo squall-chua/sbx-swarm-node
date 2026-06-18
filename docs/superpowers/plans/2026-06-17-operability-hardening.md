@@ -31,7 +31,7 @@
 **Interfaces:**
 - Produces: `func (m *Manager) RecoverInterrupted() (int, error)` — marks every non-terminal op `error`, returns the count swept.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/ops/ops_test.go` (the package already imports `store`, `context`, `time`, `require`):
 
@@ -71,12 +71,12 @@ func TestOps_RecoverInterrupted(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ops/ -run TestOps_RecoverInterrupted -v`
 Expected: FAIL — build error `m.RecoverInterrupted undefined`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Add to `internal/ops/ops.go` (after `Get`):
 
@@ -120,12 +120,12 @@ func (m *Manager) RecoverInterrupted() (int, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/ops/ -run TestOps_RecoverInterrupted -v`
 Expected: PASS.
 
-- [ ] **Step 5: Wire the sweep into boot**
+- [x] **Step 5: Wire the sweep into boot**
 
 In `internal/node/node.go`, the boot reconcile block currently reads:
 
@@ -147,7 +147,7 @@ Append immediately after it:
 	}
 ```
 
-- [ ] **Step 6: Verify build + full ops suite, then commit**
+- [x] **Step 6: Verify build + full ops suite, then commit**
 
 Run: `gofmt -w internal/ops/ops.go internal/node/node.go && go build ./... && go vet ./internal/ops/ ./internal/node/ && go test ./internal/ops/`
 Expected: all PASS.
@@ -169,7 +169,7 @@ git commit -m "feat(ops): mark interrupted operations as error at boot (crash-re
 **Interfaces:**
 - Produces (generated Go types/methods on `NodeServiceServer`): `RevokeNode(ctx, *RevokeNodeRequest) (*RevokedList, error)`, `ListRevoked(ctx, *ListRevokedRequest) (*RevokedList, error)`; messages `RevokeNodeRequest{NodeId string}`, `ListRevokedRequest{}`, `RevokedList{NodeIds []string}`.
 
-- [ ] **Step 1: Add the RPCs and messages to the proto**
+- [x] **Step 1: Add the RPCs and messages to the proto**
 
 In `proto/sbxswarm/v1/node.proto`, inside `service NodeService { ... }` (after the `Drain` rpc, before the closing `}`):
 
@@ -199,17 +199,17 @@ message RevokedList {
 }
 ```
 
-- [ ] **Step 2: Regenerate and verify it compiles**
+- [x] **Step 2: Regenerate and verify it compiles**
 
 Run (from repo root): `buf generate && go build ./...`
 Expected: PASS. `internal/gen/sbxswarm/v1/node.pb.go` and `node.pb.gw.go` now contain the new types/handlers; `NodeService` still satisfies the server interface via the embedded `UnimplementedNodeServiceServer` (the methods return `codes.Unimplemented` until Task 4).
 
-- [ ] **Step 3: Run the drift guard to confirm it now fails (methods unclassified)**
+- [x] **Step 3: Run the drift guard to confirm it now fails (methods unclassified)**
 
 Run: `go test ./internal/apiserver/ -run TestAuthz_AllMethodsClassified -v`
 Expected: FAIL — `method /sbxswarm.v1.NodeService/RevokeNode is not classified` (and `ListRevoked`). This confirms the new methods are visible to the guard.
 
-- [ ] **Step 4: Classify the methods**
+- [x] **Step 4: Classify the methods**
 
 In `internal/apiserver/authz.go`, add to `mutatingMethods` (after the `Drain` entry):
 
@@ -223,12 +223,12 @@ And add to `readMethods` (after the `GetNodeInfo` entry):
 	"/sbxswarm.v1.NodeService/ListRevoked":       true,
 ```
 
-- [ ] **Step 5: Verify build + drift guard pass**
+- [x] **Step 5: Verify build + drift guard pass**
 
 Run: `gofmt -w internal/apiserver/authz.go && go build ./... && go test ./internal/apiserver/ -run TestAuthz_AllMethodsClassified -v`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add proto/sbxswarm/v1/node.proto internal/gen/sbxswarm/v1/ internal/apiserver/authz.go
@@ -252,7 +252,7 @@ git commit -m "feat(proto): RevokeNode/ListRevoked RPCs + authz classification"
 - Consumes: `store.Store.Put/ForEach/Get`, `routing.NewTable`.
 - Produces: `func (c *Cluster) Revoke(nodeID string) error`; `func (c *Cluster) IsRevoked(nodeID string) bool`; `func (c *Cluster) RevokedList() []string`; `NodeState.Revoked []string`; new `NewCluster(cfg, local, tbl, si, siPath, st *store.Store, onNodeDead, log)` signature; package const `revokedBucket = "revoked"`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `internal/membership/revocation_test.go`:
 
@@ -354,12 +354,12 @@ func TestMergeRemoteState_FoldsRemoteRevoked(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/membership/ -run 'Revoke|FoldsRemoteRevoked' -v`
 Expected: FAIL — build errors (`c.st`, `c.revoked`, `Revoke`, `IsRevoked`, `RevokedList`, `loadRevoked`, `revokedBucket`, `NodeState.Revoked` all undefined).
 
-- [ ] **Step 3a: Add the gossip field**
+- [x] **Step 3a: Add the gossip field**
 
 In `internal/membership/state.go`, after the `ActualMem` field (the last bulk field):
 
@@ -367,7 +367,7 @@ In `internal/membership/state.go`, after the `ActualMem` field (the last bulk fi
 	Revoked         []string          `json:"revoked,omitempty"` // grow-only denylist of revoked node ids (ADR-0013)
 ```
 
-- [ ] **Step 3b: Add the store bucket**
+- [x] **Step 3b: Add the store bucket**
 
 In `internal/store/store.go`, extend `bucketNames`:
 
@@ -377,7 +377,7 @@ In `internal/store/store.go`, extend `bucketNames`:
 
 (No schema bump — `CreateBucketIfNotExists` creates it on the next `Open`.)
 
-- [ ] **Step 3c: Add the Cluster fields + store import**
+- [x] **Step 3c: Add the Cluster fields + store import**
 
 In `internal/membership/cluster.go`, add to the import block:
 
@@ -394,7 +394,7 @@ Add to the `Cluster` struct (after `siPath`):
 
 Also keep the struct invariant "`revoked` is never nil" for the existing bare-Cluster test helper: in `internal/membership/cluster_test.go`, add `revoked: map[string]struct{}{},` to the `newTestDelegate` `&Cluster{...}` literal (so a future merge test that sets `remote.Revoked` cannot hit a nil-map write).
 
-- [ ] **Step 3d: Thread `st` through `NewCluster` and seed the union**
+- [x] **Step 3d: Thread `st` through `NewCluster` and seed the union**
 
 Change the `NewCluster` signature to insert `st *store.Store` after `siPath`:
 
@@ -424,7 +424,7 @@ Immediately after the literal (before `mlCfg := memberlist.DefaultLANConfig()`),
 	c.loadRevoked()
 ```
 
-- [ ] **Step 3e: Fold a peer's revocations in `MergeRemoteState`**
+- [x] **Step 3e: Fold a peer's revocations in `MergeRemoteState`**
 
 In `internal/membership/cluster.go`, the merge currently has:
 
@@ -458,7 +458,7 @@ Replace that block with:
 	d.c.tbl.Upsert(remote.NodeID, remote.Addr, remote.Cordoned, remote.PubKey)
 ```
 
-- [ ] **Step 3f: Create the revocation methods**
+- [x] **Step 3f: Create the revocation methods**
 
 Create `internal/membership/revocation.go`:
 
@@ -562,7 +562,7 @@ func sortedKeys(m map[string]struct{}) []string {
 }
 ```
 
-- [ ] **Step 3g: Update the `NewCluster` call site**
+- [x] **Step 3g: Update the `NewCluster` call site**
 
 In `internal/node/node.go`, the cluster construction currently reads `membership.NewCluster(cfg, localNS, tbl, si, siPath,`. Insert `st` after `siPath`:
 
@@ -575,14 +575,14 @@ In `internal/node/node.go`, the cluster construction currently reads `membership
 		)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/membership/ ./internal/store/ -run 'Revoke|FoldsRemoteRevoked' -v && go build ./...`
 Expected: PASS. Then the full membership suite + race:
 Run: `go test ./internal/membership/ ./internal/store/ ./internal/node/ && go test -race ./internal/membership/`
 Expected: PASS (the existing `MergeRemoteState`/`UpdateLocalLoad` tests still green).
 
-- [ ] **Step 5: Format + commit**
+- [x] **Step 5: Format + commit**
 
 Run: `gofmt -w internal/membership/state.go internal/membership/cluster.go internal/membership/cluster_test.go internal/membership/revocation.go internal/membership/revocation_test.go internal/store/store.go internal/node/node.go`
 
@@ -604,7 +604,7 @@ git commit -m "feat(membership): grow-only gossiped + persisted node revocation 
 - Consumes: `Cluster.Revoke`/`RevokedList` (Task 3); generated `RevokeNodeRequest`/`ListRevokedRequest`/`RevokedList` (Task 2).
 - Produces: `Revoker` interface (`Revoke(string) error`, `RevokedList() []string`); `NodeService.SetRevoker`, `RevokeNode`, `ListRevoked`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `internal/apiserver/nodeservice_test.go` (or append if it exists):
 
@@ -672,12 +672,12 @@ func TestNodeService_ListRevoked(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/apiserver/ -run TestNodeService_ -v`
 Expected: FAIL — `s.RevokeNode`/`s.ListRevoked`/`s.SetRevoker` undefined.
 
-- [ ] **Step 3: Implement the service methods**
+- [x] **Step 3: Implement the service methods**
 
 In `internal/apiserver/nodeservice.go`, add `codes` and `status` to imports:
 
@@ -726,12 +726,12 @@ func (s *NodeService) ListRevoked(_ context.Context, _ *sbxv1.ListRevokedRequest
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/apiserver/ -run TestNodeService_ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Wire the cluster into the node**
+- [x] **Step 5: Wire the cluster into the node**
 
 In `internal/node/node.go`, inside the `if cfg.GossipAddr != "" && cfg.ClusterSecret != ""` block, next to `nodeSvc.SetCordoner(cl)`:
 
@@ -748,7 +748,7 @@ And in the `apiserver.Build(apiserver.Options{...})` call, replace the line
 
 (Use `clusterInstance`, the outer `*membership.Cluster` var — not the block-local `cl`. The closure is evaluated per-request, after `clusterInstance` is assigned.)
 
-- [ ] **Step 6: Verify build + full apiserver/node suites, then commit**
+- [x] **Step 6: Verify build + full apiserver/node suites, then commit**
 
 Run: `gofmt -w internal/apiserver/nodeservice.go internal/apiserver/nodeservice_test.go internal/node/node.go && go build ./... && go vet ./internal/apiserver/ ./internal/node/ && go test ./internal/apiserver/ ./internal/node/`
 Expected: all PASS (incl. `TestAuthz_AllMethodsClassified`).
@@ -768,7 +768,7 @@ git commit -m "feat(apiserver): RevokeNode/ListRevoked service + wire IsRevoked 
 **Interfaces:**
 - Consumes existing integration helpers in `internal/membership/cluster_integration_test.go`: `startNode(t, listenAddr, gossipAddr, seeds)`, `waitForPeer(t, node, peerID, timeout)`, `tlsClient()`. Admin bearer key is `"adm"`.
 
-- [ ] **Step 1: Write the integration test**
+- [x] **Step 1: Write the integration test**
 
 Create `internal/membership/revocation_integration_test.go`:
 
@@ -837,12 +837,12 @@ func TestRevocation_PropagatesOverGossip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the integration test**
+- [x] **Step 2: Run the integration test**
 
 Run: `go test -tags integration ./internal/membership/ -run TestRevocation_PropagatesOverGossip -timeout 180s -count=1 -v`
 Expected: PASS (propagation typically within a few push/pull rounds, well under 30s).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add internal/membership/revocation_integration_test.go
@@ -853,11 +853,11 @@ git commit -m "test(membership): integration — revocation propagates over goss
 
 ## Definition of done
 
-- [ ] `go build ./... && go vet ./... && go test ./...` all green.
-- [ ] `go test -race ./internal/membership/` green.
-- [ ] `go test -tags integration ./internal/membership/ -timeout 180s -count=1` green (full integration suite, not just Task 5 — confirms no regression from the `NewCluster` signature change).
-- [ ] Standalone smoke: a node with no `gossip_addr`/`cluster_secret` still boots; `RevokeNode` returns `FailedPrecondition`, `ListRevoked` returns empty.
-- [ ] Plan checkboxes flipped; ready for the independent Opus whole-branch review (`scripts/review-package $(git merge-base main HEAD) HEAD`).
+- [x] `go build ./... && go vet ./... && go test ./...` all green.
+- [x] `go test -race ./internal/membership/` green.
+- [x] `go test -tags integration ./internal/membership/ -timeout 180s -count=1` green (full integration suite, not just Task 5 — confirms no regression from the `NewCluster` signature change).
+- [x] Standalone smoke: a node with no `gossip_addr`/`cluster_secret` still boots; `RevokeNode` returns `FailedPrecondition`, `ListRevoked` returns empty.
+- [x] Plan checkboxes flipped; ready for the independent Opus whole-branch review (`scripts/review-package $(git merge-base main HEAD) HEAD`).
 
 ## Self-review notes (spec coverage)
 
