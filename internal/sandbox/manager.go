@@ -223,6 +223,16 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// SetLastPublish records a successful publish time on the sandbox record.
+func (m *Manager) SetLastPublish(ctx context.Context, id string, t time.Time) error {
+	rec, err := m.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	rec.LastPublish = t
+	return m.save(rec)
+}
+
 // Backend returns the underlying backend (for exec/ports/files handlers).
 func (m *Manager) Backend() Backend { return m.backend }
 

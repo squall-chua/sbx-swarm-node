@@ -2,11 +2,13 @@ package apiserver
 
 import (
 	"context"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/ops"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
@@ -118,4 +120,28 @@ func TestToProto_GitFields(t *testing.T) {
 
 	rec.LastPublish = time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
 	require.Equal(t, "2026-06-18T09:00:00Z", toProto(rec).LastPublish)
+}
+
+func TestPublishSandbox_AllowPushGate(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	// Build a service over a git-backed workspace with AllowPush=false.
+	root := t.TempDir()
+	base := filepath.Join(root, "base.git")
+	out, err := exec.Command("git", "init", "--bare", base).CombinedOutput()
+	require.NoError(t, err, string(out))
+	ws := git.New(git.Spec{Name: "repo", Base: base, Remote: "origin", AllowPush: false, Allowlist: []string{"git"}})
+
+	mgr := newTestManager(t)
+	rec, err := mgr.AdmitAndCreate(context.Background(), sandbox.CreateSpec{
+		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
+	})
+	require.NoError(t, err)
+
+	svc := NewSandboxService(mgr, newTestOps(t))
+	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+
+	err = svc.doPublish(context.Background(), rec.ID, "")
+	require.Equal(t, codes.FailedPrecondition, status.Code(err)) // allow_push=false
 }

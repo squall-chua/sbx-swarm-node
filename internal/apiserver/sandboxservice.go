@@ -5,6 +5,9 @@ import (
 	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
+	"github.com/squall-chua/sbx-swarm-node/internal/events"
+	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/ops"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/squall-chua/sbx-swarm-node/internal/scheduler"
@@ -27,7 +30,19 @@ type SandboxService struct {
 	place            PlaceFunc
 	defaultStrategy  string
 	defaultResources sandbox.Resources
+	gitWS            map[string]*git.Workspace
+	audit            *audit.Log
+	events           events.Publisher
 }
+
+// SetGit wires git-backed workspaces (by name) for the publish path.
+func (s *SandboxService) SetGit(ws map[string]*git.Workspace) { s.gitWS = ws }
+
+// SetAudit wires the audit log for git operations.
+func (s *SandboxService) SetAudit(a *audit.Log) { s.audit = a }
+
+// SetEvents wires the event publisher for publish success/failure signals.
+func (s *SandboxService) SetEvents(p events.Publisher) { s.events = p }
 
 // WithPlacement wires placement (coordinator) + sizing defaults.
 func (s *SandboxService) WithPlacement(place PlaceFunc, defaultStrategy string, defaults sandbox.Resources) {
@@ -306,4 +321,74 @@ func (s *SandboxService) ListPorts(ctx context.Context, r *sbxv1.IdRequest) (*sb
 		out.Ports = append(out.Ports, &sbxv1.Port{ContainerPort: int32(p.ContainerPort), HostPort: int32(p.HostPort)})
 	}
 	return out, nil
+}
+
+// doPublish runs the publish pipeline for a sandbox's git-backed workspace and
+// audits/emits the outcome.
+func (s *SandboxService) doPublish(ctx context.Context, sandboxID, reqBranch string) error {
+	rec, err := s.mgr.Get(ctx, sandboxID)
+	if err == sandbox.ErrNotFound {
+		return status.Error(codes.NotFound, "sandbox not found")
+	}
+	if err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	if len(rec.Spec.Workspaces) != 1 {
+		return status.Error(codes.FailedPrecondition, "sandbox is not clone-mode")
+	}
+	ws := s.gitWS[rec.Spec.Workspaces[0].Name]
+	if ws == nil {
+		return status.Error(codes.FailedPrecondition, "workspace is not git-backed")
+	}
+	if !ws.AllowPush() {
+		return status.Error(codes.FailedPrecondition, "workspace does not allow push")
+	}
+	branch := reqBranch
+	if branch == "" {
+		branch = rec.Spec.Branch
+	}
+	if branch == "" {
+		return status.Error(codes.FailedPrecondition, "no branch to publish")
+	}
+	if rec.Status != "running" {
+		return status.Error(codes.FailedPrecondition, "sandbox not running; cannot reach sandbox-"+rec.BackendName)
+	}
+
+	perr := ws.Publish(ctx, branch, "sandbox-"+rec.BackendName)
+	s.auditPublish(ws.Name(), branch, perr)
+	if perr != nil {
+		s.emit("sandbox.publish_failed", sandboxID, map[string]string{"branch": branch})
+		return status.Errorf(codes.Internal, "publish: %v", perr)
+	}
+	s.emit("sandbox.published", sandboxID, map[string]string{"branch": branch})
+	_ = s.mgr.SetLastPublish(ctx, sandboxID, time.Now())
+	return nil
+}
+
+func (s *SandboxService) auditPublish(workspace, branch string, err error) {
+	if s.audit == nil {
+		return
+	}
+	outcome := "ok"
+	if err != nil {
+		outcome = "error"
+	}
+	_ = s.audit.Record(audit.Entry{Action: "git.publish", Target: workspace + "@" + branch, Outcome: outcome})
+}
+
+func (s *SandboxService) emit(eventType, sandboxID string, payload map[string]string) {
+	if s.events != nil {
+		s.events.Publish(eventType, sandboxID, payload)
+	}
+}
+
+// PublishSandbox starts an async git-publish operation.
+func (s *SandboxService) PublishSandbox(ctx context.Context, r *sbxv1.PublishSandboxRequest) (*sbxv1.Operation, error) {
+	op, _, err := s.ops.Start(ctx, "git-publish", idempotencyKey(ctx))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	id, branch := r.Id, r.Branch
+	s.ops.Run(op.ID, func() (string, error) { return id, s.doPublish(context.Background(), id, branch) })
+	return opProto(op), nil
 }
