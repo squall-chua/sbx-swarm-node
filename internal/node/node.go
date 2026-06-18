@@ -21,6 +21,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
+	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -93,6 +94,10 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	opsM.SetMetrics(metrics)
 	sandboxes := apiserver.NewSandboxService(mgr, opsM)
 	auditLog := audit.New(st, func() int64 { return time.Now().Unix() })
+	gitWS := buildGitWorkspaces(cfg.Workspaces)
+	sandboxes.SetGit(gitWS)
+	sandboxes.SetAudit(auditLog)
+	sandboxes.SetEvents(bus)
 	policySvc := apiserver.NewPolicyService(mgr, auditLog)
 
 	// Background observability collectors.
@@ -218,7 +223,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	sandboxes.WithPlacement(
 		func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (string, error) {
 			req.Local = id.NodeID // prefer this (entry) node on a score tie
-			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, req.RequestID, mgr, tbl, pool, log))
+			return coord.Provision(ctx, req, attemptFor(id.NodeID, spec, req.RequestID, mgr, gitWS, tbl, pool, log))
 		},
 		cfg.DefaultStrategy,
 		sandbox.Resources{
@@ -242,7 +247,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Forward:   fwd,
 		Routing:   tbl,
 		Peers:     pool,
-		Internal:  apiserver.NewInternalService(mgr, func() bool { return tbl.IsCordoned(id.NodeID) }),
+		Internal:  apiserver.NewInternalService(mgr, gitWS, func() bool { return tbl.IsCordoned(id.NodeID) }),
 		NodeSvc:   nodeSvc, // pre-wired with Cordoner (nil-safe if no cluster)
 		Pins: func(nodeID string) (crypto.PublicKey, bool) {
 			pk, ok := tbl.PubKey(nodeID)
@@ -433,6 +438,21 @@ func resolveCfgLimit(configured, detected float64) float64 {
 	return detected
 }
 
+func buildGitWorkspaces(ws []config.WorkspaceConfig) map[string]*git.Workspace {
+	out := map[string]*git.Workspace{}
+	for _, w := range ws {
+		if w.Git == nil {
+			continue
+		}
+		g := w.Git.WithDefaults()
+		out[w.Name] = git.New(git.Spec{
+			Name: w.Name, Base: w.HostPath, Remote: g.Remote, DefaultBranch: g.DefaultBranch,
+			AllowPush: g.AllowPush, PreSteps: g.PreSteps, PublishSteps: g.PublishSteps, Allowlist: g.ExecAllowlist,
+		})
+	}
+	return out
+}
+
 func workspaceNames(ws []config.WorkspaceConfig) []string {
 	out := make([]string, 0, len(ws))
 	for _, w := range ws {
@@ -507,10 +527,10 @@ func callProvisionWithRetry(ctx context.Context, client sbxv1.InternalServiceCli
 
 // attemptFor builds the per-request attempt closure: local admit+create, or a
 // remote Provision RPC over the pinned peer pool.
-func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, requestID string, mgr *sandbox.Manager, tbl *routing.Table, pool *peer.Pool, log *slog.Logger) coordinator.AttemptFunc {
+func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, requestID string, mgr *sandbox.Manager, gitWS map[string]*git.Workspace, tbl *routing.Table, pool *peer.Pool, log *slog.Logger) coordinator.AttemptFunc {
 	return func(ctx context.Context, nodeID string) (string, error) {
 		if nodeID == self {
-			rec, err := mgr.AdmitAndCreate(ctx, apiserver.ToSpecForProvision(spec))
+			rec, err := apiserver.ProvisionLocal(ctx, mgr, gitWS, apiserver.ToSpecForProvision(spec))
 			if err == sandbox.ErrNoCapacity {
 				return "", coordinator.ErrNack
 			}

@@ -221,6 +221,42 @@ func TestCluster_ForwardLogsSSE(t *testing.T) {
 	require.Contains(t, got, "data:", "expected an SSE log frame relayed from B, got %q", got)
 }
 
+// TestCluster_PublishForwardsToOwner verifies that a PublishSandbox request
+// sent to the NON-OWNER node is forwarded to the owner and returns an Operation.
+// The op's background doPublish will fail because the fake backend has no
+// git-backed workspace — that is EXPECTED. This test validates cross-node
+// forwarding + op creation, not git transport.
+func TestCluster_PublishForwardsToOwner(t *testing.T) {
+	nodeA := startNode(t, "127.0.0.1:19545", "127.0.0.1:17958", nil)
+	nodeB := startNode(t, "127.0.0.1:19546", "127.0.0.1:17959", []string{"127.0.0.1:17958"})
+
+	waitForPeer(t, nodeA, nodeB.NodeID(), 10*time.Second)
+
+	client := tlsClient()
+	// Create the sandbox on B (B is the owner).
+	sbxID := createSandboxOnB(t, client, nodeB)
+	require.Contains(t, sbxID, nodeB.NodeID()+".", "sandbox id must be self-routing under B")
+
+	// POST publish to NON-OWNER A — A must forward to owner B and return an Operation.
+	publishURL := fmt.Sprintf("https://%s/v1/sandboxes/%s/git/publish", nodeA.Addr(), sbxID)
+	req, err := http.NewRequest(http.MethodPost, publishURL, strings.NewReader("{}"))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer adm")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var op struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&op))
+	require.NotEmpty(t, op.ID)
+	require.Equal(t, "git-publish", op.Type)
+}
+
 // TestCluster_NodeDeadRemovesFromPeers stops node B and verifies that A's
 // peer view eventually removes it (memberlist failure detection).
 func TestCluster_NodeDeadRemovesFromPeers(t *testing.T) {

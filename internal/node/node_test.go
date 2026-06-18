@@ -122,7 +122,7 @@ func TestAttemptFor_DialFailureNacks(t *testing.T) {
 	tbl.Upsert("peerB", "127.0.0.1:1", false, nil)
 
 	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
-		"op-x", nil, tbl, pool, obs.NewLogger("error", io.Discard))
+		"op-x", nil, nil, tbl, pool, obs.NewLogger("error", io.Discard))
 	_, err = attempt(context.Background(), "peerB")
 	require.ErrorIs(t, err, coordinator.ErrNack)
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 )
 
@@ -70,14 +71,15 @@ func (d *dedup) put(id, sandboxID string) {
 type InternalService struct {
 	sbxv1.UnimplementedInternalServiceServer
 	mgr      *sandbox.Manager
+	gitWS    map[string]*git.Workspace
 	cordoned func() bool // self-cordon check; nil when standalone (never cordoned)
 	dedup    *dedup
 }
 
 // NewInternalService builds the internal service. cordoned reports this node's
 // own cordon state (nil = standalone, never cordoned).
-func NewInternalService(mgr *sandbox.Manager, cordoned func() bool) *InternalService {
-	return &InternalService{mgr: mgr, cordoned: cordoned, dedup: newDedup(5*time.Minute, 1024)}
+func NewInternalService(mgr *sandbox.Manager, gitWS map[string]*git.Workspace, cordoned func() bool) *InternalService {
+	return &InternalService{mgr: mgr, gitWS: gitWS, cordoned: cordoned, dedup: newDedup(5*time.Minute, 1024)}
 }
 
 // Provision performs target-authoritative admission against real local capacity,
@@ -105,7 +107,7 @@ func (s *InternalService) Provision(ctx context.Context, r *sbxv1.ProvisionReque
 	// Defensive: re-apply the built-in floor at the node->node trust boundary so a
 	// peer that sends an unsized spec cannot bypass capacity accounting (ADR-0011).
 	spec := toSpec(effectiveSpec(in, sandbox.Resources{}))
-	rec, err := s.mgr.AdmitAndCreate(ctx, spec)
+	rec, err := ProvisionLocal(ctx, s.mgr, s.gitWS, spec)
 	if err == sandbox.ErrNoCapacity {
 		return &sbxv1.ProvisionReply{Accepted: false, Reason: "no capacity"}, nil
 	}

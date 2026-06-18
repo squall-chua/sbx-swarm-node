@@ -17,7 +17,7 @@ func TestInternalProvision_FloorsUnsizedSpec(t *testing.T) {
 	require.NoError(t, err)
 	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
 	mgr.SetCapacity(sandbox.NewCapacity(1, 1e9, 1e9)) // 1 core
-	svc := NewInternalService(mgr, nil)
+	svc := NewInternalService(mgr, nil, nil)
 
 	// An unsized spec (cpus=0) must be floored to >=1 core and reserved, so a
 	// SECOND unsized create exceeds the 1-core limit and is NACKed. Without the
@@ -36,7 +36,7 @@ func TestInternalProvision_AdmitsThenNacks(t *testing.T) {
 	require.NoError(t, err)
 	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
 	mgr.SetCapacity(sandbox.NewCapacity(2, 1e9, 1e9)) // 2 cores
-	svc := NewInternalService(mgr, nil)
+	svc := NewInternalService(mgr, nil, nil)
 
 	r1, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
 		Spec: &sbxv1.CreateSandboxRequest{Cpus: 2, MemoryBytes: 1},
@@ -58,7 +58,7 @@ func TestInternalProvision_CordonedTargetNacks(t *testing.T) {
 	require.NoError(t, err)
 	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
 	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9)) // ample capacity
-	svc := NewInternalService(mgr, func() bool { return true })
+	svc := NewInternalService(mgr, nil, func() bool { return true })
 
 	// A node cordoned after the entry node's snapshot must refuse a forwarded
 	// provision (its own cordon recheck), even with capacity to spare.
@@ -75,7 +75,7 @@ func TestInternalProvision_DedupsByRequestID(t *testing.T) {
 	require.NoError(t, err)
 	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
 	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
-	svc := NewInternalService(mgr, nil)
+	svc := NewInternalService(mgr, nil, nil)
 
 	r1, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
 		RequestId: "op-123", Spec: &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
@@ -100,7 +100,7 @@ func TestInternalProvision_EmptyRequestIDDoesNotDedup(t *testing.T) {
 	require.NoError(t, err)
 	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
 	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
-	svc := NewInternalService(mgr, nil)
+	svc := NewInternalService(mgr, nil, nil)
 
 	for i := 0; i < 2; i++ {
 		_, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
