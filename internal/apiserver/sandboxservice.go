@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -244,10 +245,31 @@ func (s *SandboxService) StartSandbox(ctx context.Context, r *sbxv1.IdRequest) (
 }
 
 func (s *SandboxService) StopSandbox(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.Sandbox, error) {
+	s.maybeAutoPublish(ctx, r.Id) // publish-then-stop: the sandbox-<name> fetch needs the live daemon
 	if err := s.mgr.Stop(ctx, r.Id); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return s.GetSandbox(ctx, &sbxv1.GetSandboxRequest{Id: r.Id})
+}
+
+// maybeAutoPublish best-effort publishes the recorded branch of a clone-mode,
+// push-allowed sandbox. Failures are audited + logged inside doPublish and do NOT
+// block the caller (ADR: auto-publish is best-effort).
+func (s *SandboxService) maybeAutoPublish(ctx context.Context, id string) {
+	if s.gitWS == nil {
+		return
+	}
+	rec, err := s.mgr.Get(ctx, id)
+	if err != nil || len(rec.Spec.Workspaces) != 1 || !rec.Spec.Clone || rec.Spec.Branch == "" {
+		return
+	}
+	ws := s.gitWS[rec.Spec.Workspaces[0].Name]
+	if ws == nil || !ws.AllowPush() {
+		return // not git-backed or pull-only: silent skip
+	}
+	if perr := s.doPublish(ctx, id, ""); perr != nil {
+		slog.Warn("auto-publish failed", "sandbox", id, "err", perr)
+	}
 }
 
 func (s *SandboxService) Exec(ctx context.Context, r *sbxv1.ExecRequest) (*sbxv1.ExecResponse, error) {
@@ -273,6 +295,7 @@ func (s *SandboxService) AgentRun(ctx context.Context, r *sbxv1.AgentRunRequest)
 	}
 	cmd, opts := r.Cmd, sandbox.ExecOpts{Workdir: r.Workdir, Env: r.Env}
 	sbID := r.Id
+	publishOnSuccess := r.PublishOnSuccess
 	s.ops.Run(op.ID, func() (string, error) {
 		did, derr := s.mgr.Backend().ExecDetached(context.Background(), name, cmd, opts)
 		if derr != nil {
@@ -286,6 +309,9 @@ func (s *SandboxService) AgentRun(ctx context.Context, r *sbxv1.AgentRunRequest)
 			if st.Done {
 				if st.ExitCode != 0 {
 					return sbID, status.Errorf(codes.Internal, "agent run exited %d", st.ExitCode)
+				}
+				if publishOnSuccess {
+					s.maybeAutoPublish(context.Background(), sbID) // best-effort
 				}
 				return sbID, nil
 			}

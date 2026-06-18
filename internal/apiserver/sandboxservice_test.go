@@ -145,3 +145,62 @@ func TestPublishSandbox_AllowPushGate(t *testing.T) {
 	err = svc.doPublish(context.Background(), rec.ID, "")
 	require.Equal(t, codes.FailedPrecondition, status.Code(err)) // allow_push=false
 }
+
+func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	upstream := filepath.Join(root, "up.git")
+	base := filepath.Join(root, "base.git")
+	sbx := filepath.Join(root, "sbx")
+	for _, c := range [][]string{
+		{"git", "init", "--bare", upstream},
+		{"git", "clone", upstream, sbx},
+	} {
+		out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	run := func(dir string, a ...string) {
+		out, err := func() ([]byte, error) { c := exec.Command("git", a...); c.Dir = dir; return c.CombinedOutput() }()
+		require.NoError(t, err, string(out))
+	}
+	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+	run(sbx, "push", "origin", "HEAD:main")
+	out, err := exec.Command("git", "clone", "--bare", upstream, base).CombinedOutput()
+	require.NoError(t, err, string(out))
+	run(sbx, "checkout", "-b", "agent/x")
+	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "work")
+
+	ws := git.New(git.Spec{
+		Name: "repo", Base: base, Remote: "origin", DefaultBranch: "main", AllowPush: true,
+		PreSteps:     [][]string{{"git", "fetch", "{remote}", "+refs/heads/*:refs/heads/*"}},
+		PublishSteps: [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}, {"git", "push", "{remote}", "{branch}"}},
+		Allowlist:    []string{"git"},
+	})
+
+	mgr := newTestManager(t)
+	// The fake backend names the sandbox by spec.Name; force BackendName == "fake" so
+	// {sandbox_remote} == "sandbox-fake". (newTestManager uses the fake backend; the
+	// record's BackendName equals its swarm id. Override the remote name in the test
+	// by registering the base remote under "sandbox-<backendName>".)
+	rec, err := mgr.AdmitAndCreate(context.Background(), sandbox.CreateSpec{
+		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
+	})
+	require.NoError(t, err)
+	out, err = func() ([]byte, error) { c := exec.Command("git", "remote", "add", "sandbox-"+rec.BackendName, sbx); c.Dir = base; return c.CombinedOutput() }()
+	require.NoError(t, err, string(out))
+
+	svc := NewSandboxService(mgr, newTestOps(t))
+	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+
+	_, err = svc.StopSandbox(context.Background(), &sbxv1.IdRequest{Id: rec.ID})
+	require.NoError(t, err)
+
+	// upstream received agent/x (publish ran before stop), and the sandbox is stopped.
+	bo, _ := func() ([]byte, error) { c := exec.Command("git", "branch", "--list", "agent/x"); c.Dir = upstream; return c.CombinedOutput() }()
+	require.Contains(t, string(bo), "agent/x")
+	got, err := mgr.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, "stopped", got.Status)
+}
