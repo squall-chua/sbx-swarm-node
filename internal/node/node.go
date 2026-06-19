@@ -21,10 +21,10 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
-	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/identity"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/membership"
@@ -79,7 +79,11 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 
 	gen := ids.NewGen(id.NodeID)
 	bus := events.NewBus(id.NodeID, 1024)
-	backend := sandbox.NewFake() // M1c default backend so the node boots without a daemon
+	backend, err := buildBackend(cfg)
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
 	mgr := sandbox.NewManager(id.NodeID, backend, st, gen)
 	mgr.SetPublisher(bus)
 	dc, dm, dd := sandbox.DetectHostLimits(cfg.DataDir)
@@ -451,6 +455,37 @@ func buildGitWorkspaces(ws []config.WorkspaceConfig) map[string]*git.Workspace {
 		})
 	}
 	return out
+}
+
+// buildBackend selects the sandbox backend from config. "sdk" connects to the
+// local sbx daemon (auto-starting it, version-checked); a connect failure fails
+// boot rather than silently falling back to the fake. Default/"fake" boots
+// without a daemon (tests, daemonless nodes).
+func buildBackend(cfg *config.Config) (sandbox.Backend, error) {
+	if cfg.Backend == "sdk" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces))
+	}
+	return sandbox.NewFake(), nil
+}
+
+// workspaceResolver maps a workspace name to its host path + read-only flag for
+// the SDK backend. Git-backed workspaces are always read-only — the bare base
+// must never be agent-writable (ADR-0015).
+func workspaceResolver(ws []config.WorkspaceConfig) sandbox.WorkspaceResolver {
+	type entry struct {
+		path     string
+		readOnly bool
+	}
+	m := make(map[string]entry, len(ws))
+	for _, w := range ws {
+		m[w.Name] = entry{path: w.HostPath, readOnly: w.ReadOnly || w.Git != nil}
+	}
+	return func(name string) (string, bool, bool) {
+		e, ok := m[name]
+		return e.path, e.readOnly, ok
+	}
 }
 
 func workspaceNames(ws []config.WorkspaceConfig) []string {

@@ -22,15 +22,16 @@ type Config struct {
 	APIKeys     []APIKey `yaml:"api_keys"`
 
 	// M4 cluster fields.
-	ClusterSecret string            `yaml:"cluster_secret"`
-	Join          []string          `yaml:"join"`
-	SwarmName     string            `yaml:"swarm_name"`
-	Labels        map[string]string `yaml:"labels"`
+	ClusterSecret           string            `yaml:"cluster_secret"`
+	Join                    []string          `yaml:"join"`
+	SwarmName               string            `yaml:"swarm_name"`
+	Labels                  map[string]string `yaml:"labels"`
 	ProvisionLimits         ProvisionLimits   `yaml:"provision_limits"`
 	GossipAddr              string            `yaml:"gossip_addr"`
 	Workspaces              []WorkspaceConfig `yaml:"workspaces"`
 	DefaultStrategy         string            `yaml:"default_strategy"`
 	DefaultSandboxResources SandboxResources  `yaml:"default_sandbox_resources"`
+	Backend                 string            `yaml:"backend"` // "fake" (default) | "sdk"
 }
 
 // ProvisionLimits caps how much CPU/memory/disk this node offers to the swarm.
@@ -105,6 +106,7 @@ func Default() *Config {
 		ListenAddr: ":8443",
 		LogLevel:   "info",
 		GossipAddr: ":7946",
+		Backend:    "fake",
 	}
 }
 
@@ -223,6 +225,11 @@ func (c *Config) Validate() error {
 		if w.Git != nil && w.HostPath == "" {
 			return fmt.Errorf("workspace %q is git-backed but has no host_path", w.Name)
 		}
+	}
+	switch c.Backend {
+	case "", "fake", "sdk":
+	default:
+		return fmt.Errorf("backend must be one of fake|sdk, got %q", c.Backend)
 	}
 	return nil
 }

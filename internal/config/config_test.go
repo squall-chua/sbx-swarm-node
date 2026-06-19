@@ -38,6 +38,17 @@ func TestLoad_Defaults(t *testing.T) {
 	require.Equal(t, "info", cfg.LogLevel)
 }
 
+func TestBackend_DefaultAndValidate(t *testing.T) {
+	require.Equal(t, "fake", Default().Backend) // daemonless default keeps tests/boot green
+
+	c := Default()
+	c.Backend = "sdk"
+	require.NoError(t, c.Validate())
+
+	c.Backend = "bogus"
+	require.Error(t, c.Validate())
+}
+
 func TestValidate(t *testing.T) {
 	ok := Default()
 	require.NoError(t, ok.Validate())

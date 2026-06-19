@@ -54,6 +54,32 @@ func TestNode_BootServeStop(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestWorkspaceResolver(t *testing.T) {
+	resolve := workspaceResolver([]config.WorkspaceConfig{
+		{Name: "data", HostPath: "/srv/data", ReadOnly: false},
+		{Name: "ro", HostPath: "/srv/ro", ReadOnly: true},
+		{Name: "repo", HostPath: "/srv/repo.git", ReadOnly: false, Git: &config.GitConfig{}},
+	})
+
+	host, ro, ok := resolve("data")
+	require.True(t, ok)
+	require.Equal(t, "/srv/data", host)
+	require.False(t, ro)
+
+	_, ro, ok = resolve("ro")
+	require.True(t, ok)
+	require.True(t, ro)
+
+	// git-backed mounts are always read-only (ADR-0015), even with read_only:false.
+	host, ro, ok = resolve("repo")
+	require.True(t, ok)
+	require.Equal(t, "/srv/repo.git", host)
+	require.True(t, ro)
+
+	_, _, ok = resolve("missing")
+	require.False(t, ok)
+}
+
 func TestNode_SSEEndpointAuthed(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
