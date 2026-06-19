@@ -267,7 +267,14 @@ func (s *SandboxService) maybeAutoPublish(ctx context.Context, id string) {
 	if ws == nil || !ws.AllowPush() {
 		return // not git-backed or pull-only: silent skip
 	}
-	if perr := s.doPublish(ctx, id, ""); perr != nil {
+	// Attribute to the user when ctx carries one (synchronous StopSandbox); fall
+	// back to "system" for background triggers (AgentRun success) whose ctx has
+	// no principal.
+	actor := principalFromContext(ctx).userRole
+	if actor == "" {
+		actor = "system"
+	}
+	if perr := s.doPublish(ctx, id, "", actor); perr != nil {
 		slog.Warn("auto-publish failed", "sandbox", id, "err", perr)
 	}
 }
@@ -351,7 +358,7 @@ func (s *SandboxService) ListPorts(ctx context.Context, r *sbxv1.IdRequest) (*sb
 
 // doPublish runs the publish pipeline for a sandbox's git-backed workspace and
 // audits/emits the outcome.
-func (s *SandboxService) doPublish(ctx context.Context, sandboxID, reqBranch string) error {
+func (s *SandboxService) doPublish(ctx context.Context, sandboxID, reqBranch, actor string) error {
 	rec, err := s.mgr.Get(ctx, sandboxID)
 	if err == sandbox.ErrNotFound {
 		return status.Error(codes.NotFound, "sandbox not found")
@@ -381,7 +388,7 @@ func (s *SandboxService) doPublish(ctx context.Context, sandboxID, reqBranch str
 	}
 
 	perr := ws.Publish(ctx, branch, "sandbox-"+rec.BackendName)
-	s.auditPublish(ws.Name(), branch, perr)
+	s.auditPublish(ws.Name(), branch, actor, perr)
 	if perr != nil {
 		s.emit("sandbox.publish_failed", sandboxID, map[string]string{"branch": branch})
 		return status.Errorf(codes.Internal, "publish: %v", perr)
@@ -391,7 +398,7 @@ func (s *SandboxService) doPublish(ctx context.Context, sandboxID, reqBranch str
 	return nil
 }
 
-func (s *SandboxService) auditPublish(workspace, branch string, err error) {
+func (s *SandboxService) auditPublish(workspace, branch, actor string, err error) {
 	if s.audit == nil {
 		return
 	}
@@ -399,7 +406,7 @@ func (s *SandboxService) auditPublish(workspace, branch string, err error) {
 	if err != nil {
 		outcome = "error"
 	}
-	_ = s.audit.Record(audit.Entry{Action: "git.publish", Target: workspace + "@" + branch, Outcome: outcome})
+	_ = s.audit.Record(audit.Entry{Actor: actor, Action: "git.publish", Target: workspace + "@" + branch, Outcome: outcome})
 }
 
 func (s *SandboxService) emit(eventType, sandboxID string, payload map[string]string) {
@@ -415,6 +422,7 @@ func (s *SandboxService) PublishSandbox(ctx context.Context, r *sbxv1.PublishSan
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	id, branch := r.Id, r.Branch
-	s.ops.Run(op.ID, func() (string, error) { return id, s.doPublish(context.Background(), id, branch) })
+	act := principalFromContext(ctx).userRole // capture before going async (background ctx has no principal)
+	s.ops.Run(op.ID, func() (string, error) { return id, s.doPublish(context.Background(), id, branch, act) })
 	return opProto(op), nil
 }

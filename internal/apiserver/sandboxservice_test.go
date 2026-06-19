@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
@@ -142,8 +143,51 @@ func TestPublishSandbox_AllowPushGate(t *testing.T) {
 	svc := NewSandboxService(mgr, newTestOps(t))
 	svc.SetGit(map[string]*git.Workspace{"repo": ws})
 
-	err = svc.doPublish(context.Background(), rec.ID, "")
+	err = svc.doPublish(context.Background(), rec.ID, "", "admin")
 	require.Equal(t, codes.FailedPrecondition, status.Code(err)) // allow_push=false
+}
+
+func TestPublishSandbox_AuditRecordsActor(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	base := filepath.Join(root, "base.git")
+	out, err := exec.Command("git", "init", "--bare", base).CombinedOutput()
+	require.NoError(t, err, string(out))
+	// AllowPush + a publish step targeting the (unregistered) sandbox remote, so
+	// Publish fails — but auditPublish runs before the error check, so the actor is
+	// still recorded.
+	ws := git.New(git.Spec{
+		Name: "repo", Base: base, Remote: "origin", AllowPush: true,
+		PublishSteps: [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}},
+		Allowlist:    []string{"git"},
+	})
+
+	mgr := newTestManager(t)
+	rec, err := mgr.AdmitAndCreate(context.Background(), sandbox.CreateSpec{
+		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
+	})
+	require.NoError(t, err)
+
+	st, err := store.Open(filepath.Join(root, "audit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	al := audit.New(st, func() int64 { return 1 })
+
+	svc := NewSandboxService(mgr, newTestOps(t))
+	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+	svc.SetAudit(al)
+
+	err = svc.doPublish(context.Background(), rec.ID, "", "admin")
+	require.Error(t, err) // publish fails: no sandbox-<name> remote
+
+	entries, err := al.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "git.publish", entries[0].Action)
+	require.Equal(t, "admin", entries[0].Actor)
+	require.Equal(t, "error", entries[0].Outcome)
 }
 
 func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
@@ -191,8 +235,14 @@ func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	out, err = func() ([]byte, error) { c := exec.Command("git", "remote", "add", "sandbox-"+rec.BackendName, sbx); c.Dir = base; return c.CombinedOutput() }()
 	require.NoError(t, err, string(out))
 
+	ast, err := store.Open(filepath.Join(root, "audit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ast.Close() })
+	al := audit.New(ast, func() int64 { return 1 })
+
 	svc := NewSandboxService(mgr, newTestOps(t))
 	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+	svc.SetAudit(al)
 
 	_, err = svc.StopSandbox(context.Background(), &sbxv1.IdRequest{Id: rec.ID})
 	require.NoError(t, err)
@@ -203,4 +253,12 @@ func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	got, err := mgr.Get(context.Background(), rec.ID)
 	require.NoError(t, err)
 	require.Equal(t, "stopped", got.Status)
+
+	// auto-publish is system-initiated, so the audit actor is "system" (not empty).
+	entries, err := al.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "git.publish", entries[0].Action)
+	require.Equal(t, "system", entries[0].Actor)
+	require.Equal(t, "ok", entries[0].Outcome)
 }
