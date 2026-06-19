@@ -88,6 +88,11 @@ Defaults filled when unset:
   (the refspec fetch lands the branch in `refs/heads/{branch}` so the push has a local ref — a bare
   `git fetch {sandbox_remote} {branch}` would only update `FETCH_HEAD`).
 
+> **Base must be `--bare`, not `--mirror`.** The default `git push {remote} {branch}` is a refspec push,
+> which git rejects when `remote.origin.mirror=true` (`--mirror can't be combined with refspecs`). Prepare
+> the `host_path` base with `git clone --bare` (above, where it says "bare/mirror base", read **bare**).
+> An operator who must use a mirror base has to override `PublishSteps` with `git -c remote.origin.mirror=false push …`.
+
 `config.Validate`: a git-backed workspace needs a non-empty `host_path`. At boot the node checks
 `host_path` exists; git-repo-ness surfaces at first PRE with a clear error (avoids a redundant probe).
 
