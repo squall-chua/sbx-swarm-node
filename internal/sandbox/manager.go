@@ -248,6 +248,29 @@ func (m *Manager) SetLastPublish(ctx context.Context, id string, t time.Time) er
 	return m.save(rec)
 }
 
+// IdleRunning returns running, non-exempt records whose last Activity precedes
+// now-timeout (strict >). A record labeled idle-stop:off is exempt. timeout<=0
+// returns nothing. now is a parameter so the boundary is deterministically testable.
+func (m *Manager) IdleRunning(ctx context.Context, now time.Time, timeout time.Duration) ([]*Record, error) {
+	if timeout <= 0 {
+		return nil, nil
+	}
+	recs, err := m.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []*Record
+	for _, rec := range recs {
+		if rec.Status != "running" || rec.Labels["idle-stop"] == "off" {
+			continue
+		}
+		if now.Sub(rec.LastActivity) > timeout {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
+
 // Backend returns the underlying backend (for exec/ports/files handlers).
 func (m *Manager) Backend() Backend { return m.backend }
 

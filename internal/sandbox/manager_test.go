@@ -152,3 +152,51 @@ func TestManager_Start_BumpsActivity(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, t1, got.LastActivity, "Start counts as Activity")
 }
+
+func TestManager_IdleRunning(t *testing.T) {
+	m, _ := newMgr(t)
+	t0 := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return t0 }
+	ctx := context.Background()
+	timeout := time.Hour
+
+	active, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+	exempt, err := m.Create(ctx, CreateSpec{Labels: map[string]string{"idle-stop": "off"}})
+	require.NoError(t, err)
+	stopped, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+	require.NoError(t, m.Stop(ctx, stopped.ID))
+
+	// Exactly at the boundary: not idle (strict >).
+	require.Empty(t, mustIdle(t, m, t0.Add(timeout), timeout))
+
+	// Past the boundary: only the plain running sandbox is idle.
+	idle := mustIdle(t, m, t0.Add(timeout+time.Nanosecond), timeout)
+	require.Len(t, idle, 1)
+	require.Equal(t, active.ID, idle[0].ID)
+	require.NotContains(t, idsOf(idle), exempt.ID, "idle-stop:off is exempt")
+	require.NotContains(t, idsOf(idle), stopped.ID, "stopped is never idle-running")
+
+	// Re-reap regression: Start the would-be-idle sandbox far in the future; it must
+	// no longer be selected at that same now (Start bumped LastActivity).
+	m.now = func() time.Time { return t0.Add(2 * timeout) }
+	require.NoError(t, m.Stop(ctx, active.ID))
+	require.NoError(t, m.Start(ctx, active.ID))
+	require.Empty(t, mustIdle(t, m, t0.Add(2*timeout), timeout), "Started sandbox is not immediately idle")
+}
+
+func mustIdle(t *testing.T, m *Manager, now time.Time, timeout time.Duration) []*Record {
+	t.Helper()
+	out, err := m.IdleRunning(context.Background(), now, timeout)
+	require.NoError(t, err)
+	return out
+}
+
+func idsOf(recs []*Record) []string {
+	ids := make([]string, 0, len(recs))
+	for _, r := range recs {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
