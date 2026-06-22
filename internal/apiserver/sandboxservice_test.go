@@ -276,13 +276,15 @@ func TestReapIdle_PublishesThenStops(t *testing.T) {
 
 	// Not yet idle: now == create time, elapsed ~0 < 1h.
 	require.Equal(t, 0, svc.ReapIdle(context.Background(), time.Now()))
-	got, _ := mgr.Get(context.Background(), rec.ID)
+	got, err := mgr.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
 	require.Equal(t, "running", got.Status)
 
 	// Idle: now far past the timeout.
 	require.Equal(t, 1, svc.ReapIdle(context.Background(), time.Now().Add(2*time.Hour)))
 
-	bo, _ := func() ([]byte, error) { c := exec.Command("git", "branch", "--list", "agent/x"); c.Dir = upstream; return c.CombinedOutput() }()
+	bo, berr := func() ([]byte, error) { c := exec.Command("git", "branch", "--list", "agent/x"); c.Dir = upstream; return c.CombinedOutput() }()
+	require.NoError(t, berr)
 	require.Contains(t, string(bo), "agent/x", "publish ran before stop")
 	got, err = mgr.Get(context.Background(), rec.ID)
 	require.NoError(t, err)

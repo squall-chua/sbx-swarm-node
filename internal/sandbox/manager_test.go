@@ -205,7 +205,7 @@ func idsOf(recs []*Record) []string {
 func TestManager_ConcurrentBumpDoesNotResurrectStopped(t *testing.T) {
 	m, _ := newMgr(t)
 	ctx := context.Background()
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		rec, err := m.Create(ctx, CreateSpec{})
 		require.NoError(t, err)
 		var wg sync.WaitGroup
@@ -223,7 +223,7 @@ func TestManager_ConcurrentBumpDoesNotResurrectStopped(t *testing.T) {
 func TestManager_ConcurrentBumpDoesNotResurrectDeleted(t *testing.T) {
 	m, _ := newMgr(t)
 	ctx := context.Background()
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		rec, err := m.Create(ctx, CreateSpec{})
 		require.NoError(t, err)
 		var wg sync.WaitGroup
