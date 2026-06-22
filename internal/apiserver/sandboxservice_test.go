@@ -225,6 +225,70 @@ func TestSetIdleTimeout(t *testing.T) {
 	require.Equal(t, 15*time.Minute, svc.idleTimeout)
 }
 
+func TestReapIdle_PublishesThenStops(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	upstream := filepath.Join(root, "up.git")
+	base := filepath.Join(root, "base.git")
+	sbx := filepath.Join(root, "sbx")
+	for _, c := range [][]string{
+		{"git", "init", "--bare", upstream},
+		{"git", "clone", upstream, sbx},
+	} {
+		out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	run := func(dir string, a ...string) {
+		c := exec.Command("git", a...)
+		c.Dir = dir
+		out, err := c.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+	run(sbx, "push", "origin", "HEAD:main")
+	out, err := exec.Command("git", "clone", "--bare", upstream, base).CombinedOutput()
+	require.NoError(t, err, string(out))
+	run(sbx, "checkout", "-b", "agent/x")
+	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "work")
+
+	ws := git.New(git.Spec{
+		Name: "repo", Base: base, Remote: "origin", DefaultBranch: "main", AllowPush: true,
+		PreSteps:     [][]string{{"git", "fetch", "{remote}", "+refs/heads/*:refs/heads/*"}},
+		PublishSteps: [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}, {"git", "push", "{remote}", "{branch}"}},
+		Allowlist:    []string{"git"},
+	})
+
+	mgr := newTestManager(t)
+	rec, err := mgr.AdmitAndCreate(context.Background(), sandbox.CreateSpec{
+		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
+	})
+	require.NoError(t, err)
+	addRemote := exec.Command("git", "remote", "add", "sandbox-"+rec.BackendName, sbx)
+	addRemote.Dir = base
+	out, err = addRemote.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	svc := NewSandboxService(mgr, newTestOps(t))
+	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+	svc.SetIdleTimeout(time.Hour)
+
+	// Not yet idle: now == create time, elapsed ~0 < 1h.
+	require.Equal(t, 0, svc.ReapIdle(context.Background(), time.Now()))
+	got, _ := mgr.Get(context.Background(), rec.ID)
+	require.Equal(t, "running", got.Status)
+
+	// Idle: now far past the timeout.
+	require.Equal(t, 1, svc.ReapIdle(context.Background(), time.Now().Add(2*time.Hour)))
+
+	bo, _ := func() ([]byte, error) { c := exec.Command("git", "branch", "--list", "agent/x"); c.Dir = upstream; return c.CombinedOutput() }()
+	require.Contains(t, string(bo), "agent/x", "publish ran before stop")
+	got, err = mgr.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, "stopped", got.Status)
+}
+
 func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

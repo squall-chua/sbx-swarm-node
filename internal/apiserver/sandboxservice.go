@@ -284,6 +284,30 @@ func (s *SandboxService) maybeAutoPublish(ctx context.Context, id string) {
 	}
 }
 
+// ReapIdle idle-stops every running, non-exempt sandbox past the idle timeout,
+// auto-publishing git-backed ones first (publish-before-stop: the live daemon is
+// needed for the sandbox-<name> fetch). now is a parameter for testability.
+// Returns the number stopped. A publish failure does NOT skip the stop (parity
+// with graceful StopSandbox).
+func (s *SandboxService) ReapIdle(ctx context.Context, now time.Time) int {
+	idle, err := s.mgr.IdleRunning(ctx, now, s.idleTimeout)
+	if err != nil {
+		slog.Warn("reaper: list idle failed", "err", err)
+		return 0
+	}
+	n := 0
+	for _, rec := range idle {
+		s.maybeAutoPublish(ctx, rec.ID) // best-effort, before stop
+		if serr := s.mgr.Stop(ctx, rec.ID); serr != nil {
+			slog.Warn("reaper: stop failed", "sandbox", rec.ID, "err", serr)
+			continue
+		}
+		slog.Info("idle-stopped sandbox", "sandbox", rec.ID, "idle", now.Sub(rec.LastActivity).String())
+		n++
+	}
+	return n
+}
+
 func (s *SandboxService) Exec(ctx context.Context, r *sbxv1.ExecRequest) (*sbxv1.ExecResponse, error) {
 	name, err := s.mgr.Resolve(ctx, r.Id)
 	if err != nil {
