@@ -1307,8 +1307,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\tlast_seen\x18\x03 \x01(\tR\blastSeen\"l\n" +
 	"\x13ListBlockedResponse\x12.\n" +
 	"\ablocked\x18\x01 \x03(\v2\x14.sbxswarm.v1.BlockedR\ablocked\x12%\n" +
-	"\x0edistinct_count\x18\x02 \x01(\x05R\rdistinctCount2\xce\n" +
-	"\n" +
+	"\x0edistinct_count\x18\x02 \x01(\x05R\rdistinctCount2\xaf\v\n" +
 	"\x0eSandboxService\x12d\n" +
 	"\rCreateSandbox\x12!.sbxswarm.v1.CreateSandboxRequest\x1a\x16.sbxswarm.v1.Operation\"\x18\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/sandboxes\x12^\n" +
 	"\n" +
@@ -1323,7 +1322,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\tListPorts\x12\x16.sbxswarm.v1.IdRequest\x1a\x1e.sbxswarm.v1.ListPortsResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/sandboxes/{id}/ports\x12X\n" +
 	"\bGetStats\x12\x16.sbxswarm.v1.IdRequest\x1a\x12.sbxswarm.v1.Stats\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/sandboxes/{id}/stats\x12s\n" +
 	"\vListBlocked\x12\x16.sbxswarm.v1.IdRequest\x1a .sbxswarm.v1.ListBlockedResponse\"*\x82\xd3\xe4\x93\x02$\x12\"/v1/sandboxes/{id}/network/blocked\x12w\n" +
-	"\x0ePublishSandbox\x12\".sbxswarm.v1.PublishSandboxRequest\x1a\x16.sbxswarm.v1.Operation\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/sandboxes/{id}/git/publishB\xb7\x01\n" +
+	"\x0ePublishSandbox\x12\".sbxswarm.v1.PublishSandboxRequest\x1a\x16.sbxswarm.v1.Operation\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/sandboxes/{id}/git/publish\x12_\n" +
+	"\tKeepAlive\x12\x16.sbxswarm.v1.IdRequest\x1a\x14.sbxswarm.v1.Sandbox\"$\x82\xd3\xe4\x93\x02\x1e\"\x1c/v1/sandboxes/{id}/keepaliveB\xb7\x01\n" +
 	"\x0fcom.sbxswarm.v1B\fSandboxProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -1393,21 +1393,23 @@ var file_sbxswarm_v1_sandbox_proto_depIdxs = []int32{
 	4,  // 22: sbxswarm.v1.SandboxService.GetStats:input_type -> sbxswarm.v1.IdRequest
 	4,  // 23: sbxswarm.v1.SandboxService.ListBlocked:input_type -> sbxswarm.v1.IdRequest
 	6,  // 24: sbxswarm.v1.SandboxService.PublishSandbox:input_type -> sbxswarm.v1.PublishSandboxRequest
-	15, // 25: sbxswarm.v1.SandboxService.CreateSandbox:output_type -> sbxswarm.v1.Operation
-	2,  // 26: sbxswarm.v1.SandboxService.GetSandbox:output_type -> sbxswarm.v1.Sandbox
-	8,  // 27: sbxswarm.v1.SandboxService.ListSandboxes:output_type -> sbxswarm.v1.ListSandboxesResponse
-	15, // 28: sbxswarm.v1.SandboxService.DeleteSandbox:output_type -> sbxswarm.v1.Operation
-	2,  // 29: sbxswarm.v1.SandboxService.StartSandbox:output_type -> sbxswarm.v1.Sandbox
-	2,  // 30: sbxswarm.v1.SandboxService.StopSandbox:output_type -> sbxswarm.v1.Sandbox
-	10, // 31: sbxswarm.v1.SandboxService.Exec:output_type -> sbxswarm.v1.ExecResponse
-	15, // 32: sbxswarm.v1.SandboxService.AgentRun:output_type -> sbxswarm.v1.Operation
-	13, // 33: sbxswarm.v1.SandboxService.PublishPort:output_type -> sbxswarm.v1.Port
-	14, // 34: sbxswarm.v1.SandboxService.ListPorts:output_type -> sbxswarm.v1.ListPortsResponse
-	16, // 35: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
-	18, // 36: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
-	15, // 37: sbxswarm.v1.SandboxService.PublishSandbox:output_type -> sbxswarm.v1.Operation
-	25, // [25:38] is the sub-list for method output_type
-	12, // [12:25] is the sub-list for method input_type
+	4,  // 25: sbxswarm.v1.SandboxService.KeepAlive:input_type -> sbxswarm.v1.IdRequest
+	15, // 26: sbxswarm.v1.SandboxService.CreateSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 27: sbxswarm.v1.SandboxService.GetSandbox:output_type -> sbxswarm.v1.Sandbox
+	8,  // 28: sbxswarm.v1.SandboxService.ListSandboxes:output_type -> sbxswarm.v1.ListSandboxesResponse
+	15, // 29: sbxswarm.v1.SandboxService.DeleteSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 30: sbxswarm.v1.SandboxService.StartSandbox:output_type -> sbxswarm.v1.Sandbox
+	2,  // 31: sbxswarm.v1.SandboxService.StopSandbox:output_type -> sbxswarm.v1.Sandbox
+	10, // 32: sbxswarm.v1.SandboxService.Exec:output_type -> sbxswarm.v1.ExecResponse
+	15, // 33: sbxswarm.v1.SandboxService.AgentRun:output_type -> sbxswarm.v1.Operation
+	13, // 34: sbxswarm.v1.SandboxService.PublishPort:output_type -> sbxswarm.v1.Port
+	14, // 35: sbxswarm.v1.SandboxService.ListPorts:output_type -> sbxswarm.v1.ListPortsResponse
+	16, // 36: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
+	18, // 37: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
+	15, // 38: sbxswarm.v1.SandboxService.PublishSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 39: sbxswarm.v1.SandboxService.KeepAlive:output_type -> sbxswarm.v1.Sandbox
+	26, // [26:40] is the sub-list for method output_type
+	12, // [12:26] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name
 	12, // [12:12] is the sub-list for extension extendee
 	0,  // [0:12] is the sub-list for field type_name

@@ -46,6 +46,9 @@ service SandboxService {
   rpc PublishSandbox(PublishSandboxRequest) returns (Operation) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish" body: "*"};
   }
+  rpc KeepAlive(IdRequest) returns (Sandbox) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/keepalive"};
+  }
 }
 
 message WorkspaceMount {

@@ -249,6 +249,16 @@ func (s *SandboxService) StartSandbox(ctx context.Context, r *sbxv1.IdRequest) (
 	return s.GetSandbox(ctx, &sbxv1.GetSandboxRequest{Id: r.Id})
 }
 
+// KeepAlive records consumer Activity on a sandbox, resetting its idle clock.
+func (s *SandboxService) KeepAlive(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.Sandbox, error) {
+	if err := s.mgr.BumpActivity(ctx, r.Id); err == sandbox.ErrNotFound {
+		return nil, status.Error(codes.NotFound, "sandbox not found")
+	} else if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return s.GetSandbox(ctx, &sbxv1.GetSandboxRequest{Id: r.Id})
+}
+
 func (s *SandboxService) StopSandbox(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.Sandbox, error) {
 	s.maybeAutoPublish(ctx, r.Id) // publish-then-stop: the sandbox-<name> fetch needs the live daemon
 	if err := s.mgr.Stop(ctx, r.Id); err != nil {

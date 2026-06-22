@@ -32,6 +32,7 @@ const (
 	SandboxService_GetStats_FullMethodName       = "/sbxswarm.v1.SandboxService/GetStats"
 	SandboxService_ListBlocked_FullMethodName    = "/sbxswarm.v1.SandboxService/ListBlocked"
 	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
+	SandboxService_KeepAlive_FullMethodName      = "/sbxswarm.v1.SandboxService/KeepAlive"
 )
 
 // SandboxServiceClient is the client API for SandboxService service.
@@ -51,6 +52,7 @@ type SandboxServiceClient interface {
 	GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error)
 	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
 	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
+	KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
 }
 
 type sandboxServiceClient struct {
@@ -191,6 +193,16 @@ func (c *sandboxServiceClient) PublishSandbox(ctx context.Context, in *PublishSa
 	return out, nil
 }
 
+func (c *sandboxServiceClient) KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Sandbox)
+	err := c.cc.Invoke(ctx, SandboxService_KeepAlive_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxServiceServer is the server API for SandboxService service.
 // All implementations must embed UnimplementedSandboxServiceServer
 // for forward compatibility.
@@ -208,6 +220,7 @@ type SandboxServiceServer interface {
 	GetStats(context.Context, *IdRequest) (*Stats, error)
 	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
 	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
+	KeepAlive(context.Context, *IdRequest) (*Sandbox, error)
 	mustEmbedUnimplementedSandboxServiceServer()
 }
 
@@ -256,6 +269,9 @@ func (UnimplementedSandboxServiceServer) ListBlocked(context.Context, *IdRequest
 }
 func (UnimplementedSandboxServiceServer) PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishSandbox not implemented")
+}
+func (UnimplementedSandboxServiceServer) KeepAlive(context.Context, *IdRequest) (*Sandbox, error) {
+	return nil, status.Error(codes.Unimplemented, "method KeepAlive not implemented")
 }
 func (UnimplementedSandboxServiceServer) mustEmbedUnimplementedSandboxServiceServer() {}
 func (UnimplementedSandboxServiceServer) testEmbeddedByValue()                        {}
@@ -512,6 +528,24 @@ func _SandboxService_PublishSandbox_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_KeepAlive_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).KeepAlive(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_KeepAlive_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).KeepAlive(ctx, req.(*IdRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxService_ServiceDesc is the grpc.ServiceDesc for SandboxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -570,6 +604,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PublishSandbox",
 			Handler:    _SandboxService_PublishSandbox_Handler,
+		},
+		{
+			MethodName: "KeepAlive",
+			Handler:    _SandboxService_KeepAlive_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

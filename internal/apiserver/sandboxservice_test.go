@@ -361,3 +361,22 @@ func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	require.Equal(t, "system", entries[0].Actor)
 	require.Equal(t, "ok", entries[0].Outcome)
 }
+
+func TestKeepAlive_BumpsAndNotFound(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	before := rec.LastActivity
+
+	sb, err := svc.KeepAlive(ctx, &sbxv1.IdRequest{Id: rec.ID})
+	require.NoError(t, err)
+	require.Equal(t, rec.ID, sb.Id)
+
+	got, err := svc.mgr.Get(ctx, rec.ID)
+	require.NoError(t, err)
+	require.True(t, got.LastActivity.After(before), "KeepAlive bumps LastActivity")
+
+	_, err = svc.KeepAlive(ctx, &sbxv1.IdRequest{Id: "n1.missing"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+}

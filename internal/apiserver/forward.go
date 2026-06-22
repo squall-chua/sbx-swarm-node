@@ -98,6 +98,8 @@ func newReplyFor(fullMethod string) any {
 		return new(sbxv1.ListBlockedResponse)
 	case "/sbxswarm.v1.SandboxService/PublishSandbox":
 		return new(sbxv1.Operation)
+	case "/sbxswarm.v1.SandboxService/KeepAlive":
+		return new(sbxv1.Sandbox)
 	default:
 		return nil
 	}
