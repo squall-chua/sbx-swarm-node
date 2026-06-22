@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -199,4 +200,39 @@ func idsOf(recs []*Record) []string {
 		ids = append(ids, r.ID)
 	}
 	return ids
+}
+
+func TestManager_ConcurrentBumpDoesNotResurrectStopped(t *testing.T) {
+	m, _ := newMgr(t)
+	ctx := context.Background()
+	for i := 0; i < 200; i++ {
+		rec, err := m.Create(ctx, CreateSpec{})
+		require.NoError(t, err)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); _ = m.BumpActivity(ctx, rec.ID) }()
+		go func() { defer wg.Done(); _ = m.Stop(ctx, rec.ID) }()
+		wg.Wait()
+		got, err := m.Get(ctx, rec.ID)
+		require.NoError(t, err)
+		require.Equal(t, "stopped", got.Status,
+			"a concurrent BumpActivity must not revert a Stop to running")
+	}
+}
+
+func TestManager_ConcurrentBumpDoesNotResurrectDeleted(t *testing.T) {
+	m, _ := newMgr(t)
+	ctx := context.Background()
+	for i := 0; i < 200; i++ {
+		rec, err := m.Create(ctx, CreateSpec{})
+		require.NoError(t, err)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); _ = m.BumpActivity(ctx, rec.ID) }()
+		go func() { defer wg.Done(); _ = m.Delete(ctx, rec.ID) }()
+		wg.Wait()
+		_, err = m.Get(ctx, rec.ID)
+		require.ErrorIs(t, err, ErrNotFound,
+			"a concurrent BumpActivity must not re-create a deleted record")
+	}
 }

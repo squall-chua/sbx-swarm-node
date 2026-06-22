@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
@@ -33,6 +34,7 @@ type Manager struct {
 	ownedSub OwnedIDsNotifier
 	now      func() time.Time
 	capacity *Capacity
+	mu       sync.Mutex // serializes node-local record read-modify-write (BumpActivity vs Stop/Reconcile)
 }
 
 // NewManager builds a Manager.
@@ -130,6 +132,21 @@ func (m *Manager) save(rec *Record) error {
 	return m.store.Put(bucket, rec.ID, raw)
 }
 
+// mutate applies fn to a freshly-read record under m.mu, then persists it.
+// Re-reading inside the lock prevents lost updates when control-plane activity
+// (BumpActivity) races a status transition (Stop/Reconcile/Delete). The lock is
+// NEVER held across a backend RPC — callers do the RPC first, then mutate.
+func (m *Manager) mutate(ctx context.Context, id string, fn func(*Record)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, err := m.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	fn(rec)
+	return m.save(rec)
+}
+
 // Create provisions a sandbox and persists its record.
 func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) {
 	id := m.ids.Sandbox()
@@ -191,8 +208,7 @@ func (m *Manager) lifecycle(ctx context.Context, id string, fn func(name string)
 	if err := fn(rec.BackendName); err != nil {
 		return err
 	}
-	rec.Status = status
-	if err := m.save(rec); err != nil {
+	if err := m.mutate(ctx, id, func(r *Record) { r.Status = status }); err != nil {
 		return err
 	}
 	m.emit("sandbox."+status, rec.ID, nil)
@@ -202,12 +218,7 @@ func (m *Manager) lifecycle(ctx context.Context, id string, fn func(name string)
 // BumpActivity records that the sandbox was just used (control-plane Activity),
 // resetting its idle clock. Returns ErrNotFound if the sandbox is gone.
 func (m *Manager) BumpActivity(ctx context.Context, id string) error {
-	rec, err := m.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-	rec.LastActivity = m.now()
-	return m.save(rec)
+	return m.mutate(ctx, id, func(r *Record) { r.LastActivity = m.now() })
 }
 
 // Start/Stop transition the backend and record.
@@ -230,7 +241,10 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if err := m.backend.Remove(ctx, rec.BackendName); err != nil && err != ErrNotFound {
 		return err
 	}
-	if err := m.store.Delete(bucket, id); err != nil {
+	m.mu.Lock()
+	err = m.store.Delete(bucket, id)
+	m.mu.Unlock()
+	if err != nil {
 		return err
 	}
 	m.emit("sandbox.deleted", id, nil)
@@ -240,12 +254,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 
 // SetLastPublish records a successful publish time on the sandbox record.
 func (m *Manager) SetLastPublish(ctx context.Context, id string, t time.Time) error {
-	rec, err := m.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-	rec.LastPublish = t
-	return m.save(rec)
+	return m.mutate(ctx, id, func(r *Record) { r.LastPublish = t })
 }
 
 // IdleRunning returns running, non-exempt records whose last Activity precedes
@@ -336,10 +345,13 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			continue
 		}
 		if !alive[rec.BackendName] {
-			rec.Status = "lost"
-			if err := m.save(rec); err != nil {
+			if err := m.mutate(ctx, rec.ID, func(r *Record) { r.Status = "lost" }); err != nil {
+				if err == ErrNotFound {
+					continue // deleted concurrently; nothing to mark
+				}
 				return err
 			}
+			rec.Status = "lost" // reflect in the local snapshot for costSum below
 			m.emit("sandbox.lost", rec.ID, nil)
 		}
 	}
