@@ -153,6 +153,27 @@ func TestAttemptFor_DialFailureNacks(t *testing.T) {
 	require.ErrorIs(t, err, coordinator.ErrNack)
 }
 
+func TestReapInterval(t *testing.T) {
+	require.Equal(t, 30*time.Second, reapInterval(30*time.Second))
+	require.Equal(t, time.Minute, reapInterval(10*time.Minute))
+	require.Equal(t, time.Minute, reapInterval(time.Minute))
+}
+
+func TestNode_BootWithIdleTimeout(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = "127.0.0.1:0"
+	cfg.IdleTimeout = "50ms" // reaper enabled; fast sweep
+	require.NoError(t, cfg.Validate())
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	require.NoError(t, n.Start())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, n.Stop(ctx))
+}
+
 func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
 	// Two nodes with the same cluster secret derive the same session signer, so a
 	// token minted by one verifies on the other (cross-node sessions, ADR-0010).

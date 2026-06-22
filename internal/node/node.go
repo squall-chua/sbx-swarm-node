@@ -102,6 +102,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	sandboxes.SetGit(gitWS)
 	sandboxes.SetAudit(auditLog)
 	sandboxes.SetEvents(bus)
+	sandboxes.SetIdleTimeout(cfg.IdleTimeoutDuration())
 	policySvc := apiserver.NewPolicyService(mgr, auditLog)
 
 	// Background observability collectors.
@@ -110,6 +111,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	statsC := obsd.NewStatsCollector(backend, namesList(mgr), obsd.DefaultProvisionLimit(), 4)
 	netC := obsd.NewNetLogCollector(backend, mgr.ResolveVMToID)
 	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC, Backend: backend, Mgr: mgr})
+	idleEnabled := cfg.IdleTimeoutDuration() > 0
 	go runTicker(nctx, 10*time.Second, func() {
 		_ = statsC.PollOnce(nctx)
 		// Surface the spec §9 actual_util reconstruction on /metrics.
@@ -121,6 +123,11 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			counts := map[string]int{}
 			for _, r := range recs {
 				counts[r.Status]++
+				if idleEnabled && r.Status == "running" {
+					if u, ok := statsC.Latest(r.BackendName); ok && u.CPUPercent >= cpuActiveThreshold {
+						_ = mgr.BumpActivity(nctx, r.ID) // observed work counts as Activity
+					}
+				}
 			}
 			metrics.ResetSandboxes()
 			for status, n := range counts {
@@ -134,6 +141,9 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		}
 	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
+	if idle := cfg.IdleTimeoutDuration(); idle > 0 {
+		go runTicker(nctx, reapInterval(idle), func() { sandboxes.ReapIdle(nctx, time.Now()) })
+	}
 
 	var cert tls.Certificate
 	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
@@ -420,6 +430,22 @@ func dialableAddr(addr string) string {
 	}
 	return addr
 }
+
+// reapInterval is the reaper sweep cadence: min(timeout, 1m) — minute-scale for
+// real timeouts, responsive for small ones.
+// ponytail: a fixed 1m feels broken for a 10s test timeout; a separate
+// sweep-interval knob is YAGNI.
+func reapInterval(timeout time.Duration) time.Duration {
+	if timeout < time.Minute {
+		return timeout
+	}
+	return time.Minute
+}
+
+// cpuActiveThreshold: per-sandbox CPU% at/above which observed work counts as
+// Activity (ADR-0016). ponytail: 5% counts as "doing work"; tune if barely-busy
+// sandboxes get reaped. Dynamic only on the real backend (fake reports a fixed 10%).
+const cpuActiveThreshold = 5.0
 
 // runTicker calls fn on every interval tick until ctx is done.
 func runTicker(ctx context.Context, interval time.Duration, fn func()) {
