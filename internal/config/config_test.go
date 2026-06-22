@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -210,4 +211,20 @@ func TestValidate_GitWorkspaceNeedsHostPath(t *testing.T) {
 	cfg := Default()
 	cfg.Workspaces = []WorkspaceConfig{{Name: "repo", Git: &GitConfig{}}}
 	require.ErrorContains(t, cfg.Validate(), "host_path")
+}
+
+func TestIdleTimeout_ValidateAndDuration(t *testing.T) {
+	c := Default()
+	require.Equal(t, "", c.IdleTimeout) // disabled by default
+	require.Equal(t, time.Duration(0), c.IdleTimeoutDuration())
+
+	c.IdleTimeout = "30m"
+	require.NoError(t, c.Validate())
+	require.Equal(t, 30*time.Minute, c.IdleTimeoutDuration())
+
+	c.IdleTimeout = "garbage"
+	require.Error(t, c.Validate())
+
+	c.IdleTimeout = "-5m"
+	require.Error(t, c.Validate())
 }

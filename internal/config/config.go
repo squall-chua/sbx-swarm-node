@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -31,7 +32,8 @@ type Config struct {
 	Workspaces              []WorkspaceConfig `yaml:"workspaces"`
 	DefaultStrategy         string            `yaml:"default_strategy"`
 	DefaultSandboxResources SandboxResources  `yaml:"default_sandbox_resources"`
-	Backend                 string            `yaml:"backend"` // "fake" (default) | "sdk"
+	Backend                 string            `yaml:"backend"`       // "fake" (default) | "sdk"
+	IdleTimeout             string            `yaml:"idle_timeout"` // Go duration, e.g. "30m"; "" or <=0 disables idle-stop
 }
 
 // ProvisionLimits caps how much CPU/memory/disk this node offers to the swarm.
@@ -231,5 +233,20 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("backend must be one of fake|sdk, got %q", c.Backend)
 	}
+	if c.IdleTimeout != "" {
+		d, err := time.ParseDuration(c.IdleTimeout)
+		if err != nil {
+			return fmt.Errorf("idle_timeout: %w", err)
+		}
+		if d < 0 {
+			return fmt.Errorf("idle_timeout must not be negative, got %q", c.IdleTimeout)
+		}
+	}
 	return nil
+}
+
+// IdleTimeoutDuration parses IdleTimeout (already validated; "" yields 0).
+func (c *Config) IdleTimeoutDuration() time.Duration {
+	d, _ := time.ParseDuration(c.IdleTimeout)
+	return d
 }
