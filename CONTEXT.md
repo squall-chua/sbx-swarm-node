@@ -84,6 +84,27 @@ The post-sandbox step that retrieves the agent's branch from the sandbox clone a
 executed via the workspace's configured, node-local pipeline.
 _Avoid_: post, push (bare)
 
+**Activity** (sandbox):
+What resets a sandbox's idle clock for Idle-stop. Two kinds count: a **control-plane** interaction —
+Provision (create), Start, Exec, Agent run, or an explicit KeepAlive ping — and observed **work**, i.e.
+CPU utilization at or above a small threshold seen by the node's periodic stats poll. Either kind resets the clock, so a sandbox doing
+autonomous work (a long build, a server) is not idle-stopped even with no API calls, and a long-running
+Agent run waiting near-zero CPU on the network is kept alive while it is in flight. Reads
+(Get/List/ListPorts) and explicit Publish do not count. The two residual blind spots — a process blocked
+at ~0% CPU, and traffic to a published port (not observable from the SDK) — are covered by the
+`idle-stop: off` exemption label, not by a signal. The owner records the time of the last Activity per
+sandbox.
+_Avoid_: usage, heartbeat, touch
+
+**Idle-stop**:
+The owner node automatically stops a sandbox that has had no Activity for longer than the configured idle
+timeout, after first running auto-publish for a git-backed workspace. It transitions the sandbox
+running→stopped and **never deletes it**. Reserved capacity is unchanged (a stopped sandbox still counts),
+so idle-stop frees host CPU/memory and preserves the agent's work — not scheduling headroom. Opt-in (off
+by default); the background sweep is informally the "reaper". A sandbox carrying the label `idle-stop: off`
+is exempt and never auto-stopped.
+_Avoid_: reap (as delete), kill, evict
+
 **Template**:
 A reusable sandbox base image saved locally on a node (SDK `SaveTemplate`). A node advertises the
 templates it holds; provisioning that requests a template is filtered to nodes that have it. The swarm
