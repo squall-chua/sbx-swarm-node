@@ -140,9 +140,10 @@ func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) 
 	if err != nil {
 		return nil, fmt.Errorf("backend create: %w", err)
 	}
+	now := m.now()
 	rec := &Record{
 		ID: id, BackendName: backendName, OwnerNode: m.nodeID,
-		Spec: spec, Status: bs.Status, CreatedAt: m.now(),
+		Spec: spec, Status: bs.Status, CreatedAt: now, LastActivity: now,
 	}
 	if err := m.save(rec); err != nil {
 		return nil, err
@@ -198,9 +199,23 @@ func (m *Manager) lifecycle(ctx context.Context, id string, fn func(name string)
 	return nil
 }
 
+// BumpActivity records that the sandbox was just used (control-plane Activity),
+// resetting its idle clock. Returns ErrNotFound if the sandbox is gone.
+func (m *Manager) BumpActivity(ctx context.Context, id string) error {
+	rec, err := m.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	rec.LastActivity = m.now()
+	return m.save(rec)
+}
+
 // Start/Stop transition the backend and record.
 func (m *Manager) Start(ctx context.Context, id string) error {
-	return m.lifecycle(ctx, id, func(n string) error { return m.backend.Start(ctx, n) }, "running")
+	if err := m.lifecycle(ctx, id, func(n string) error { return m.backend.Start(ctx, n) }, "running"); err != nil {
+		return err
+	}
+	return m.BumpActivity(ctx, id) // Start is Activity (prevents immediate re-reap)
 }
 func (m *Manager) Stop(ctx context.Context, id string) error {
 	return m.lifecycle(ctx, id, func(n string) error { return m.backend.Stop(ctx, n) }, "stopped")

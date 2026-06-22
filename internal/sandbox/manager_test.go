@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
@@ -113,4 +114,41 @@ func TestManager_ReconcileSetsBaseFromRecords(t *testing.T) {
 	require.Equal(t, 3.0, cpu)
 	require.Equal(t, 2.0, mem) // 2048 bytes -> 2 KB
 	require.Equal(t, 4.0, disk)
+}
+
+func TestManager_LastActivity_StampAndBump(t *testing.T) {
+	m, _ := newMgr(t)
+	t0 := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return t0 } // unexported field, same package
+	ctx := context.Background()
+
+	rec, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+	require.Equal(t, t0, rec.LastActivity, "Create stamps LastActivity")
+
+	t1 := t0.Add(time.Hour)
+	m.now = func() time.Time { return t1 }
+	require.NoError(t, m.BumpActivity(ctx, rec.ID))
+	got, err := m.Get(ctx, rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, t1, got.LastActivity, "BumpActivity advances LastActivity")
+
+	require.ErrorIs(t, m.BumpActivity(ctx, "n1.missing"), ErrNotFound)
+}
+
+func TestManager_Start_BumpsActivity(t *testing.T) {
+	m, _ := newMgr(t)
+	t0 := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return t0 }
+	ctx := context.Background()
+	rec, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+	require.NoError(t, m.Stop(ctx, rec.ID))
+
+	t1 := t0.Add(2 * time.Hour)
+	m.now = func() time.Time { return t1 }
+	require.NoError(t, m.Start(ctx, rec.ID))
+	got, err := m.Get(ctx, rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, t1, got.LastActivity, "Start counts as Activity")
 }

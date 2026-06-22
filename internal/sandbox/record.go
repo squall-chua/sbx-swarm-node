@@ -12,7 +12,8 @@ type Record struct {
 	Ports       []PublishedPort   `json:"ports,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty"`
 	IdempKey    string            `json:"idempotency_key,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	LastPublish time.Time         `json:"last_publish,omitempty"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	LastActivity time.Time         `json:"last_activity,omitempty"`
+	LastPublish  time.Time         `json:"last_publish,omitempty"`
 }
