@@ -73,13 +73,17 @@ func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbo
 	if spec.Clone {
 		opts = append(opts, sdksandbox.WithClone())
 	}
-	for _, w := range spec.Workspaces {
+	for i, w := range spec.Workspaces {
 		host, ro, ok := b.resolve(w.Name)
 		if !ok {
 			return BackendSandbox{}, fmt.Errorf("unknown workspace %q", w.Name)
 		}
 		path := host
-		if ro || w.ReadOnly {
+		// In --clone mode sbx clones the PRIMARY (first) workspace and mounts it
+		// read-only itself; it rejects an explicit ":ro" on the primary ("primary
+		// workspace must be read/write"). Extra workspaces may still be read-only.
+		primaryClone := spec.Clone && i == 0
+		if (ro || w.ReadOnly) && !primaryClone {
 			path += ":ro"
 		}
 		opts = append(opts, sdksandbox.WithWorkspace(path))
@@ -223,9 +227,20 @@ func (b *SDKBackend) UnpublishPort(ctx context.Context, name string, containerPo
 	if err != nil {
 		return err
 	}
-	// The SDK's UnpublishPort takes a CLI port spec; the bare sandbox port is
-	// the minimal accepted form.
-	return sb.UnpublishPort(ctx, strconv.Itoa(containerPort))
+	// The daemon requires a HOST_PORT:SANDBOX_PORT spec for unpublish, so resolve
+	// the host port(s) currently mapped to this container port and unpublish each.
+	ports, err := sb.Ports(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range ports {
+		if p.SandboxPort == containerPort {
+			if err := sb.UnpublishPort(ctx, strconv.Itoa(p.HostPort)+":"+strconv.Itoa(containerPort)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (b *SDKBackend) CopyTo(ctx context.Context, name, localPath, remotePath string) error {
