@@ -28,6 +28,7 @@ type CreateSpec struct {
 	Branch      string // clone-mode recorded branch (auto-publish target)
 	Workspaces  []WorkspaceMount
 	Env         map[string]string
+	Labels      map[string]string // sandbox's own labels (e.g. idle-stop: off)
 }
 
 // Resources is a per-sandbox resource triple (cores / bytes / GB). Used for

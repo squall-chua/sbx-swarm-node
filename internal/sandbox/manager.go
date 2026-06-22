@@ -143,7 +143,7 @@ func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) 
 	now := m.now()
 	rec := &Record{
 		ID: id, BackendName: backendName, OwnerNode: m.nodeID,
-		Spec: spec, Status: bs.Status, CreatedAt: now, LastActivity: now,
+		Spec: spec, Status: bs.Status, CreatedAt: now, LastActivity: now, Labels: spec.Labels,
 	}
 	if err := m.save(rec); err != nil {
 		return nil, err

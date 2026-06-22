@@ -139,7 +139,7 @@ func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 	}
 	return sandbox.CreateSpec{
 		Agent: r.Agent, Template: r.Template, CPUs: int(r.Cpus),
-		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, Workspaces: ws, Env: r.Env,
+		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, Workspaces: ws, Env: r.Env, Labels: r.Labels,
 	}
 }
 

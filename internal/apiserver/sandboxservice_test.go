@@ -113,6 +113,20 @@ func TestRequestFromSpec_CarriesNodeAffinity(t *testing.T) {
 	require.Equal(t, map[string]string{"gpu": "true"}, req.AntiAffinity)
 }
 
+func TestCreate_PersistsLabels(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{Labels: map[string]string{"idle-stop": "off"}})
+	require.NoError(t, err)
+
+	got, err := svc.GetSandbox(ctx, &sbxv1.GetSandboxRequest{Id: rec.ID})
+	require.NoError(t, err)
+	require.Equal(t, "off", got.Labels["idle-stop"], "labels persist through Create and toProto")
+
+	spec := toSpec(&sbxv1.CreateSandboxRequest{Labels: map[string]string{"team": "eng"}})
+	require.Equal(t, "eng", spec.Labels["team"], "toSpec carries request labels")
+}
+
 func TestToProto_GitFields(t *testing.T) {
 	rec := &sandbox.Record{ID: "n1.x", Status: "running", Spec: sandbox.CreateSpec{Branch: "agent/x"}}
 	p := toProto(rec)
