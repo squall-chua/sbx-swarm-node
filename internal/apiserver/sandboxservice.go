@@ -34,6 +34,7 @@ type SandboxService struct {
 	gitWS            map[string]*git.Workspace
 	audit            *audit.Log
 	events           events.Publisher
+	idleTimeout      time.Duration
 }
 
 // SetGit wires git-backed workspaces (by name) for the publish path.
@@ -44,6 +45,10 @@ func (s *SandboxService) SetAudit(a *audit.Log) { s.audit = a }
 
 // SetEvents wires the event publisher for publish success/failure signals.
 func (s *SandboxService) SetEvents(p events.Publisher) { s.events = p }
+
+// SetIdleTimeout configures the idle-stop threshold. 0 disables both the reaper
+// sweep and the agent-run keepalive throttle.
+func (s *SandboxService) SetIdleTimeout(d time.Duration) { s.idleTimeout = d }
 
 // WithPlacement wires placement (coordinator) + sizing defaults.
 func (s *SandboxService) WithPlacement(place PlaceFunc, defaultStrategy string, defaults sandbox.Resources) {
@@ -284,6 +289,7 @@ func (s *SandboxService) Exec(ctx context.Context, r *sbxv1.ExecRequest) (*sbxv1
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
+	_ = s.mgr.BumpActivity(ctx, r.Id) // Exec is Activity
 	res, err := s.mgr.Backend().Exec(ctx, name, r.Cmd, sandbox.ExecOpts{Workdir: r.Workdir, Env: r.Env})
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -304,10 +310,12 @@ func (s *SandboxService) AgentRun(ctx context.Context, r *sbxv1.AgentRunRequest)
 	sbID := r.Id
 	publishOnSuccess := r.PublishOnSuccess
 	s.ops.Run(op.ID, func() (string, error) {
+		_ = s.mgr.BumpActivity(context.Background(), sbID) // run started = Activity
 		did, derr := s.mgr.Backend().ExecDetached(context.Background(), name, cmd, opts)
 		if derr != nil {
 			return "", derr
 		}
+		lastTouch := time.Now()
 		for { // poll to completion (M1c: simple loop; M1d streams progress)
 			st, perr := s.mgr.Backend().PollDetached(context.Background(), name, did)
 			if perr != nil {
@@ -321,6 +329,12 @@ func (s *SandboxService) AgentRun(ctx context.Context, r *sbxv1.AgentRunRequest)
 					s.maybeAutoPublish(context.Background(), sbID) // best-effort
 				}
 				return sbID, nil
+			}
+			// Keep a long-running agent's sandbox alive: bump on a timeout/2 throttle
+			// so it is never idle-stopped mid-run (skip when the reaper is disabled).
+			if s.idleTimeout > 0 && time.Since(lastTouch) > s.idleTimeout/2 {
+				_ = s.mgr.BumpActivity(context.Background(), sbID)
+				lastTouch = time.Now()
 			}
 			time.Sleep(200 * time.Millisecond)
 		}

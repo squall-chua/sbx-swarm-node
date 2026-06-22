@@ -204,6 +204,27 @@ func TestPublishSandbox_AuditRecordsActor(t *testing.T) {
 	require.Equal(t, "error", entries[0].Outcome)
 }
 
+func TestExec_BumpsActivity(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	before := rec.LastActivity
+
+	_, err = svc.Exec(ctx, &sbxv1.ExecRequest{Id: rec.ID, Cmd: []string{"echo", "hi"}})
+	require.NoError(t, err)
+
+	got, err := svc.mgr.Get(ctx, rec.ID)
+	require.NoError(t, err)
+	require.True(t, got.LastActivity.After(before), "Exec bumps LastActivity")
+}
+
+func TestSetIdleTimeout(t *testing.T) {
+	svc := newSandboxSvc(t)
+	svc.SetIdleTimeout(15 * time.Minute)
+	require.Equal(t, 15*time.Minute, svc.idleTimeout)
+}
+
 func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
