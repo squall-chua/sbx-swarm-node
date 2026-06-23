@@ -24,9 +24,9 @@ async function fetchBlocked() {
 }
 
 const blockedColumns = [
-  { key: 'host',       label: 'Host' },
-  { key: 'first_seen', label: 'First Seen' },
-  { key: 'last_seen',  label: 'Last Seen' },
+  { accessorKey: 'host',       header: 'Host' },
+  { accessorKey: 'first_seen', header: 'First Seen' },
+  { accessorKey: 'last_seen',  header: 'Last Seen' },
 ]
 
 function fmtDate(ts: string | null | undefined): string {
@@ -120,19 +120,24 @@ onMounted(() => {
 
       <UTable
         v-else
-        :rows="blockedRows"
+        :data="blockedRows"
         :columns="blockedColumns"
-        :empty-state="{ label: 'No blocked egress recorded.', icon: 'i-lucide-shield-check' }"
         class="text-sm"
       >
-        <template #host-data="{ row }">
-          <span class="font-mono text-default">{{ row.host }}</span>
+        <template #host-cell="{ row }">
+          <span class="font-mono text-default">{{ row.original.host }}</span>
         </template>
-        <template #first_seen-data="{ row }">
-          <span class="tabular-nums text-muted">{{ row.first_seen }}</span>
+        <template #first_seen-cell="{ row }">
+          <span class="tabular-nums text-muted">{{ row.original.first_seen }}</span>
         </template>
-        <template #last_seen-data="{ row }">
-          <span class="tabular-nums text-muted">{{ row.last_seen }}</span>
+        <template #last_seen-cell="{ row }">
+          <span class="tabular-nums text-muted">{{ row.original.last_seen }}</span>
+        </template>
+        <template #empty>
+          <div class="flex flex-col items-center justify-center gap-2 py-8 text-center">
+            <UIcon name="i-lucide-shield-check" class="size-6 text-muted" aria-hidden="true" />
+            <p class="text-sm text-muted">No blocked egress recorded.</p>
+          </div>
         </template>
       </UTable>
     </div>
