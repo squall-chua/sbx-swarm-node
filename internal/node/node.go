@@ -247,6 +247,10 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			LimitCPU:     lc, LimitMemKB: lm, LimitDiskGB: ld,
 			AllocCPU: ac, AllocMemKB: am, AllocDiskGB: ad,
 		}
+		if clusterInstance != nil { // self actual util (gossiped), same source as buildCandidates
+			ls := clusterInstance.LocalNodeState()
+			self.ActualCPU, self.ActualMem = ls.ActualCPU, ls.ActualMem
+		}
 		rows := []apiserver.NodeRow{self}
 		if clusterInstance != nil {
 			for _, ns := range clusterInstance.PeerStates() {
