@@ -19,9 +19,9 @@ type NodeRow struct {
 	Cordoned, Draining                  bool
 	Labels                              map[string]string
 	Capabilities, Workspaces, Templates []string
-	LimitCPU, LimitMemKB, LimitDiskGB  float64
-	AllocCPU, AllocMemKB, AllocDiskGB  float64
-	ActualCPU, ActualMem               float64
+	LimitCPU, LimitMemKB, LimitDiskGB   float64
+	AllocCPU, AllocMemKB, AllocDiskGB   float64
+	ActualCPU, ActualMem                float64
 }
 
 // Cordoner is implemented by membership.Cluster. It is a minimal interface so
@@ -41,9 +41,9 @@ type Revoker interface {
 type NodeService struct {
 	sbxv1.UnimplementedNodeServiceServer
 	nodeID, nodeName, version string
-	cordoner                  Cordoner      // optional; nil when not in cluster mode
-	revoker                   Revoker       // optional; nil when not in cluster mode
-	nodeLister                func() []NodeRow // optional; nil until wired by node.go
+	cordoner                  Cordoner                                              // optional; nil when not in cluster mode
+	revoker                   Revoker                                               // optional; nil when not in cluster mode
+	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
 	draining                  atomic.Bool
 }

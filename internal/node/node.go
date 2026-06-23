@@ -245,7 +245,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			Workspaces:   workspaceNames(cfg.Workspaces),
 			Templates:    tmpls,
 			LimitCPU:     lc, LimitMemKB: lm, LimitDiskGB: ld,
-			AllocCPU:     ac, AllocMemKB: am, AllocDiskGB: ad,
+			AllocCPU: ac, AllocMemKB: am, AllocDiskGB: ad,
 		}
 		rows := []apiserver.NodeRow{self}
 		if clusterInstance != nil {

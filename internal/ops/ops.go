@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	opBucket        = "operations"
-	idemBucket      = "idempotency"
+	opBucket         = "operations"
+	idemBucket       = "idempotency"
 	defaultListLimit = 200
 )
 
