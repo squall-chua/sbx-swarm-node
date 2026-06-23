@@ -1,1 +1,3 @@
 .superpowers/
+# stray vitest/vite cache if a web test is ever run from the repo root
+/node_modules/

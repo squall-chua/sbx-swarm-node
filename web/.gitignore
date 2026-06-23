@@ -1,5 +1,6 @@
 node_modules/
 .nuxt/
+.nuxtrc
 .output/
 # Built SPA is produced by scripts/build.sh; keep only the placeholder index.html.
 dist/*
