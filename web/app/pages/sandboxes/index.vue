@@ -9,9 +9,11 @@ const session = useSession()
 const selectedId = ref<string | null>(null)
 const drawerOpen = ref(false)
 
-function onRowClick(row: any) {
-  selectedId.value = row.original?.id ?? null
-  drawerOpen.value = true
+// @nuxt/ui v4 calls onSelect(event, row) — the DOM event is first, the TanStack Row
+// (with .original = the data item) second. Take the row as the SECOND arg.
+function onRowClick(_e: Event, row: any) {
+  selectedId.value = row?.original?.id ?? null
+  drawerOpen.value = selectedId.value != null
   // Task 10 will mount <SandboxDrawer :id="selectedId" v-model:open="drawerOpen" /> below.
 }
 
