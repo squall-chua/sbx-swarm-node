@@ -9,6 +9,7 @@ interface NodeSummary {
   actual_cpu: number
   limit_mem_kb: number
   alloc_mem_kb: number
+  actual_mem: number
   templates: string[]
   workspaces: string[]
   labels: Record<string, string>
@@ -74,11 +75,15 @@ async function confirmRevoke() {
 }
 
 // ── Resource helpers ──────────────────────────────────────────────────────────
+// actual_cpu / actual_mem are 0..1+ fractions (already normalised vs limit)
 function cpuActualPct(n: NodeSummary): number {
-  return n.limit_cpu > 0 ? Math.round((n.actual_cpu / n.limit_cpu) * 100) : 0
+  return Math.round(n.actual_cpu * 100)
 }
 function cpuAllocPct(n: NodeSummary): number {
   return n.limit_cpu > 0 ? Math.round((n.alloc_cpu / n.limit_cpu) * 100) : 0
+}
+function memActualPct(n: NodeSummary): number {
+  return Math.round(n.actual_mem * 100)
 }
 function memAllocPct(n: NodeSummary): number {
   return n.limit_mem_kb > 0 ? Math.round((n.alloc_mem_kb / n.limit_mem_kb) * 100) : 0
@@ -94,7 +99,13 @@ function cpuBarColor(n: NodeSummary): string {
   if (p >= 70) return 'warning'
   return 'primary'
 }
-function memBarColor(n: NodeSummary): string {
+function memActualBarColor(n: NodeSummary): string {
+  const p = memActualPct(n)
+  if (p >= 90) return 'error'
+  if (p >= 70) return 'warning'
+  return 'primary'
+}
+function memAllocBarColor(n: NodeSummary): string {
   const p = memAllocPct(n)
   if (p >= 90) return 'error'
   if (p >= 70) return 'warning'
@@ -166,13 +177,12 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
             <div class="flex items-center justify-between text-xs text-muted">
               <span>CPU</span>
               <span class="tabular-nums">
-                actual <strong class="text-default">{{ node.actual_cpu }}</strong>
-                / alloc <strong class="text-default">{{ node.alloc_cpu }}</strong>
-                / limit <strong class="text-default">{{ node.limit_cpu }}</strong>
+                actual <strong class="text-default">{{ cpuActualPct(node) }}%</strong>
+                · alloc <strong class="text-default">{{ node.alloc_cpu }}/{{ node.limit_cpu }}</strong> cores
               </span>
             </div>
             <UProgress
-              :model-value="cpuActualPct(node)"
+              :model-value="Math.min(100, cpuActualPct(node))"
               :color="cpuBarColor(node)"
               size="xs"
               aria-label="CPU actual utilisation"
@@ -190,14 +200,22 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
             <div class="flex items-center justify-between text-xs text-muted">
               <span>Memory</span>
               <span class="tabular-nums">
-                alloc <strong class="text-default">{{ fmtMem(node.alloc_mem_kb) }}</strong>
-                / limit <strong class="text-default">{{ fmtMem(node.limit_mem_kb) }}</strong>
+                actual <strong class="text-default">{{ memActualPct(node) }}%</strong>
+                · alloc <strong class="text-default">{{ fmtMem(node.alloc_mem_kb) }}/{{ fmtMem(node.limit_mem_kb) }}</strong>
               </span>
             </div>
+            <!-- Actual memory (solid bar) -->
+            <UProgress
+              :model-value="Math.min(100, memActualPct(node))"
+              :color="memActualBarColor(node)"
+              size="xs"
+              aria-label="Memory actual utilisation"
+            />
+            <!-- Alloc memory (dimmer bar below) -->
             <UProgress
               :model-value="memAllocPct(node)"
-              :color="memBarColor(node)"
-              size="xs"
+              :color="memAllocBarColor(node)"
+              size="2xs"
               aria-label="Memory allocated"
             />
           </div>
@@ -296,6 +314,7 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
               variant="subtle"
               size="xs"
               :loading="loading[`drain-${node.node_id}`]"
+              :disabled="node.draining"
               :aria-label="`Drain node ${node.node_name}`"
               @click="nodeAction('drain', node.node_id)"
             />

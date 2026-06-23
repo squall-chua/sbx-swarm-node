@@ -9,6 +9,7 @@ interface NodeSummary {
   actual_cpu: number
   limit_mem_kb: number
   alloc_mem_kb: number
+  actual_mem: number
   templates: string[]
   workspaces: string[]
   labels: Record<string, string>
@@ -29,24 +30,21 @@ const nodeSandboxes = computed(() =>
   (swarm?.sandboxes.value ?? []).filter((s: SandboxSummary) => s.owner_node === props.node.node_id)
 )
 
-// CPU: percent of limit
+// CPU: alloc is absolute cores vs limit; actual is already a 0..1+ fraction
 const cpuAllocPct = computed(() =>
   props.node.limit_cpu > 0
     ? Math.round((props.node.alloc_cpu / props.node.limit_cpu) * 100)
     : 0
 )
-const cpuActualPct = computed(() =>
-  props.node.limit_cpu > 0
-    ? Math.round((props.node.actual_cpu / props.node.limit_cpu) * 100)
-    : 0
-)
+const cpuActualPct = computed(() => Math.round(props.node.actual_cpu * 100))
 
-// Mem: percent of limit
+// Mem: alloc is absolute KB vs limit; actual is already a 0..1+ fraction
 const memAllocPct = computed(() =>
   props.node.limit_mem_kb > 0
     ? Math.round((props.node.alloc_mem_kb / props.node.limit_mem_kb) * 100)
     : 0
 )
+const memActualPct = computed(() => Math.round(props.node.actual_mem * 100))
 
 function fmtMem(kb: number): string {
   if (kb >= 1_048_576) return `${(kb / 1_048_576).toFixed(1)} GB`
@@ -79,7 +77,12 @@ const cpuBarColor = computed(() => {
   return 'primary'
 })
 
-const memBarColor = computed(() => {
+const memActualBarColor = computed(() => {
+  if (memActualPct.value >= 90) return 'error'
+  if (memActualPct.value >= 70) return 'warning'
+  return 'primary'
+})
+const memAllocBarColor = computed(() => {
   if (memAllocPct.value >= 90) return 'error'
   if (memAllocPct.value >= 70) return 'warning'
   return 'primary'
@@ -120,14 +123,13 @@ const memBarColor = computed(() => {
         <div class="flex items-center justify-between text-xs text-muted">
           <span>CPU</span>
           <span class="tabular-nums">
-            actual <strong class="text-default">{{ node.actual_cpu }}</strong>
-            / alloc <strong class="text-default">{{ node.alloc_cpu }}</strong>
-            / limit <strong class="text-default">{{ node.limit_cpu }}</strong>
+            actual <strong class="text-default">{{ cpuActualPct }}%</strong>
+            · alloc <strong class="text-default">{{ node.alloc_cpu }}/{{ node.limit_cpu }}</strong> cores
           </span>
         </div>
         <!-- Actual CPU (solid bar) -->
         <UProgress
-          :model-value="cpuActualPct"
+          :model-value="Math.min(100, cpuActualPct)"
           :color="cpuBarColor"
           size="xs"
           aria-label="CPU actual utilisation"
@@ -146,14 +148,22 @@ const memBarColor = computed(() => {
         <div class="flex items-center justify-between text-xs text-muted">
           <span>Memory</span>
           <span class="tabular-nums">
-            alloc <strong class="text-default">{{ fmtMem(node.alloc_mem_kb) }}</strong>
-            / limit <strong class="text-default">{{ fmtMem(node.limit_mem_kb) }}</strong>
+            actual <strong class="text-default">{{ memActualPct }}%</strong>
+            · alloc <strong class="text-default">{{ fmtMem(node.alloc_mem_kb) }}/{{ fmtMem(node.limit_mem_kb) }}</strong>
           </span>
         </div>
+        <!-- Actual memory (solid bar) -->
+        <UProgress
+          :model-value="Math.min(100, memActualPct)"
+          :color="memActualBarColor"
+          size="xs"
+          aria-label="Memory actual utilisation"
+        />
+        <!-- Alloc memory (dimmer bar below) -->
         <UProgress
           :model-value="memAllocPct"
-          :color="memBarColor"
-          size="xs"
+          :color="memAllocBarColor"
+          size="2xs"
           aria-label="Memory allocated"
         />
       </div>
