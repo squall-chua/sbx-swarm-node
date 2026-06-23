@@ -101,28 +101,19 @@ const tabItems = computed<TabsItem[]>(() => {
             </div>
           </template>
 
-          <!-- Terminal tab: placeholder for Task 11 -->
+          <!-- Terminal tab -->
           <template #terminal>
-            <div class="pt-4">
-              <!-- TODO(Task 11): <DrawerTerminalTab :id="id" /> -->
-              <UAlert color="neutral" variant="subtle" title="Terminal" description="Coming soon" />
-            </div>
+            <DrawerTerminalTab v-if="id" :id="id" />
           </template>
 
-          <!-- Stats tab: placeholder for Task 11 -->
+          <!-- Stats tab -->
           <template #stats>
-            <div class="pt-4">
-              <!-- TODO(Task 11): <DrawerStatsTab :id="id" /> -->
-              <UAlert color="neutral" variant="subtle" title="Stats" description="Coming soon" />
-            </div>
+            <DrawerStatsTab v-if="id" :id="id" />
           </template>
 
-          <!-- Logs tab: placeholder for Task 11 -->
+          <!-- Logs tab -->
           <template #logs>
-            <div class="pt-4">
-              <!-- TODO(Task 11): <DrawerLogsTab :id="id" /> -->
-              <UAlert color="neutral" variant="subtle" title="Logs" description="Coming soon" />
-            </div>
+            <DrawerLogsTab v-if="id" :id="id" />
           </template>
 
           <!-- Network tab: placeholder for Task 12 -->
