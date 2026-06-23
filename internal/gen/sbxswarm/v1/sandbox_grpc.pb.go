@@ -33,6 +33,7 @@ const (
 	SandboxService_ListBlocked_FullMethodName    = "/sbxswarm.v1.SandboxService/ListBlocked"
 	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
 	SandboxService_KeepAlive_FullMethodName      = "/sbxswarm.v1.SandboxService/KeepAlive"
+	SandboxService_ListOperations_FullMethodName = "/sbxswarm.v1.SandboxService/ListOperations"
 )
 
 // SandboxServiceClient is the client API for SandboxService service.
@@ -53,6 +54,7 @@ type SandboxServiceClient interface {
 	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
 	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
 	KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
+	ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error)
 }
 
 type sandboxServiceClient struct {
@@ -203,6 +205,16 @@ func (c *sandboxServiceClient) KeepAlive(ctx context.Context, in *IdRequest, opt
 	return out, nil
 }
 
+func (c *sandboxServiceClient) ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOperationsResponse)
+	err := c.cc.Invoke(ctx, SandboxService_ListOperations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxServiceServer is the server API for SandboxService service.
 // All implementations must embed UnimplementedSandboxServiceServer
 // for forward compatibility.
@@ -221,6 +233,7 @@ type SandboxServiceServer interface {
 	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
 	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
 	KeepAlive(context.Context, *IdRequest) (*Sandbox, error)
+	ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error)
 	mustEmbedUnimplementedSandboxServiceServer()
 }
 
@@ -272,6 +285,9 @@ func (UnimplementedSandboxServiceServer) PublishSandbox(context.Context, *Publis
 }
 func (UnimplementedSandboxServiceServer) KeepAlive(context.Context, *IdRequest) (*Sandbox, error) {
 	return nil, status.Error(codes.Unimplemented, "method KeepAlive not implemented")
+}
+func (UnimplementedSandboxServiceServer) ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListOperations not implemented")
 }
 func (UnimplementedSandboxServiceServer) mustEmbedUnimplementedSandboxServiceServer() {}
 func (UnimplementedSandboxServiceServer) testEmbeddedByValue()                        {}
@@ -546,6 +562,24 @@ func _SandboxService_KeepAlive_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_ListOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOperationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).ListOperations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_ListOperations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).ListOperations(ctx, req.(*ListOperationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxService_ServiceDesc is the grpc.ServiceDesc for SandboxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -608,6 +642,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "KeepAlive",
 			Handler:    _SandboxService_KeepAlive_Handler,
+		},
+		{
+			MethodName: "ListOperations",
+			Handler:    _SandboxService_ListOperations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

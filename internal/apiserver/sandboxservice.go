@@ -463,6 +463,23 @@ func (s *SandboxService) emit(eventType, sandboxID string, payload map[string]st
 	}
 }
 
+func (s *SandboxService) ListOperations(_ context.Context, r *sbxv1.ListOperationsRequest) (*sbxv1.ListOperationsResponse, error) {
+	list, err := s.ops.List(int(r.Limit))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &sbxv1.ListOperationsResponse{}
+	for _, op := range list {
+		out.Operations = append(out.Operations, &sbxv1.OperationSummary{
+			Id: op.ID, Type: op.Type, State: op.State, SandboxId: op.SandboxID,
+			Error:     op.Error,
+			CreatedAt: op.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt: op.UpdatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	return out, nil
+}
+
 // PublishSandbox starts an async git-publish operation.
 func (s *SandboxService) PublishSandbox(ctx context.Context, r *sbxv1.PublishSandboxRequest) (*sbxv1.Operation, error) {
 	op, _, err := s.ops.Start(ctx, "git-publish", idempotencyKey(ctx))

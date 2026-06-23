@@ -4,6 +4,7 @@ package ops
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"sync"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 )
 
 const (
-	opBucket   = "operations"
-	idemBucket = "idempotency"
+	opBucket        = "operations"
+	idemBucket      = "idempotency"
+	defaultListLimit = 200
 )
 
 // Operation is a tracked async unit of work.
@@ -162,6 +164,33 @@ func (m *Manager) RecoverInterrupted() (int, error) {
 		}
 	}
 	return len(stranded), nil
+}
+
+// List returns operations newest-first (by CreatedAt), capped at limit. limit
+// <= 0 or > defaultListLimit uses defaultListLimit. Reads the durable
+// operations bucket — this is the operation history, distinct from the
+// best-effort event firehose (ADR-0008).
+func (m *Manager) List(limit int) ([]*Operation, error) {
+	if limit <= 0 || limit > defaultListLimit {
+		limit = defaultListLimit
+	}
+	var ops []*Operation
+	err := m.store.ForEach(opBucket, func(_, v []byte) error {
+		var op Operation
+		if uerr := json.Unmarshal(v, &op); uerr != nil {
+			return uerr
+		}
+		ops = append(ops, &op)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(ops, func(i, j int) bool { return ops[i].CreatedAt.After(ops[j].CreatedAt) })
+	if len(ops) > limit {
+		ops = ops[:limit]
+	}
+	return ops, nil
 }
 
 // Get returns an operation by ID.

@@ -382,3 +382,16 @@ func TestKeepAlive_BumpsAndNotFound(t *testing.T) {
 	_, err = svc.KeepAlive(ctx, &sbxv1.IdRequest{Id: "n1.missing"})
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
+
+func TestSandboxService_ListOperations(t *testing.T) {
+	svc := newSandboxSvc(t)
+	// Create a sandbox to produce a "provision" operation through the service.
+	_, err := svc.CreateSandbox(context.Background(), &sbxv1.CreateSandboxRequest{})
+	require.NoError(t, err)
+
+	resp, err := svc.ListOperations(context.Background(), &sbxv1.ListOperationsRequest{})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.Operations)
+	require.Equal(t, "provision", resp.Operations[0].Type)
+	require.NotEmpty(t, resp.Operations[0].CreatedAt)
+}

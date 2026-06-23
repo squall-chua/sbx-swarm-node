@@ -49,6 +49,9 @@ service SandboxService {
   rpc KeepAlive(IdRequest) returns (Sandbox) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/keepalive"};
   }
+  rpc ListOperations(ListOperationsRequest) returns (ListOperationsResponse) {
+    option (google.api.http) = {get: "/v1/operations"};
+  }
 }
 
 message WorkspaceMount {
@@ -152,3 +155,15 @@ message ListBlockedResponse {
   repeated Blocked blocked = 1;
   int32 distinct_count = 2;
 }
+
+message OperationSummary {
+  string id = 1;
+  string type = 2;
+  string state = 3;
+  string sandbox_id = 4;
+  string error = 5;
+  string created_at = 6; // RFC3339
+  string updated_at = 7; // RFC3339
+}
+message ListOperationsRequest { int32 limit = 1; } // 0 = server default (200)
+message ListOperationsResponse { repeated OperationSummary operations = 1; }

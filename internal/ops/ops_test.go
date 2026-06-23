@@ -138,3 +138,26 @@ func TestOps_RecoverInterrupted(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "op-pending", string(raw), "idempotency mapping survives recovery")
 }
+
+func TestManager_ListNewestFirst(t *testing.T) {
+	m := newMgr(t) // existing helper: Manager over a temp store
+	o1, _, err := m.Start(context.Background(), "provision", "")
+	require.NoError(t, err)
+	o2, _, err := m.Start(context.Background(), "remove", "")
+	require.NoError(t, err)
+
+	got, err := m.List(0) // 0 => default cap
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, o2.ID, got[0].ID, "newest first")
+	require.Equal(t, o1.ID, got[1].ID)
+
+	require.Len(t, mustList(t, m, 1), 1) // limit honored
+}
+
+func mustList(t *testing.T, m *Manager, n int) []*Operation {
+	t.Helper()
+	got, err := m.List(n)
+	require.NoError(t, err)
+	return got
+}
