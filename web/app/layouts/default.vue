@@ -2,18 +2,15 @@
 import type { NavigationMenuItem } from '@nuxt/ui'
 
 const session = useSession()
-const api = useApi()
 
 const nodeName = ref('')
 
 onMounted(async () => {
   try {
-    const info = await api.get('/v1/node')
+    // loadRole() fetches GET /v1/node, sets session.role, and returns the node info —
+    // reuse that single fetch for the node name (no second request, no internals reach).
+    const info = await session.loadRole()
     nodeName.value = info?.node_name ?? ''
-    // Sync role if not yet populated
-    if (!session.role.value && info?.role) {
-      session.role.value = info.role
-    }
   } catch {
     // Not yet authenticated or network error — don't crash
   }

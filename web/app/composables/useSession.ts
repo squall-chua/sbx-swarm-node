@@ -18,7 +18,9 @@ export function createSession(base: string, api: Api, fetchImpl: typeof fetch = 
     await loadRole()
   }
   async function loadRole() {
-    role.value = (await api.get('/v1/node'))?.role ?? ''
+    const info = await api.get('/v1/node')
+    role.value = info?.role ?? ''
+    return info
   }
   function logout() {
     loggedIn.value = false
@@ -45,7 +47,9 @@ export const useSession = () => {
       if (import.meta.client) localStorage.setItem('sbx_logged_in', '1')
     },
     async loadRole() {
-      role.value = (await api.get('/v1/node'))?.role ?? ''
+      const info = await api.get('/v1/node')
+      role.value = info?.role ?? ''
+      return info
     },
     logout() {
       loggedIn.value = false

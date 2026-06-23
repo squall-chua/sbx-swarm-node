@@ -23,6 +23,8 @@ describe('createSwarmStore', () => {
     await Promise.resolve()
 
     expect(api.get).toHaveBeenCalledWith('/v1/sandboxes')
+    // +nodes: a sandbox.* event also pokes a nodes refetch (allocation changes)
+    expect(api.get).toHaveBeenCalledWith('/v1/nodes')
     store.stop()
     vi.useRealTimers()
   })
