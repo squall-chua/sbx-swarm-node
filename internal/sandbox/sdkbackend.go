@@ -368,8 +368,8 @@ func (b *SDKBackend) PolicySetDefault(ctx context.Context, profile string) error
 	return sdkpolicy.SetDefault(ctx, b.cl, profile)
 }
 
-func (b *SDKBackend) PolicyRemoveRule(ctx context.Context, scope string) error {
-	return sdkpolicy.RemoveRule(ctx, b.cl, scope)
+func (b *SDKBackend) PolicyRemoveRule(ctx context.Context, scope, resource string) error {
+	return sdkpolicy.RemoveRule(ctx, b.cl, scope, resource)
 }
 
 func (b *SDKBackend) PolicyReset(ctx context.Context) error {

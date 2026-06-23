@@ -151,7 +151,7 @@ type Backend interface {
 	PolicyAllow(ctx context.Context, scope, host string) error
 	PolicyDeny(ctx context.Context, scope, host string) error
 	PolicySetDefault(ctx context.Context, profile string) error
-	PolicyRemoveRule(ctx context.Context, scope string) error
+	PolicyRemoveRule(ctx context.Context, scope, resource string) error
 	PolicyReset(ctx context.Context) error
 	PolicyList(ctx context.Context, scope string) ([]PolicyRule, error)
 	PolicyProfiles(ctx context.Context) ([]string, error)

@@ -229,14 +229,9 @@ func TestSDKBackend_ListTemplates(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestSDKBackend_PolicyRoundTrip covers Profiles/Allow/List. The allowed host
-// appears in the RESOURCES column of `sbx policy ls`, which hasAllow matches.
-//
-// PolicyRemoveRule is NOT exercised here: SDK v0.1.2's RemoveRule(scope) runs
-// `policy rm network --sandbox <scope>` with no selector, but sbx v0.32.0 requires
-// --id or --resource ("at least one selector is required"). That is an SDK-vs-daemon
-// gap that needs an SDK bump (or a Backend.PolicyRemoveRule signature that carries a
-// resource) — it can't be fixed in the adapter alone. Cleanup uses the CLI directly.
+// TestSDKBackend_PolicyRoundTrip covers Profiles/Allow/List/RemoveRule. The allowed
+// host appears in the RESOURCES column of `sbx policy ls`, which hasAllow matches.
+// RemoveRule takes the resource selector that sbx requires (--resource).
 func TestSDKBackend_PolicyRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	b, ws := backendWS(t)
@@ -249,13 +244,14 @@ func TestSDKBackend_PolicyRoundTrip(t *testing.T) {
 	scope := sb.Name
 
 	require.NoError(t, b.PolicyAllow(ctx, scope, "example.com"))
-	t.Cleanup(func() {
-		_ = exec.Command("sbx", "policy", "rm", "network", "--sandbox", scope, "--resource", "example.com").Run()
-	})
-
 	rules, err := b.PolicyList(ctx, scope)
 	require.NoError(t, err)
 	require.True(t, hasAllow(rules, "example.com"))
+
+	require.NoError(t, b.PolicyRemoveRule(ctx, scope, "example.com"))
+	rules, err = b.PolicyList(ctx, scope)
+	require.NoError(t, err)
+	require.False(t, hasAllow(rules, "example.com"), "rule should be gone after RemoveRule")
 }
 
 // TestSDKBackend_SecretRoundTrip covers SecretSet/List/Remove and that reads MASK

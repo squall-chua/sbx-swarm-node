@@ -206,7 +206,7 @@ func (f *Fake) PolicyDeny(_ context.Context, _, host string) error {
 
 func (f *Fake) PolicySetDefault(_ context.Context, _ string) error { return nil }
 
-func (f *Fake) PolicyRemoveRule(_ context.Context, _ string) error { return nil }
+func (f *Fake) PolicyRemoveRule(_ context.Context, _, _ string) error { return nil }
 
 func (f *Fake) PolicyReset(_ context.Context) error {
 	f.mu.Lock()
