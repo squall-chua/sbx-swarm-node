@@ -469,4 +469,19 @@ func (b *SDKBackend) ListTemplates(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+// ListTemplateInfo returns the daemon's templates with metadata.
+func (b *SDKBackend) ListTemplateInfo(ctx context.Context) ([]TemplateInfo, error) {
+	imgs, err := sdktemplate.List(ctx, b.cl)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TemplateInfo, 0, len(imgs))
+	for _, im := range imgs {
+		out = append(out, TemplateInfo{
+			Repository: im.Repository, Tag: im.Tag, ID: im.ID, Agent: im.Agent, CreatedAt: im.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 var _ Backend = (*SDKBackend)(nil)

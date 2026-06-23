@@ -229,6 +229,13 @@ func TestSDKBackend_ListTemplates(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSDKBackend_ListTemplateInfo(t *testing.T) {
+	infos, err := dial(t, noWorkspaces).ListTemplateInfo(context.Background())
+	require.NoError(t, err)
+	require.NotEmpty(t, infos, "daemon should hold at least the shell-docker template")
+	require.NotEmpty(t, infos[0].Repository)
+}
+
 // TestSDKBackend_PolicyRoundTrip covers Profiles/Allow/List/RemoveRule. The allowed
 // host appears in the RESOURCES column of `sbx policy ls`, which hasAllow matches.
 // RemoveRule takes the resource selector that sbx requires (--resource).

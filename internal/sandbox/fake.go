@@ -179,6 +179,11 @@ func (f *Fake) ListTemplates(_ context.Context) ([]string, error) {
 	return append([]string(nil), f.templates...), nil
 }
 
+// ListTemplateInfo returns a canned template so tests need no daemon.
+func (b *Fake) ListTemplateInfo(_ context.Context) ([]TemplateInfo, error) {
+	return []TemplateInfo{{Repository: "fake/base", Tag: "latest", ID: "img-fake", Agent: "shell"}}, nil
+}
+
 // SetBlocked sets the fake's blocked-egress list (test helper).
 func (f *Fake) SetBlocked(b []BlockedHost) { f.mu.Lock(); f.blocked = b; f.mu.Unlock() }
 

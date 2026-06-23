@@ -7,6 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFake_ListTemplateInfo(t *testing.T) {
+	got, err := NewFake().ListTemplateInfo(context.Background())
+	require.NoError(t, err)
+	require.NotEmpty(t, got)
+	require.Equal(t, "fake/base", got[0].Repository)
+}
+
 func TestFake_ListTemplates(t *testing.T) {
 	f := NewFake()
 	got, err := f.ListTemplates(context.Background())

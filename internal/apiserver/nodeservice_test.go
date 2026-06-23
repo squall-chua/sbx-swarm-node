@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,6 +68,24 @@ func TestNodeService_ListRevoked(t *testing.T) {
 	reply, err = s.ListRevoked(context.Background(), &sbxv1.ListRevokedRequest{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"nB", "nC"}, reply.NodeIds)
+}
+
+func TestNodeService_ListTemplates(t *testing.T) {
+	svc := NewNodeService("n1", "node-one", "test")
+
+	// No lister: empty response, not error.
+	resp, err := svc.ListTemplates(context.Background(), &sbxv1.ListTemplatesRequest{})
+	require.NoError(t, err)
+	require.Empty(t, resp.Templates)
+
+	svc.SetTemplateLister(func(context.Context) ([]sandbox.TemplateInfo, error) {
+		return []sandbox.TemplateInfo{{Repository: "r", Tag: "t", ID: "i"}}, nil
+	})
+	resp, err = svc.ListTemplates(context.Background(), &sbxv1.ListTemplatesRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Templates, 1)
+	require.Equal(t, "r", resp.Templates[0].Repository)
+	require.Equal(t, "i", resp.Templates[0].Id)
 }
 
 func TestNodeService_ListNodes(t *testing.T) {

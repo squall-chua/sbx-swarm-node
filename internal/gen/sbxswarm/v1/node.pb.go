@@ -410,6 +410,162 @@ func (x *ListNodesResponse) GetNodes() []*NodeSummary {
 	return nil
 }
 
+type ListTemplatesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTemplatesRequest) Reset() {
+	*x = ListTemplatesRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTemplatesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTemplatesRequest) ProtoMessage() {}
+
+func (x *ListTemplatesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTemplatesRequest.ProtoReflect.Descriptor instead.
+func (*ListTemplatesRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{9}
+}
+
+type ListTemplatesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Templates     []*TemplateInfo        `protobuf:"bytes,1,rep,name=templates,proto3" json:"templates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTemplatesResponse) Reset() {
+	*x = ListTemplatesResponse{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTemplatesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTemplatesResponse) ProtoMessage() {}
+
+func (x *ListTemplatesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTemplatesResponse.ProtoReflect.Descriptor instead.
+func (*ListTemplatesResponse) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListTemplatesResponse) GetTemplates() []*TemplateInfo {
+	if x != nil {
+		return x.Templates
+	}
+	return nil
+}
+
+type TemplateInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repository    string                 `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
+	Tag           string                 `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
+	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
+	Agent         string                 `protobuf:"bytes,4,opt,name=agent,proto3" json:"agent,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TemplateInfo) Reset() {
+	*x = TemplateInfo{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TemplateInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TemplateInfo) ProtoMessage() {}
+
+func (x *TemplateInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TemplateInfo.ProtoReflect.Descriptor instead.
+func (*TemplateInfo) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *TemplateInfo) GetRepository() string {
+	if x != nil {
+		return x.Repository
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
 type NodeSummary struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
@@ -434,7 +590,7 @@ type NodeSummary struct {
 
 func (x *NodeSummary) Reset() {
 	*x = NodeSummary{}
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[9]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -446,7 +602,7 @@ func (x *NodeSummary) String() string {
 func (*NodeSummary) ProtoMessage() {}
 
 func (x *NodeSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[9]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +615,7 @@ func (x *NodeSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeSummary.ProtoReflect.Descriptor instead.
 func (*NodeSummary) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{9}
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *NodeSummary) GetNodeId() string {
@@ -595,7 +751,19 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\bdraining\x18\x05 \x01(\bR\bdraining\"\x12\n" +
 	"\x10ListNodesRequest\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x18.sbxswarm.v1.NodeSummaryR\x05nodes\"\xda\x04\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x18.sbxswarm.v1.NodeSummaryR\x05nodes\"\x16\n" +
+	"\x14ListTemplatesRequest\"P\n" +
+	"\x15ListTemplatesResponse\x127\n" +
+	"\ttemplates\x18\x01 \x03(\v2\x19.sbxswarm.v1.TemplateInfoR\ttemplates\"\x85\x01\n" +
+	"\fTemplateInfo\x12\x1e\n" +
+	"\n" +
+	"repository\x18\x01 \x01(\tR\n" +
+	"repository\x12\x10\n" +
+	"\x03tag\x18\x02 \x01(\tR\x03tag\x12\x0e\n" +
+	"\x02id\x18\x03 \x01(\tR\x02id\x12\x14\n" +
+	"\x05agent\x18\x04 \x01(\tR\x05agent\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\xda\x04\n" +
 	"\vNodeSummary\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x1a\n" +
@@ -622,7 +790,7 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"actual_mem\x18\x10 \x01(\x01R\tactualMem\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x90\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xff\x05\n" +
 	"\vNodeService\x12W\n" +
 	"\vGetNodeInfo\x12\x1f.sbxswarm.v1.GetNodeInfoRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/node\x12T\n" +
@@ -632,7 +800,8 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"RevokeNode\x12\x1e.sbxswarm.v1.RevokeNodeRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/node/revoke\x12b\n" +
 	"\vListRevoked\x12\x1f.sbxswarm.v1.ListRevokedRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/node/revoked\x12]\n" +
-	"\tListNodes\x12\x1d.sbxswarm.v1.ListNodesRequest\x1a\x1e.sbxswarm.v1.ListNodesResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodesB\xb4\x01\n" +
+	"\tListNodes\x12\x1d.sbxswarm.v1.ListNodesRequest\x1a\x1e.sbxswarm.v1.ListNodesResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12m\n" +
+	"\rListTemplates\x12!.sbxswarm.v1.ListTemplatesRequest\x1a\".sbxswarm.v1.ListTemplatesResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/templatesB\xb4\x01\n" +
 	"\x0fcom.sbxswarm.v1B\tNodeProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -647,42 +816,48 @@ func file_sbxswarm_v1_node_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_node_proto_rawDescData
 }
 
-var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_sbxswarm_v1_node_proto_goTypes = []any{
-	(*GetNodeInfoRequest)(nil), // 0: sbxswarm.v1.GetNodeInfoRequest
-	(*CordonRequest)(nil),      // 1: sbxswarm.v1.CordonRequest
-	(*DrainRequest)(nil),       // 2: sbxswarm.v1.DrainRequest
-	(*RevokeNodeRequest)(nil),  // 3: sbxswarm.v1.RevokeNodeRequest
-	(*ListRevokedRequest)(nil), // 4: sbxswarm.v1.ListRevokedRequest
-	(*RevokedList)(nil),        // 5: sbxswarm.v1.RevokedList
-	(*NodeInfo)(nil),           // 6: sbxswarm.v1.NodeInfo
-	(*ListNodesRequest)(nil),   // 7: sbxswarm.v1.ListNodesRequest
-	(*ListNodesResponse)(nil),  // 8: sbxswarm.v1.ListNodesResponse
-	(*NodeSummary)(nil),        // 9: sbxswarm.v1.NodeSummary
-	nil,                        // 10: sbxswarm.v1.NodeSummary.LabelsEntry
+	(*GetNodeInfoRequest)(nil),    // 0: sbxswarm.v1.GetNodeInfoRequest
+	(*CordonRequest)(nil),         // 1: sbxswarm.v1.CordonRequest
+	(*DrainRequest)(nil),          // 2: sbxswarm.v1.DrainRequest
+	(*RevokeNodeRequest)(nil),     // 3: sbxswarm.v1.RevokeNodeRequest
+	(*ListRevokedRequest)(nil),    // 4: sbxswarm.v1.ListRevokedRequest
+	(*RevokedList)(nil),           // 5: sbxswarm.v1.RevokedList
+	(*NodeInfo)(nil),              // 6: sbxswarm.v1.NodeInfo
+	(*ListNodesRequest)(nil),      // 7: sbxswarm.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),     // 8: sbxswarm.v1.ListNodesResponse
+	(*ListTemplatesRequest)(nil),  // 9: sbxswarm.v1.ListTemplatesRequest
+	(*ListTemplatesResponse)(nil), // 10: sbxswarm.v1.ListTemplatesResponse
+	(*TemplateInfo)(nil),          // 11: sbxswarm.v1.TemplateInfo
+	(*NodeSummary)(nil),           // 12: sbxswarm.v1.NodeSummary
+	nil,                           // 13: sbxswarm.v1.NodeSummary.LabelsEntry
 }
 var file_sbxswarm_v1_node_proto_depIdxs = []int32{
-	9,  // 0: sbxswarm.v1.ListNodesResponse.nodes:type_name -> sbxswarm.v1.NodeSummary
-	10, // 1: sbxswarm.v1.NodeSummary.labels:type_name -> sbxswarm.v1.NodeSummary.LabelsEntry
-	0,  // 2: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
-	1,  // 3: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
-	1,  // 4: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
-	2,  // 5: sbxswarm.v1.NodeService.Drain:input_type -> sbxswarm.v1.DrainRequest
-	3,  // 6: sbxswarm.v1.NodeService.RevokeNode:input_type -> sbxswarm.v1.RevokeNodeRequest
-	4,  // 7: sbxswarm.v1.NodeService.ListRevoked:input_type -> sbxswarm.v1.ListRevokedRequest
-	7,  // 8: sbxswarm.v1.NodeService.ListNodes:input_type -> sbxswarm.v1.ListNodesRequest
-	6,  // 9: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
-	6,  // 10: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
-	6,  // 11: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
-	6,  // 12: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
-	5,  // 13: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
-	5,  // 14: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
-	8,  // 15: sbxswarm.v1.NodeService.ListNodes:output_type -> sbxswarm.v1.ListNodesResponse
-	9,  // [9:16] is the sub-list for method output_type
-	2,  // [2:9] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	12, // 0: sbxswarm.v1.ListNodesResponse.nodes:type_name -> sbxswarm.v1.NodeSummary
+	11, // 1: sbxswarm.v1.ListTemplatesResponse.templates:type_name -> sbxswarm.v1.TemplateInfo
+	13, // 2: sbxswarm.v1.NodeSummary.labels:type_name -> sbxswarm.v1.NodeSummary.LabelsEntry
+	0,  // 3: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
+	1,  // 4: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
+	1,  // 5: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
+	2,  // 6: sbxswarm.v1.NodeService.Drain:input_type -> sbxswarm.v1.DrainRequest
+	3,  // 7: sbxswarm.v1.NodeService.RevokeNode:input_type -> sbxswarm.v1.RevokeNodeRequest
+	4,  // 8: sbxswarm.v1.NodeService.ListRevoked:input_type -> sbxswarm.v1.ListRevokedRequest
+	7,  // 9: sbxswarm.v1.NodeService.ListNodes:input_type -> sbxswarm.v1.ListNodesRequest
+	9,  // 10: sbxswarm.v1.NodeService.ListTemplates:input_type -> sbxswarm.v1.ListTemplatesRequest
+	6,  // 11: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 12: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 13: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 14: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
+	5,  // 15: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
+	5,  // 16: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
+	8,  // 17: sbxswarm.v1.NodeService.ListNodes:output_type -> sbxswarm.v1.ListNodesResponse
+	10, // 18: sbxswarm.v1.NodeService.ListTemplates:output_type -> sbxswarm.v1.ListTemplatesResponse
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_sbxswarm_v1_node_proto_init() }
@@ -696,7 +871,7 @@ func file_sbxswarm_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_node_proto_rawDesc), len(file_sbxswarm_v1_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

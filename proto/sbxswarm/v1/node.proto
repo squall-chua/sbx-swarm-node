@@ -32,6 +32,9 @@ service NodeService {
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
     option (google.api.http) = {get: "/v1/nodes"};
   }
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse) {
+    option (google.api.http) = {get: "/v1/templates"};
+  }
 }
 
 message GetNodeInfoRequest {}
@@ -60,6 +63,16 @@ message NodeInfo {
 
 message ListNodesRequest {}
 message ListNodesResponse { repeated NodeSummary nodes = 1; }
+
+message ListTemplatesRequest {}
+message ListTemplatesResponse { repeated TemplateInfo templates = 1; }
+message TemplateInfo {
+  string repository = 1;
+  string tag = 2;
+  string id = 3;
+  string agent = 4;
+  string created_at = 5;
+}
 
 message NodeSummary {
   string node_id = 1;

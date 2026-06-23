@@ -231,6 +231,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		mgr.SetOwnedIDsNotifier(cl)
 	}
 
+	nodeSvc.SetTemplateLister(mgr.Backend().ListTemplateInfo)
 	nodeSvc.SetNodeLister(func() []apiserver.NodeRow {
 		// Self row: live capacity + current templates + drain/cordon state.
 		lc, lm, ld := capt.Limits()

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -43,6 +44,7 @@ type NodeService struct {
 	cordoner                  Cordoner      // optional; nil when not in cluster mode
 	revoker                   Revoker       // optional; nil when not in cluster mode
 	nodeLister                func() []NodeRow // optional; nil until wired by node.go
+	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
 	draining                  atomic.Bool
 }
 
@@ -137,6 +139,29 @@ func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.No
 // SetNodeLister wires the swarm-node snapshot source (node.go). nil-safe:
 // without it, ListNodes reports self identity only.
 func (s *NodeService) SetNodeLister(fn func() []NodeRow) { s.nodeLister = fn }
+
+// SetTemplateLister wires the local backend's template source (node.go).
+func (s *NodeService) SetTemplateLister(fn func(context.Context) ([]sandbox.TemplateInfo, error)) {
+	s.templateLister = fn
+}
+
+// ListTemplates returns the local node's templates with metadata.
+func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesRequest) (*sbxv1.ListTemplatesResponse, error) {
+	out := &sbxv1.ListTemplatesResponse{}
+	if s.templateLister == nil {
+		return out, nil
+	}
+	infos, err := s.templateLister(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	for _, t := range infos {
+		out.Templates = append(out.Templates, &sbxv1.TemplateInfo{
+			Repository: t.Repository, Tag: t.Tag, Id: t.ID, Agent: t.Agent, CreatedAt: t.CreatedAt,
+		})
+	}
+	return out, nil
+}
 
 // Draining reports this node's drain flag (self-only; not gossiped).
 func (s *NodeService) Draining() bool { return s.draining.Load() }

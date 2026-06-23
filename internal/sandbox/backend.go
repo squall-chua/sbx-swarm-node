@@ -122,6 +122,15 @@ type Secrets struct {
 	Custom []CustomSecret `json:"custom"`
 }
 
+// TemplateInfo is a template image with operator-facing metadata.
+type TemplateInfo struct {
+	Repository string
+	Tag        string
+	ID         string
+	Agent      string
+	CreatedAt  string
+}
+
 // Backend is the abstraction over sbx-go-sdk used by the manager.
 type Backend interface {
 	Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error)
@@ -129,6 +138,8 @@ type Backend interface {
 	List(ctx context.Context) ([]BackendSandbox, error)
 	// ListTemplates returns the template refs this node's daemon holds.
 	ListTemplates(ctx context.Context) ([]string, error)
+	// ListTemplateInfo returns the local daemon's templates with metadata.
+	ListTemplateInfo(ctx context.Context) ([]TemplateInfo, error)
 	Start(ctx context.Context, name string) error
 	Stop(ctx context.Context, name string) error
 	Remove(ctx context.Context, name string) error
