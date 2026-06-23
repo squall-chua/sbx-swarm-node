@@ -116,36 +116,24 @@ const tabItems = computed<TabsItem[]>(() => {
             <DrawerLogsTab v-if="id" :id="id" />
           </template>
 
-          <!-- Network tab: placeholder for Task 12 -->
+          <!-- Network tab -->
           <template #network>
-            <div class="pt-4">
-              <!-- TODO(Task 12): <DrawerNetworkTab :sandbox="sandbox" /> -->
-              <UAlert color="neutral" variant="subtle" title="Network" description="Coming soon" />
-            </div>
+            <DrawerNetworkTab v-if="id" :id="id" />
           </template>
 
-          <!-- Secrets tab: placeholder for Task 12 -->
+          <!-- Secrets tab -->
           <template #secrets>
-            <div class="pt-4">
-              <!-- TODO(Task 12): <DrawerSecretsTab :id="id" /> -->
-              <UAlert color="neutral" variant="subtle" title="Secrets" description="Coming soon" />
-            </div>
+            <DrawerSecretsTab v-if="id" :id="id" />
           </template>
 
-          <!-- Git tab: placeholder for Task 12 (only shown when sandbox has a branch) -->
+          <!-- Git tab (only shown when sandbox has a branch) -->
           <template #git>
-            <div class="pt-4">
-              <!-- TODO(Task 12): <DrawerGitTab :id="id" :branch="sandbox?.branch" /> -->
-              <UAlert color="neutral" variant="subtle" title="Git" description="Coming soon" />
-            </div>
+            <DrawerGitTab v-if="sandbox" :sandbox="sandbox" />
           </template>
 
-          <!-- Files tab: placeholder for Task 12 -->
+          <!-- Files tab -->
           <template #files>
-            <div class="pt-4">
-              <!-- TODO(Task 12): <DrawerFilesTab :id="id" /> -->
-              <UAlert color="neutral" variant="subtle" title="Files" description="Coming soon" />
-            </div>
+            <DrawerFilesTab />
           </template>
         </UTabs>
       </div>
