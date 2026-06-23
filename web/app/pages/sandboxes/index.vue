@@ -221,7 +221,12 @@ function fmtDate(ts: string | null | undefined): string {
       </template>
     </p>
 
-    <!-- TODO(Task 10): mount <SandboxDrawer :id="selectedId" v-model:open="drawerOpen" /> here -->
+    <!-- Sandbox drawer — mounts on row click; guard for null selectedId -->
+    <SandboxDrawer
+      v-if="selectedId"
+      :id="selectedId"
+      v-model:open="drawerOpen"
+    />
 
   </div>
 
