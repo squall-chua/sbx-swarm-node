@@ -64,6 +64,15 @@ A headless agent execution inside a sandbox, launched via the SDK's `ExecDetache
 Operation.
 _Avoid_: run (bare), job
 
+**Terminal session**:
+A live, TTY-attached, bidirectional exec stream into a running Sandbox, opened via the SDK's interactive
+attach (`ExecInteractive` with a pseudo-TTY). Distinct from Exec (one-shot, captured output) and Agent run
+(headless, detached). It is **not** an Operation — there is no operation id and no tracked async progress;
+it is an ephemeral live stream, like the event firehose. Does not violate Provision's "never interactive
+`Run`" rule: that forbids interactive *provisioning* of a sandbox, whereas a Terminal session attaches to a
+command inside an already-Provisioned Sandbox.
+_Avoid_: console, shell, ssh, session (bare)
+
 **Unreachable** (sandbox state):
 The sandbox's owner node is suspect or dead per gossip, so its true state is unknown — it may still be
 alive behind a partition. A peer's non-destructive guess; only the owner ever moves it off this state.

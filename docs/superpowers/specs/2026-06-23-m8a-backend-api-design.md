@@ -29,20 +29,28 @@ cannot do WebSockets), exactly like the existing SSE handler.
 
 ### 1. `ListNodes` — `GET /v1/nodes` (read-only)
 - New `NodeService.ListNodes`. Returns **self + gossiped peers**.
-- Per node: `node_id`, `node_name`, `cordoned`, `draining`, `reachable`, `labels`, and
-  `alloc`/`limit` triples (cpu cores / mem bytes / disk GB).
-- Sources: self from local `sandbox.Capacity` + `NodeInfo`; peers from
-  `routing.Table.Peers()` (+ `Addr`/`IsCordoned`) joined with
-  `membership.Cluster.peerStates` (`NodeState` already carries labels + load).
-  Standalone (no cluster wired) → returns just self.
-- Test: fake routing table + cluster snapshot → assert self-plus-peers shape; standalone → self only.
+- Per node: `node_id`, `node_name`, `cordoned`, `labels`, `capabilities`, `workspaces`,
+  `templates` (names), and `alloc`/`limit`/`actual` for cpu/mem/disk.
+- **No `reachable` field** — liveness is *presence*: `NotifyLeave` removes a dead node from the
+  routing table (firing `MarkUnreachable` on its sandboxes), so any node returned here is alive
+  by construction. The "an owner died" signal stays the **sandbox** `Unreachable` state; node
+  liveness and the sandbox `Unreachable`/`Lost` terms remain separate (glossary boundary).
+- **`draining` is self-only** — `NodeState` does not gossip a draining flag, so a peer's draining
+  state is unknowable; report it only for self (peers always `false`), or read it from `GET /v1/node`.
+- Sources: self from local `sandbox.Capacity` + `NodeInfo`; peers from `routing.Table.Peers()`
+  (+ `Addr`/`IsCordoned`) joined with `membership.Cluster.peerStates` (`NodeState` already carries
+  labels, capabilities, workspaces, templates, and load). Standalone (no cluster) → just self.
+- The gossiped per-node `templates` names make the swarm-wide template catalog available here
+  (see §2). Test: fake routing table + cluster snapshot → assert self-plus-peers shape; standalone → self only.
 
 ### 2. `ListTemplates` — `GET /v1/templates` (read-only)
 - New `NodeService.ListTemplates`, delegating to `Backend().ListTemplates()` (already exists,
-  verified live).
-- **Decision A: local node templates only in v1.** The plan's "gossiped swarm-wide union"
-  needs templates added to the gossiped `NodeState` (extra bulk-state + propagation surface);
-  deferred to a noted follow-up. The console's Templates page renders the entry node's catalog.
+  verified live), returning the **local node's rich templates** (repo/tag/flavor/image-id/created).
+- **Decision A (corrected): the swarm-wide template *union* is already available** — `NodeState`
+  gossips each peer's `Templates []string`, surfaced per node by `ListNodes` (§1). So nothing is
+  deferred: the console's Templates page gets "which nodes hold which templates" from `ListNodes`
+  (names), and `ListTemplates` adds the **local** node's rich metadata. The only thing genuinely
+  unavailable is rich metadata for *peers'* templates (gossip carries names only) — not needed in v1.
 - Test: Fake backend returns canned templates → assert passthrough.
 
 ### 3. `ListOperations` — `GET /v1/operations` (read-only)
@@ -50,6 +58,9 @@ cannot do WebSockets), exactly like the existing SSE handler.
   `operations` bucket — add `ops.Manager.List()` returning records **newest-first**, with an
   optional `?limit` (default a sane cap, e.g. 200, to bound the response).
 - Fields: `id`, `type`, `state`, `sandbox_id`, `error`, `created_at`, `updated_at`.
+- This is the **durable** operation history (the bbolt bucket); it is distinct from the best-effort
+  event firehose (ADR-0008). The console reads history here and overlays live `operation.*` events
+  in M8b — the firehose is not the source of truth and is not made into one.
 - Test: write several ops via the manager → `List` returns them newest-first; `limit` honored.
 
 ### 4. Cross-node cordon / drain
@@ -60,6 +71,9 @@ cannot do WebSockets), exactly like the existing SSE handler.
   sandbox owner).
 - **Decision B: extend the existing methods** (`POST /v1/node/cordon` with `{node_id}` body)
   rather than add a parallel `/v1/nodes/{id}/cordon` path — smaller surface, one code path.
+- **Forward-to-peer, not gossiped directive** (ADR-0018): the target node updates its own gossiped
+  `NodeState.Cordoned` — the deliberate opposite of revocation's gossiped denylist (ADR-0013),
+  because a cordoned node is still trusted and authoritative over its own state.
 - Mutating (admin). `Uncordon` gets the same treatment for symmetry.
 - Test: forward-path unit test — a request with a peer `node_id` reaches that peer's
   self-cordon; empty `node_id` still cordons locally.
@@ -79,9 +93,11 @@ cannot do WebSockets), exactly like the existing SSE handler.
   close the socket.
 - **Decision C: dependency `github.com/coder/websocket`** (minimal, context-aware, net/http
   native) for the server side; the client is the browser's `WebSocket` (xterm.js) in M8b.
-- **Decision D:** default command `/bin/sh`; auth via the existing cookie/bearer middleware
-  **plus a same-origin `Origin` check** on the upgrade (WebSockets are not covered by the
-  double-submit CSRF check, so an explicit origin allowlist replaces it; ADR-0006 lineage).
+- **Decision D (ADR-0017):** default command `/bin/sh`. Auth is **cookie or bearer**, but note a
+  browser `WebSocket` can set *neither* a custom header nor the CSRF token, so browser terminals are
+  **cookie-only**; bearer remains for non-browser clients. The upgrade is a `GET` (evades the
+  unsafe-method CSRF check), so a same-origin **`Origin` allowlist** replaces the double-submit token
+  to stop Cross-Site WebSocket Hijacking. Reject mismatched `Origin` with 403.
 - Tests: Fake-backed handler driven by a `coder/websocket` client — echo round-trip + a resize
   control frame is parsed and applied; a cross-origin upgrade is rejected. Env-gated
   integration test runs a real interactive shell against the live daemon (e.g. `echo` then exit,
@@ -98,7 +114,8 @@ cannot do WebSockets), exactly like the existing SSE handler.
 
 ## Out of scope (follow-ups)
 - **M8b** — the Nuxt 4 + @nuxt/ui v4 console that consumes these endpoints.
-- **Gossiped swarm-wide template union** (decision A) — templates in `NodeState`.
+- **Rich template metadata for peers** — gossip carries template *names* only; peers' tag/flavor/
+  created are not surfaced (the swarm-wide *union of names* is available now, via `ListNodes`).
 - **Files API** (CopyTo/CopyFrom) over REST — still the M1c deferred item; M8b stubs that tab.
 - **SSE stats stream** — charts poll `GET .../stats`; no streaming-stats endpoint added.
 
@@ -109,5 +126,7 @@ cannot do WebSockets), exactly like the existing SSE handler.
   forwarding). No contradictions.
 - **Scope:** one milestone of backend additions, all in `internal/` + proto; the frontend is
   explicitly deferred to M8b. Right-sized for a single implementation plan.
-- **Ambiguity:** decisions A–D resolve the open forks explicitly (local templates; `node_id`
-  on existing methods; `coder/websocket`; `/bin/sh` + origin check).
+- **Ambiguity:** decisions A–D resolve the open forks explicitly (A: rich-local `ListTemplates` +
+  swarm union from `ListNodes` gossip; B: `node_id` on existing methods, forward-to-peer per ADR-0018;
+  C: `coder/websocket`; D: `/bin/sh` + Origin allowlist per ADR-0017). Glossary term **Terminal
+  session** added to `CONTEXT.md`.
