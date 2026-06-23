@@ -115,6 +115,9 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	if opts.Sandboxes != nil && opts.Sandboxes.observeStreamReady() {
 		v1 = observeStreamMux(opts.Sandboxes.obs, gw)
 	}
+	if opts.Sandboxes != nil {
+		v1 = terminalMux(opts.Sandboxes.TerminalHandler(), v1)
+	}
 	// In cluster mode, reverse-proxy REST/SSE requests for remote sandboxes to
 	// their owning node (the in-process gateway never traverses the gRPC
 	// forwarding interceptor, so REST/SSE need an HTTP-layer proxy). The proxy

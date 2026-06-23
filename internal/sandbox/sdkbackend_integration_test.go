@@ -380,3 +380,31 @@ func TestSDKBackend_CloneRegistersSandboxRemote(t *testing.T) {
 	require.Contains(t, strings.Fields(out), want,
 		"clone-mode create did not register the expected sandbox remote on the base")
 }
+
+func TestSDKBackend_ExecInteractive(t *testing.T) {
+	ctx := context.Background()
+	b, ws := backendWS(t)
+	sb := mkSandbox(t, b, CreateSpec{Name: "it-terminal", CPUs: 1, MemoryBytes: 1 << 30, Workspaces: ws})
+
+	sess, err := b.ExecInteractive(ctx, sb.Name, []string{"/bin/sh"}, true)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close() })
+
+	_, err = sess.Stdin().Write([]byte("echo it-terminal-ok; exit\n"))
+	require.NoError(t, err)
+
+	out := make([]byte, 0, 256)
+	buf := make([]byte, 256)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		n, rerr := sess.Stdout().Read(buf)
+		out = append(out, buf[:n]...)
+		if strings.Contains(string(out), "it-terminal-ok") {
+			return
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	t.Fatalf("did not see terminal echo; got: %q", out)
+}

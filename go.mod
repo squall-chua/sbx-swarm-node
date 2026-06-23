@@ -3,6 +3,7 @@ module github.com/squall-chua/sbx-swarm-node
 go 1.25.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/hashicorp/memberlist v0.5.4
 	github.com/oklog/ulid/v2 v2.1.1

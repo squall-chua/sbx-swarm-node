@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,18 @@ func TestFake_ListTemplates(t *testing.T) {
 	got, err = f.ListTemplates(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []string{"base:1", "gpu:2"}, got)
+}
+
+func TestFake_ExecInteractiveEchoes(t *testing.T) {
+	sess, err := NewFake().ExecInteractive(context.Background(), "sb", []string{"/bin/sh"}, true)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close() })
+
+	go func() { _, _ = sess.Stdin().Write([]byte("ping")) }()
+	buf := make([]byte, 4)
+	_, err = io.ReadFull(sess.Stdout(), buf)
+	require.NoError(t, err)
+	require.Equal(t, "ping", string(buf))
 }
 
 func TestFake_LifecycleAndExec(t *testing.T) {

@@ -484,4 +484,17 @@ func (b *SDKBackend) ListTemplateInfo(ctx context.Context) ([]TemplateInfo, erro
 	return out, nil
 }
 
+// ExecInteractive opens a Terminal session via the SDK's hijacking attach.
+func (b *SDKBackend) ExecInteractive(ctx context.Context, name string, cmd []string, tty bool) (Session, error) {
+	sb, err := b.handle(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	popts := []sdkexec.ProcessOption{sdkexec.WithAutoStart()}
+	if tty {
+		popts = append(popts, sdkexec.WithTTY())
+	}
+	return sdkexec.ExecInteractive(ctx, sb, cmd, popts...) // *AttachSession satisfies Session
+}
+
 var _ Backend = (*SDKBackend)(nil)

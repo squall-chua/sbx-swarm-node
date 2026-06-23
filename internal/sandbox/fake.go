@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 )
 
@@ -264,4 +265,33 @@ func (f *Fake) SecretRemove(_ context.Context, scope, host string) error {
 	}
 	f.secrets[scope] = kept
 	return nil
+}
+
+type fakeSession struct {
+	r      *io.PipeReader
+	w      *io.PipeWriter
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (s *fakeSession) Stdin() io.Writer                       { return s.w } // echo: Stdin -> Stdout
+func (s *fakeSession) Stdout() io.Reader                      { return s.r }
+func (s *fakeSession) Resize(context.Context, int, int) error { return nil }
+func (s *fakeSession) Wait(ctx context.Context) (int, error) {
+	select {
+	case <-s.closed:
+		return 0, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+func (s *fakeSession) Close() error {
+	s.once.Do(func() { close(s.closed); _ = s.w.Close(); _ = s.r.Close() })
+	return nil
+}
+
+// ExecInteractive returns an echo session (bytes written to Stdin appear on Stdout).
+func (b *Fake) ExecInteractive(_ context.Context, _ string, _ []string, _ bool) (Session, error) {
+	pr, pw := io.Pipe()
+	return &fakeSession{r: pr, w: pw, closed: make(chan struct{})}, nil
 }

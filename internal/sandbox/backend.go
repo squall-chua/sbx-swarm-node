@@ -5,6 +5,7 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"io"
 )
 
 // ErrNotFound is returned when a sandbox does not exist in the backend.
@@ -131,6 +132,16 @@ type TemplateInfo struct {
 	CreatedAt  string
 }
 
+// Session is a live interactive exec attached to a running sandbox (Terminal
+// session). *sdkexec.AttachSession satisfies it structurally.
+type Session interface {
+	Stdin() io.Writer
+	Stdout() io.Reader
+	Resize(ctx context.Context, cols, rows int) error
+	Wait(ctx context.Context) (int, error)
+	Close() error
+}
+
 // Backend is the abstraction over sbx-go-sdk used by the manager.
 type Backend interface {
 	Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error)
@@ -171,4 +182,7 @@ type Backend interface {
 	SecretSet(ctx context.Context, scope string, s CustomSecret) error
 	SecretList(ctx context.Context, scope string) (Secrets, error)
 	SecretRemove(ctx context.Context, scope, host string) error
+
+	// ExecInteractive opens a Terminal session (TTY when tty=true).
+	ExecInteractive(ctx context.Context, name string, cmd []string, tty bool) (Session, error)
 }
