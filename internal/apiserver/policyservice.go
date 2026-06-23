@@ -6,7 +6,6 @@ import (
 
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
-	"github.com/squall-chua/sbx-swarm-node/internal/auth"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,10 +43,12 @@ func scopeStatusErr(err error) error {
 	return status.Error(codes.Internal, err.Error())
 }
 
-// actor returns the authenticated role from context, or "" if unauthenticated.
+// actor returns the authenticated role from the gRPC principal attached by the
+// authn interceptor, or "" if unauthenticated. REST mutations reach here via the
+// loopback gRPC path, so the principal — not the HTTP-middleware role key — is
+// the source of truth.
 func actor(ctx context.Context) string {
-	r, _ := auth.RoleFromContext(ctx)
-	return r
+	return principalFromContext(ctx).userRole
 }
 
 func outcomeOf(err error) string {

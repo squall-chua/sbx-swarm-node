@@ -73,6 +73,24 @@ func TestPolicyService_SetPolicyWritesAudit(t *testing.T) {
 	require.Equal(t, "evil.example", entries[0].Target)
 }
 
+func TestPolicyService_AuditActorFromGRPCPrincipal(t *testing.T) {
+	svc, a := buildPolicySvc(t)
+	// Context carrying the gRPC principal as the authn interceptor attaches it.
+	ctx := context.WithValue(context.Background(), principalCtxKey{}, principal{userRole: "admin"})
+
+	_, err := svc.SetPolicy(ctx, &sbxv1.SetPolicyRequest{Scope: "", Decision: "deny", Host: "evil.example"})
+	require.NoError(t, err)
+	_, err = svc.SetSecret(ctx, &sbxv1.SetSecretRequest{Scope: "", Host: "api.x", Env: "TOKEN", Value: "shh"})
+	require.NoError(t, err)
+
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	for _, e := range entries {
+		require.Equal(t, "admin", e.Actor, "audit must attribute the gRPC principal, action=%s", e.Action)
+	}
+}
+
 func TestPolicyService_PerSandboxScope(t *testing.T) {
 	svc, _, mgr := buildPolicySvcMgr(t)
 	ctx := context.Background()
