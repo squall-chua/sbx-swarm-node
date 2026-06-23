@@ -39,7 +39,7 @@ Findings that shaped this design; the stale plan assumed several of these wrong.
      nil payload), `sandbox.deleted`, `sandbox.lost`, `sandbox.published` /
      `sandbox.publish_failed` (payload `{branch}`).
    - `operation.pending|running|done|error` (payload `{op_id,type}`).
-   - **No `membership`/`scheduling` events exist** → no event-backed topology "pulse".
+   - **No `membership`/`scheduling` events exist** → no event-backed swarm-map "pulse".
 3. **SSE payloads are thin pokes, not deltas.** Only `id`/`event`/`data` cross the wire
    (envelope `node_id`/`sandbox_id` are dropped unless inside the payload), and per ADR-0008
    the firehose is best-effort, not a source of truth. → Live views treat an event as
@@ -51,7 +51,8 @@ Findings that shaped this design; the stale plan assumed several of these wrong.
 5. **Stats can stream.** `GET /v1/sandboxes/{id}/stats` with `Accept: text/event-stream`
    → SSE `event: stats` every 2s (`observe_sse.go`, active when observe collectors are
    wired); a plain `GET` returns unary JSON. `EventSource` sets that Accept automatically,
-   so the Stats tab streams; degrade to GET poll if the stream isn't available.
+   so the Stats tab streams. (The collectors are wired unconditionally in `node.go:113`, so
+   the stream is always present in a real node; `EventSource` auto-reconnect covers blips.)
 6. **Per-sandbox logs SSE exists.** `GET /v1/sandboxes/{id}/logs` → SSE `event: log`.
 
 **Other shape notes (from proto + gateway):**
@@ -61,12 +62,15 @@ Findings that shaped this design; the stale plan assumed several of these wrong.
 - `Exec` returns `bytes` stdout/stderr (base64 over JSON) — one-shot; the interactive
   path is the terminal WS.
 - Policy/secrets are **scoped**: `/v1/sandboxes/{scope}/…`, `scope=""` = node-global,
-  `scope=<id>` = per-sandbox. `SetPolicy` is allow/deny **per host** (not free-form).
+  `scope=<id>` = per-sandbox. `SetPolicy` is allow/deny **per host** (not free-form), and is
+  **add-only** — there is no remove-policy-rule RPC (only `DeleteSecret` for secrets).
   Secrets: `custom` (host+env) + `stored` (names); **value write-only** (never returned).
 - `NodeSummary` carries `actual_cpu`/`actual_mem` (gossiped util) and per-node
   `templates` names; `draining` is meaningful for self only (peers always `false`).
 - Ports: `PublishPort` + `ListPorts` only — **no UnpublishPort** in the API.
 - **No server-side logout endpoint** exists.
+- **No endpoint exposes the caller's role** (session returns 204; `GetNodeInfo` returns
+  node info, not *your* role) → M8b adds a `role` field to `NodeInfo` (see Components).
 
 ## Architecture
 
@@ -77,26 +81,42 @@ terminal. The **testable core** is three composables (`useApi`, `useEvents`, `us
 covered by Vitest; pages are built with @nuxt/ui v4 (via the `nuxt-ui` skill) and styled per
 the `ui-ux-pro-max` design guidance. Shared reactive state via Nuxt `useState` (no Pinia).
 
-**Live-data model — "event poke → refetch" (the architectural heart):** one shared
-`/v1/events` subscription; an event of a family triggers a debounced refetch of that list;
-a 20–30s periodic refetch backstops missed events; manual refresh everywhere. Chosen
-because events are thin best-effort pokes (findings #2/#3) — applying them as deltas would
-fight the backend. Per-sandbox streams (stats/logs/terminal) open only for the active
-drawer tab and close on tab-switch/drawer-close.
+**Live-data model — "event poke → refetch" (the architectural heart):** a single
+**app-wide, unfiltered** `/v1/events` subscription (in `useSwarm`). A frame can't identify
+*which* sandbox changed (the SSE frame drops the envelope and `sandbox.<status>` payloads
+are nil — finding #3), so events are treated as **coarse pokes**: any `sandbox.*` →
+debounced refetch of the sandbox list; `operation.*` → refetch operations; the open drawer
+refetches its own sandbox on any `sandbox.*`. A 20–30s periodic refetch backstops missed
+events; manual refresh everywhere. Chosen because events are thin best-effort pokes
+(findings #2/#3, ADR-0008) — applying them as deltas would fight the backend. Per-sandbox
+streams (stats/logs/terminal) open only for the active drawer tab and close on
+tab-switch/drawer-close. (Upgrade path if coarse refetch proves chatty: open a second
+`?sandbox=<id>` firehose per drawer for precisely-scoped pokes — `useEvents` already takes
+`types`/`sandbox`.)
 
 ## Components
 
+### Backend prerequisite (one tiny addition)
+- **`role` on `NodeInfo`** — `GetNodeInfo` populates the caller's role from
+  `principalFromContext(ctx)` (crosses the loopback as the signed `x-sbx-authz` role). The
+  console calls `GET /v1/node` on load and uses it to hide/disable admin affordances for
+  `read-only` keys. The server remains the real gate (role-gate + authz). `GetNodeInfo` is
+  already read-only-classified, so no authz-drift change. One proto field + regen + ~3 lines.
+
 ### Composables (Vitest-covered core)
 - `app/composables/useApi.ts` — typed REST client. `credentials:include`; `GET/HEAD` send
-  no CSRF; mutations send `X-CSRF-Token` = `sbx_csrf` cookie; `401` → clear `loggedIn`,
-  redirect `/login`; `204` → null. `{get,post,put,del}`.
+  no CSRF; mutations send `X-CSRF-Token` = `sbx_csrf` cookie; `401` **or `403` csrf-fail**
+  (the CSRF cookie expires with the session) → clear `loggedIn`, redirect `/login`; `204` →
+  null. `{get,post,put,del}`.
 - `app/composables/useEvents.ts` — `createEvents(base, ES)(opts,onEvent) → unsubscribe`.
   Builds `/v1/events?types=<exact csv>&sandbox=<id>`; registers `addEventListener(type, …)`
   **per type** (never `onmessage`); `withCredentials`; unsubscribe closes the source.
 - `app/composables/useTerminal.ts` — `createTerminal(wsUrl, WS)`: WS binary → xterm write,
   xterm data → WS binary, resize → text `{"type":"resize",cols,rows}`; close on unmount.
 - `app/composables/useSwarm.ts` — shared `useState` for `nodes`/`sandboxes`/`operations`;
-  wires `useEvents` (poke → debounced refetch) + periodic backstop; exposes refresh fns.
+  owns the single app-wide unfiltered `useEvents` subscription (coarse poke → debounced
+  refetch of the affected list) + periodic backstop; exposes refresh fns. One firehose for
+  the whole app.
 
 ### Shell & routing
 - `app/app.vue` (`UApp` root), `app/layouts/default.vue` (@nuxt/ui dashboard sidebar nav).
@@ -105,20 +125,33 @@ drawer tab and close on tab-switch/drawer-close.
 
 ### Views (full console)
 - `pages/index.vue` **Overview** — stat cards (node count; sandboxes by status; Σ alloc/limit;
-  blocked-egress distinct; recent operations) + **topology as a responsive node-card grid**
+  blocked-egress distinct; recent operations) + the **swarm map: a responsive node-card grid**
   (load bars from actual/alloc vs limit; sandbox chips grouped by owner; cordoned/draining
-  badges). Live via `useSwarm`.
+  badges). No edges — the swarm is a flat mesh. Live via `useSwarm`.
 - `pages/sandboxes/index.vue` **Sandboxes** — filterable @nuxt/ui table (status/label) +
-  Provision modal (`POST /v1/sandboxes` with an `Idempotency-Key` header) + row →
-  `components/SandboxDrawer.vue`.
+  Provision modal + row → `components/SandboxDrawer.vue`. **Provision modal** (`POST
+  /v1/sandboxes` with an `Idempotency-Key` header) is **tiered**: visible fields = agent,
+  template (dropdown from the catalog union), cpus, memory, disk_gb, workspaces (multi-select
+  from advertised names + per-mount `read_only`); a collapsible **Advanced** = clone+branch,
+  strategy (the four known strategies), env (k/v editor), labels (k/v editor),
+  node_affinity / node_anti_affinity (k/v editors). Caveat: the form can't tell which
+  workspaces are git-backed (names only), so clone is best-effort — the server rejects an
+  invalid clone and the modal surfaces the error.
 - `components/SandboxDrawer.vue` tabs:
   - *Info/Actions* — id/owner_node/status/branch/last_publish/labels; start/stop/delete/
     keepalive; ports list + publish (no unpublish).
-  - *Terminal* — `components/Terminal.vue` (xterm) over WS via `useTerminal`.
-  - *Stats* — `components/Sparkline.vue` fed by `EventSource('…/stats')`; fallback GET poll.
+  - *Terminal* — `components/Terminal.vue` (xterm) over WS via `useTerminal`. While
+    attached, POST `…/keepalive` on a ~60s interval (cleared on tab/drawer close) so an
+    idle interactive session isn't idle-stopped mid-use when idle-stop is enabled
+    (the server bumps Activity only once at attach — finding).
+  - *Stats* — `components/Sparkline.vue` fed by `EventSource('…/stats')` (`event: stats`,
+    2s). No GET-poll fallback: observe is always wired (`node.go:113`) so the stream is
+    always available, and `EventSource` auto-reconnects on transient blips.
   - *Logs* — live `EventSource('…/logs')` (`event: log`) into a scrollback pane.
   - *Network* — blocked-egress table (`GET …/network/blocked`: host/first_seen/last_seen +
     distinct_count) + per-sandbox policy (`GET/PUT …/policy`, scope=id, allow/deny host).
+    **Policy is view + add only** — there is no remove-rule RPC (`PolicyService` has no
+    delete-policy method), so the editor adds allow/deny rules but can't delete them.
   - *Secrets* — `GET/PUT/DELETE …/secrets` (scope=id); masked list, value write-only.
   - *Git* — branch + Publish (`POST …/git/publish`); shown only when the sandbox has a
     recorded branch (clone-mode).
@@ -126,7 +159,7 @@ drawer tab and close on tab-switch/drawer-close.
 - `pages/nodes.vue` **Nodes** — cards from `GET /v1/nodes`: limit/alloc/actual util bars,
   labels/capabilities/workspaces/templates; cordon/uncordon/drain (`POST /v1/node/{…}`
   `{node_id}`); revoke (`POST /v1/node/revoke`) + revoked list (`GET /v1/node/revoked`).
-  Admin actions gated by role (read-only hides them; server is the real gate).
+  Admin actions hidden/disabled for `read-only` (via `NodeInfo.role`); server is the real gate.
 - `pages/templates.vue` **Templates** — `GET /v1/templates` (local rich:
   repository/tag/id/agent/created_at) + "which nodes hold it" derived from
   `GET /v1/nodes[].templates`.
@@ -139,7 +172,7 @@ drawer tab and close on tab-switch/drawer-close.
   (client-side flag clear + redirect; no server logout endpoint).
 
 ### Deliberate simplifications vs the stale plan (approved)
-- **Topology is a node-card grid, not Vue Flow.** The swarm is a flat leaderless mesh —
+- **Swarm map is a node-card grid, not Vue Flow.** The swarm is a flat leaderless mesh —
   no hierarchy/edges to draw, and no `scheduling`/`membership` events to animate (finding
   #2). Drops `@vue-flow/core`.
 - **Stats chart is a hand-rolled SVG sparkline, not ECharts.** A cpu%/mem% line from a 2s
@@ -177,12 +210,14 @@ drawer tab and close on tab-switch/drawer-close.
 
 ## Task outline (formalized later by writing-plans)
 
+0. Backend prerequisite: add `role` to `NodeInfo`, populate from the principal (TDD: a
+   `GetNodeInfo` test asserting the role round-trips for admin vs read-only).
 1. Scaffold Nuxt 4 SPA + embed/dev wiring (gitignore dist + placeholder, `build.sh`,
    Makefile target, `nuxt dev` proxy, Go embed test).
 2. `useApi` + `useEvents` + `useTerminal` (Vitest, TDD).
 3. Auth: `login.vue` + `auth.global.ts` + 401 handling.
 4. App shell (dashboard layout/nav) + `useSwarm` live store (poke → refetch).
-5. Overview: stat cards + topology card-grid (live).
+5. Overview: stat cards + swarm-map card-grid (live).
 6. Sandboxes: list + Provision modal + drawer Info/Actions/ports.
 7. Drawer live tabs: Terminal (xterm) + Stats (sparkline) + Logs.
 8. Drawer mgmt tabs: Network/policy + Secrets + Git + Files-stub.
@@ -200,6 +235,7 @@ was executed. Merges are user-driven local ff-merges.
 - Server-side logout / session invalidation — no endpoint; client clears the flag only.
 - Rich template metadata for *peers* (gossip carries names only).
 - Swarm-global blocked-egress aggregation (blocked is per-sandbox only).
+- Policy-rule deletion (no remove-rule RPC; the policy editor is add-only — backend gap).
 - Browser e2e (Playwright).
 - M8a's small review nits (terminal err-log, forward `out==nil` panic, test nits) —
   optionally folded into task 1.
@@ -214,5 +250,13 @@ was executed. Merges are user-driven local ff-merges.
 - **Scope:** one milestone, all under `web/` + one Go embed test; backend is complete (M8a).
   Right-sized for a single implementation plan (~11 tasks).
 - **Ambiguity:** the four forks are resolved — full-console scope; gitignored-dist
-  build-step wiring; unit+component+smoke test bar; card-grid topology + SVG sparkline over
+  build-step wiring; unit+component+smoke test bar; card-grid swarm map + SVG sparkline over
   Vue Flow/ECharts.
+- **ADRs:** none warranted. The poke-refetch live model is a direct consequence of ADR-0008
+  (firehose is best-effort, not a log); `role` on `NodeInfo`, the terminal keepalive, and
+  swarm-map-over-graph are reversible frontend choices documented above.
+- **Grill outcomes (this review):** role exposure via `NodeInfo.role` (backend task 0);
+  single app-wide unfiltered firehose with coarse refetch; cross-node stats/logs/terminal
+  confirmed working via `OwnerProxy` (`FlushInterval:-1`); terminal sends periodic KeepAlive
+  while attached; tiered Provision modal; stats GET-poll fallback dropped (observe always
+  wired); "swarm map" replaces "topology"; policy editor is add-only.
