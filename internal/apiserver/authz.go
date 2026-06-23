@@ -59,6 +59,7 @@ var readMethods = map[string]bool{
 	"/sbxswarm.v1.PolicyService/ListSecrets":    true,
 	"/sbxswarm.v1.EventService/WatchEvents":        true,
 	"/sbxswarm.v1.SandboxService/ListOperations":   true,
+	"/sbxswarm.v1.NodeService/ListNodes":            true,
 }
 
 func classified(fullMethod string) bool {

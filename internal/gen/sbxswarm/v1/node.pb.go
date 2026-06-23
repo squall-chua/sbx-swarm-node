@@ -330,6 +330,250 @@ func (x *NodeInfo) GetDraining() bool {
 	return false
 }
 
+type ListNodesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodesRequest) Reset() {
+	*x = ListNodesRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodesRequest) ProtoMessage() {}
+
+func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
+func (*ListNodesRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{7}
+}
+
+type ListNodesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*NodeSummary         `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodesResponse) Reset() {
+	*x = ListNodesResponse{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodesResponse) ProtoMessage() {}
+
+func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
+func (*ListNodesResponse) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListNodesResponse) GetNodes() []*NodeSummary {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+type NodeSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	NodeName      string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	Cordoned      bool                   `protobuf:"varint,3,opt,name=cordoned,proto3" json:"cordoned,omitempty"`
+	Draining      bool                   `protobuf:"varint,4,opt,name=draining,proto3" json:"draining,omitempty"`
+	Labels        map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Capabilities  []string               `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Workspaces    []string               `protobuf:"bytes,7,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
+	Templates     []string               `protobuf:"bytes,8,rep,name=templates,proto3" json:"templates,omitempty"`
+	LimitCpu      float64                `protobuf:"fixed64,9,opt,name=limit_cpu,json=limitCpu,proto3" json:"limit_cpu,omitempty"`
+	LimitMemKb    float64                `protobuf:"fixed64,10,opt,name=limit_mem_kb,json=limitMemKb,proto3" json:"limit_mem_kb,omitempty"`
+	LimitDiskGb   float64                `protobuf:"fixed64,11,opt,name=limit_disk_gb,json=limitDiskGb,proto3" json:"limit_disk_gb,omitempty"`
+	AllocCpu      float64                `protobuf:"fixed64,12,opt,name=alloc_cpu,json=allocCpu,proto3" json:"alloc_cpu,omitempty"`
+	AllocMemKb    float64                `protobuf:"fixed64,13,opt,name=alloc_mem_kb,json=allocMemKb,proto3" json:"alloc_mem_kb,omitempty"`
+	AllocDiskGb   float64                `protobuf:"fixed64,14,opt,name=alloc_disk_gb,json=allocDiskGb,proto3" json:"alloc_disk_gb,omitempty"`
+	ActualCpu     float64                `protobuf:"fixed64,15,opt,name=actual_cpu,json=actualCpu,proto3" json:"actual_cpu,omitempty"`
+	ActualMem     float64                `protobuf:"fixed64,16,opt,name=actual_mem,json=actualMem,proto3" json:"actual_mem,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeSummary) Reset() {
+	*x = NodeSummary{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeSummary) ProtoMessage() {}
+
+func (x *NodeSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeSummary.ProtoReflect.Descriptor instead.
+func (*NodeSummary) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *NodeSummary) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *NodeSummary) GetNodeName() string {
+	if x != nil {
+		return x.NodeName
+	}
+	return ""
+}
+
+func (x *NodeSummary) GetCordoned() bool {
+	if x != nil {
+		return x.Cordoned
+	}
+	return false
+}
+
+func (x *NodeSummary) GetDraining() bool {
+	if x != nil {
+		return x.Draining
+	}
+	return false
+}
+
+func (x *NodeSummary) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *NodeSummary) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *NodeSummary) GetWorkspaces() []string {
+	if x != nil {
+		return x.Workspaces
+	}
+	return nil
+}
+
+func (x *NodeSummary) GetTemplates() []string {
+	if x != nil {
+		return x.Templates
+	}
+	return nil
+}
+
+func (x *NodeSummary) GetLimitCpu() float64 {
+	if x != nil {
+		return x.LimitCpu
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetLimitMemKb() float64 {
+	if x != nil {
+		return x.LimitMemKb
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetLimitDiskGb() float64 {
+	if x != nil {
+		return x.LimitDiskGb
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetAllocCpu() float64 {
+	if x != nil {
+		return x.AllocCpu
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetAllocMemKb() float64 {
+	if x != nil {
+		return x.AllocMemKb
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetAllocDiskGb() float64 {
+	if x != nil {
+		return x.AllocDiskGb
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetActualCpu() float64 {
+	if x != nil {
+		return x.ActualCpu
+	}
+	return 0
+}
+
+func (x *NodeSummary) GetActualMem() float64 {
+	if x != nil {
+		return x.ActualMem
+	}
+	return 0
+}
+
 var File_sbxswarm_v1_node_proto protoreflect.FileDescriptor
 
 const file_sbxswarm_v1_node_proto_rawDesc = "" +
@@ -348,7 +592,37 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1a\n" +
 	"\bcordoned\x18\x04 \x01(\bR\bcordoned\x12\x1a\n" +
-	"\bdraining\x18\x05 \x01(\bR\bdraining2\xb1\x04\n" +
+	"\bdraining\x18\x05 \x01(\bR\bdraining\"\x12\n" +
+	"\x10ListNodesRequest\"C\n" +
+	"\x11ListNodesResponse\x12.\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x18.sbxswarm.v1.NodeSummaryR\x05nodes\"\xda\x04\n" +
+	"\vNodeSummary\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
+	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x1a\n" +
+	"\bcordoned\x18\x03 \x01(\bR\bcordoned\x12\x1a\n" +
+	"\bdraining\x18\x04 \x01(\bR\bdraining\x12<\n" +
+	"\x06labels\x18\x05 \x03(\v2$.sbxswarm.v1.NodeSummary.LabelsEntryR\x06labels\x12\"\n" +
+	"\fcapabilities\x18\x06 \x03(\tR\fcapabilities\x12\x1e\n" +
+	"\n" +
+	"workspaces\x18\a \x03(\tR\n" +
+	"workspaces\x12\x1c\n" +
+	"\ttemplates\x18\b \x03(\tR\ttemplates\x12\x1b\n" +
+	"\tlimit_cpu\x18\t \x01(\x01R\blimitCpu\x12 \n" +
+	"\flimit_mem_kb\x18\n" +
+	" \x01(\x01R\n" +
+	"limitMemKb\x12\"\n" +
+	"\rlimit_disk_gb\x18\v \x01(\x01R\vlimitDiskGb\x12\x1b\n" +
+	"\talloc_cpu\x18\f \x01(\x01R\ballocCpu\x12 \n" +
+	"\falloc_mem_kb\x18\r \x01(\x01R\n" +
+	"allocMemKb\x12\"\n" +
+	"\ralloc_disk_gb\x18\x0e \x01(\x01R\vallocDiskGb\x12\x1d\n" +
+	"\n" +
+	"actual_cpu\x18\x0f \x01(\x01R\tactualCpu\x12\x1d\n" +
+	"\n" +
+	"actual_mem\x18\x10 \x01(\x01R\tactualMem\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x90\x05\n" +
 	"\vNodeService\x12W\n" +
 	"\vGetNodeInfo\x12\x1f.sbxswarm.v1.GetNodeInfoRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/node\x12T\n" +
@@ -357,7 +631,8 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\x05Drain\x12\x19.sbxswarm.v1.DrainRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x16\x82\xd3\xe4\x93\x02\x10\"\x0e/v1/node/drain\x12b\n" +
 	"\n" +
 	"RevokeNode\x12\x1e.sbxswarm.v1.RevokeNodeRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/node/revoke\x12b\n" +
-	"\vListRevoked\x12\x1f.sbxswarm.v1.ListRevokedRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/node/revokedB\xb4\x01\n" +
+	"\vListRevoked\x12\x1f.sbxswarm.v1.ListRevokedRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/node/revoked\x12]\n" +
+	"\tListNodes\x12\x1d.sbxswarm.v1.ListNodesRequest\x1a\x1e.sbxswarm.v1.ListNodesResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodesB\xb4\x01\n" +
 	"\x0fcom.sbxswarm.v1B\tNodeProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -372,7 +647,7 @@ func file_sbxswarm_v1_node_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_node_proto_rawDescData
 }
 
-var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_sbxswarm_v1_node_proto_goTypes = []any{
 	(*GetNodeInfoRequest)(nil), // 0: sbxswarm.v1.GetNodeInfoRequest
 	(*CordonRequest)(nil),      // 1: sbxswarm.v1.CordonRequest
@@ -381,25 +656,33 @@ var file_sbxswarm_v1_node_proto_goTypes = []any{
 	(*ListRevokedRequest)(nil), // 4: sbxswarm.v1.ListRevokedRequest
 	(*RevokedList)(nil),        // 5: sbxswarm.v1.RevokedList
 	(*NodeInfo)(nil),           // 6: sbxswarm.v1.NodeInfo
+	(*ListNodesRequest)(nil),   // 7: sbxswarm.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),  // 8: sbxswarm.v1.ListNodesResponse
+	(*NodeSummary)(nil),        // 9: sbxswarm.v1.NodeSummary
+	nil,                        // 10: sbxswarm.v1.NodeSummary.LabelsEntry
 }
 var file_sbxswarm_v1_node_proto_depIdxs = []int32{
-	0, // 0: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
-	1, // 1: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
-	1, // 2: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
-	2, // 3: sbxswarm.v1.NodeService.Drain:input_type -> sbxswarm.v1.DrainRequest
-	3, // 4: sbxswarm.v1.NodeService.RevokeNode:input_type -> sbxswarm.v1.RevokeNodeRequest
-	4, // 5: sbxswarm.v1.NodeService.ListRevoked:input_type -> sbxswarm.v1.ListRevokedRequest
-	6, // 6: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
-	6, // 7: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
-	6, // 8: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
-	6, // 9: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
-	5, // 10: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
-	5, // 11: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
-	6, // [6:12] is the sub-list for method output_type
-	0, // [0:6] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	9,  // 0: sbxswarm.v1.ListNodesResponse.nodes:type_name -> sbxswarm.v1.NodeSummary
+	10, // 1: sbxswarm.v1.NodeSummary.labels:type_name -> sbxswarm.v1.NodeSummary.LabelsEntry
+	0,  // 2: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
+	1,  // 3: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
+	1,  // 4: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
+	2,  // 5: sbxswarm.v1.NodeService.Drain:input_type -> sbxswarm.v1.DrainRequest
+	3,  // 6: sbxswarm.v1.NodeService.RevokeNode:input_type -> sbxswarm.v1.RevokeNodeRequest
+	4,  // 7: sbxswarm.v1.NodeService.ListRevoked:input_type -> sbxswarm.v1.ListRevokedRequest
+	7,  // 8: sbxswarm.v1.NodeService.ListNodes:input_type -> sbxswarm.v1.ListNodesRequest
+	6,  // 9: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 10: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 11: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 12: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
+	5,  // 13: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
+	5,  // 14: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
+	8,  // 15: sbxswarm.v1.NodeService.ListNodes:output_type -> sbxswarm.v1.ListNodesResponse
+	9,  // [9:16] is the sub-list for method output_type
+	2,  // [2:9] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_sbxswarm_v1_node_proto_init() }
@@ -413,7 +696,7 @@ func file_sbxswarm_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_node_proto_rawDesc), len(file_sbxswarm_v1_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

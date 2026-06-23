@@ -10,6 +10,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// NodeRow is one node's summary for ListNodes, assembled by the wiring layer
+// (node.go) so apiserver need not import membership. Field names/units mirror
+// membership.NodeState.
+type NodeRow struct {
+	NodeID, NodeName                    string
+	Cordoned, Draining                  bool
+	Labels                              map[string]string
+	Capabilities, Workspaces, Templates []string
+	LimitCPU, LimitMemKB, LimitDiskGB  float64
+	AllocCPU, AllocMemKB, AllocDiskGB  float64
+	ActualCPU, ActualMem               float64
+}
+
 // Cordoner is implemented by membership.Cluster. It is a minimal interface so
 // NodeService does not import the membership package (avoiding a cycle).
 type Cordoner interface {
@@ -27,8 +40,9 @@ type Revoker interface {
 type NodeService struct {
 	sbxv1.UnimplementedNodeServiceServer
 	nodeID, nodeName, version string
-	cordoner                  Cordoner // optional; nil when not in cluster mode
-	revoker                   Revoker  // optional; nil when not in cluster mode
+	cordoner                  Cordoner      // optional; nil when not in cluster mode
+	revoker                   Revoker       // optional; nil when not in cluster mode
+	nodeLister                func() []NodeRow // optional; nil until wired by node.go
 	draining                  atomic.Bool
 }
 
@@ -118,4 +132,33 @@ func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.No
 		Cordoned: true,
 		Draining: true,
 	}, nil
+}
+
+// SetNodeLister wires the swarm-node snapshot source (node.go). nil-safe:
+// without it, ListNodes reports self identity only.
+func (s *NodeService) SetNodeLister(fn func() []NodeRow) { s.nodeLister = fn }
+
+// Draining reports this node's drain flag (self-only; not gossiped).
+func (s *NodeService) Draining() bool { return s.draining.Load() }
+
+// ListNodes returns self plus gossiped peers (a node present here is alive by
+// construction — dead nodes are removed from routing).
+func (s *NodeService) ListNodes(_ context.Context, _ *sbxv1.ListNodesRequest) (*sbxv1.ListNodesResponse, error) {
+	out := &sbxv1.ListNodesResponse{}
+	if s.nodeLister == nil {
+		out.Nodes = append(out.Nodes, &sbxv1.NodeSummary{
+			NodeId: s.nodeID, NodeName: s.nodeName, Draining: s.draining.Load(),
+		})
+		return out, nil
+	}
+	for _, r := range s.nodeLister() {
+		out.Nodes = append(out.Nodes, &sbxv1.NodeSummary{
+			NodeId: r.NodeID, NodeName: r.NodeName, Cordoned: r.Cordoned, Draining: r.Draining,
+			Labels: r.Labels, Capabilities: r.Capabilities, Workspaces: r.Workspaces, Templates: r.Templates,
+			LimitCpu: r.LimitCPU, LimitMemKb: r.LimitMemKB, LimitDiskGb: r.LimitDiskGB,
+			AllocCpu: r.AllocCPU, AllocMemKb: r.AllocMemKB, AllocDiskGb: r.AllocDiskGB,
+			ActualCpu: r.ActualCPU, ActualMem: r.ActualMem,
+		})
+	}
+	return out, nil
 }

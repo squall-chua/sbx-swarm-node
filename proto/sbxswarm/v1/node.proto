@@ -29,6 +29,9 @@ service NodeService {
   rpc ListRevoked(ListRevokedRequest) returns (RevokedList) {
     option (google.api.http) = {get: "/v1/node/revoked"};
   }
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
+    option (google.api.http) = {get: "/v1/nodes"};
+  }
 }
 
 message GetNodeInfoRequest {}
@@ -53,4 +56,26 @@ message NodeInfo {
   string version = 3;
   bool cordoned = 4;
   bool draining = 5;
+}
+
+message ListNodesRequest {}
+message ListNodesResponse { repeated NodeSummary nodes = 1; }
+
+message NodeSummary {
+  string node_id = 1;
+  string node_name = 2;
+  bool cordoned = 3;
+  bool draining = 4;
+  map<string, string> labels = 5;
+  repeated string capabilities = 6;
+  repeated string workspaces = 7;
+  repeated string templates = 8;
+  double limit_cpu = 9;
+  double limit_mem_kb = 10;
+  double limit_disk_gb = 11;
+  double alloc_cpu = 12;
+  double alloc_mem_kb = 13;
+  double alloc_disk_gb = 14;
+  double actual_cpu = 15;
+  double actual_mem = 16;
 }

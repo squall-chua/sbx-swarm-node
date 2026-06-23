@@ -231,6 +231,30 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		mgr.SetOwnedIDsNotifier(cl)
 	}
 
+	nodeSvc.SetNodeLister(func() []apiserver.NodeRow {
+		// Self row: live capacity + current templates + drain/cordon state.
+		lc, lm, ld := capt.Limits()
+		ac, am, ad := capt.Snapshot()
+		tmpls, _ := mgr.Backend().ListTemplates(context.Background())
+		self := apiserver.NodeRow{
+			NodeID: id.NodeID, NodeName: cfg.NodeName, Draining: nodeSvc.Draining(),
+			Cordoned:     clusterInstance != nil && clusterInstance.LocalNodeState().Cordoned,
+			Labels:       cfg.Labels,
+			Capabilities: []string{"clone", "stats", "exec"},
+			Workspaces:   workspaceNames(cfg.Workspaces),
+			Templates:    tmpls,
+			LimitCPU:     lc, LimitMemKB: lm, LimitDiskGB: ld,
+			AllocCPU:     ac, AllocMemKB: am, AllocDiskGB: ad,
+		}
+		rows := []apiserver.NodeRow{self}
+		if clusterInstance != nil {
+			for _, ns := range clusterInstance.PeerStates() {
+				rows = append(rows, rowFromState(ns))
+			}
+		}
+		return rows
+	})
+
 	coord := coordinator.New(func() []scheduler.Candidate {
 		return buildCandidates(id.NodeID, cfg, capt, mgr, clusterInstance, tbl)
 	})
@@ -528,6 +552,17 @@ func nameSet(ss []string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+// rowFromState maps a gossiped NodeState to a NodeRow (peer view: no name/draining).
+func rowFromState(ns membership.NodeState) apiserver.NodeRow {
+	return apiserver.NodeRow{
+		NodeID: ns.NodeID, Cordoned: ns.Cordoned, Labels: ns.Labels,
+		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, Templates: ns.Templates,
+		LimitCPU: ns.LimitCPU, LimitMemKB: ns.LimitMemKB, LimitDiskGB: ns.LimitDiskGB,
+		AllocCPU: ns.AllocCPU, AllocMemKB: ns.AllocMemKB, AllocDiskGB: ns.AllocDiskGB,
+		ActualCPU: ns.ActualCPU, ActualMem: ns.ActualMem,
+	}
 }
 
 // buildCandidates assembles the self candidate (live local capacity) + gossiped peers.

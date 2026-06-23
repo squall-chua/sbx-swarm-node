@@ -68,3 +68,27 @@ func TestNodeService_ListRevoked(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"nB", "nC"}, reply.NodeIds)
 }
+
+func TestNodeService_ListNodes(t *testing.T) {
+	svc := NewNodeService("n1", "node-one", "test")
+
+	// No lister: self identity only.
+	resp, err := svc.ListNodes(context.Background(), &sbxv1.ListNodesRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Nodes, 1)
+	require.Equal(t, "n1", resp.Nodes[0].NodeId)
+
+	// With a lister returning self + one peer.
+	svc.SetNodeLister(func() []NodeRow {
+		return []NodeRow{
+			{NodeID: "n1", NodeName: "node-one", LimitCPU: 2},
+			{NodeID: "n2", Cordoned: true, Labels: map[string]string{"zone": "b"}},
+		}
+	})
+	resp, err = svc.ListNodes(context.Background(), &sbxv1.ListNodesRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Nodes, 2)
+	require.Equal(t, float64(2), resp.Nodes[0].LimitCpu)
+	require.True(t, resp.Nodes[1].Cordoned)
+	require.Equal(t, "b", resp.Nodes[1].Labels["zone"])
+}
