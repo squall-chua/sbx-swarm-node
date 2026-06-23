@@ -174,7 +174,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		peer.WithNodeKey(id.NodeID, id.PrivateKey),
 		peer.WithPinResolver(func(nodeID string) ([]byte, bool) { return tbl.PubKey(nodeID) }),
 	)
-	fwd := apiserver.NewForwarder(tbl, pool)
+	fwd := apiserver.NewForwarder(tbl, pool, id.NodeID)
 
 	// Build the initial local NodeState from config + current sandbox list.
 	swarmName := cfg.SwarmName

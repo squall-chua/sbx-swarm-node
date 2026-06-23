@@ -60,6 +60,7 @@ func (*GetNodeInfoRequest) Descriptor() ([]byte, []int) {
 
 type CordonRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"` // empty = self
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -94,8 +95,16 @@ func (*CordonRequest) Descriptor() ([]byte, []int) {
 	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *CordonRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
 type DrainRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"` // empty = self
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,6 +137,13 @@ func (x *DrainRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use DrainRequest.ProtoReflect.Descriptor instead.
 func (*DrainRequest) Descriptor() ([]byte, []int) {
 	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DrainRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
 }
 
 type RevokeNodeRequest struct {
@@ -735,9 +751,11 @@ var File_sbxswarm_v1_node_proto protoreflect.FileDescriptor
 const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x16sbxswarm/v1/node.proto\x12\vsbxswarm.v1\x1a\x1cgoogle/api/annotations.proto\"\x14\n" +
-	"\x12GetNodeInfoRequest\"\x0f\n" +
-	"\rCordonRequest\"\x0e\n" +
-	"\fDrainRequest\",\n" +
+	"\x12GetNodeInfoRequest\"(\n" +
+	"\rCordonRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"'\n" +
+	"\fDrainRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\",\n" +
 	"\x11RevokeNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x14\n" +
 	"\x12ListRevokedRequest\"(\n" +

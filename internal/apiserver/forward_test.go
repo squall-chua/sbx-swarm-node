@@ -5,6 +5,7 @@ import (
 	"net"
 	"path/filepath"
 	"testing"
+	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
@@ -59,7 +60,7 @@ func TestForward_UnaryGetSandbox(t *testing.T) {
 
 	// --- Server A: forwarding interceptor only, no real sandbox service ---
 	lisA := bufconn.Listen(bufSize)
-	fwd := NewForwarder(tbl, pool)
+	fwd := NewForwarder(tbl, pool, "nA")
 	grpcA := grpc.NewServer(grpc.UnaryInterceptor(fwd.UnaryInterceptor()))
 	// Register sandbox service on A too (so the method is known to gRPC), but
 	// with an empty manager — it should never be called for nB's sandbox.
@@ -89,6 +90,33 @@ func TestForward_UnaryGetSandbox(t *testing.T) {
 	require.Equal(t, "nB", got.OwnerNode)
 }
 
+// TestForwarder_RoutesCordonByNodeID: a Cordon request with an empty node_id is handled
+// locally; one with a peer node_id is forwarded (and errors when the peer is unreachable).
+func TestForwarder_RoutesCordonByNodeID(t *testing.T) {
+	tbl := routing.NewTable("self")
+	tbl.Upsert("peer2", "127.0.0.1:65501", false, nil) // unreachable addr; we assert dial is attempted
+
+	fwd := NewForwarder(tbl, peer.NewPool(peer.WithCreds(insecure.NewCredentials())), "self")
+	interceptor := fwd.UnaryInterceptor()
+
+	called := false
+	handler := func(ctx context.Context, req any) (any, error) { called = true; return &sbxv1.NodeInfo{}, nil }
+
+	// Empty node_id -> handled locally.
+	_, err := interceptor(context.Background(), &sbxv1.CordonRequest{}, &grpc.UnaryServerInfo{FullMethod: "/sbxswarm.v1.NodeService/Cordon"}, handler)
+	require.NoError(t, err)
+	require.True(t, called, "empty node_id must run locally")
+
+	// Peer node_id -> forwarded (dial fails to the bogus addr => error, NOT local handling).
+	// Short deadline so the bogus-addr dial fails fast instead of waiting gRPC's default timeout.
+	called = false
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err = interceptor(ctx, &sbxv1.CordonRequest{NodeId: "peer2"}, &grpc.UnaryServerInfo{FullMethod: "/sbxswarm.v1.NodeService/Cordon"}, handler)
+	require.Error(t, err, "forwarding to an unreachable peer should error")
+	require.False(t, called, "peer-targeted cordon must not run the local handler")
+}
+
 // TestForward_LocalPassthrough: a request for a local sandbox goes to the local handler.
 func TestForward_LocalPassthrough(t *testing.T) {
 	const bufSize = 1 << 20
@@ -108,7 +136,7 @@ func TestForward_LocalPassthrough(t *testing.T) {
 	pool := peer.NewPool(peer.WithCreds(insecure.NewCredentials()))
 	t.Cleanup(pool.Close)
 
-	fwd := NewForwarder(tbl, pool)
+	fwd := NewForwarder(tbl, pool, "nA")
 	grpcA := grpc.NewServer(grpc.UnaryInterceptor(fwd.UnaryInterceptor()))
 	sbxv1.RegisterSandboxServiceServer(grpcA, svcA)
 	go grpcA.Serve(lisA) //nolint:errcheck

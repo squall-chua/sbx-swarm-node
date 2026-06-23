@@ -39,9 +39,13 @@ service NodeService {
 
 message GetNodeInfoRequest {}
 
-message CordonRequest {}
+message CordonRequest {
+  string node_id = 1; // empty = self
+}
 
-message DrainRequest {}
+message DrainRequest {
+  string node_id = 1; // empty = self
+}
 
 message RevokeNodeRequest {
   string node_id = 1;

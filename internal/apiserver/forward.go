@@ -15,19 +15,71 @@ import (
 type Forwarder struct {
 	tbl  *routing.Table
 	pool *peer.Pool
+	self string
 }
 
 // NewForwarder builds the forwarder.
-func NewForwarder(tbl *routing.Table, pool *peer.Pool) *Forwarder {
-	return &Forwarder{tbl: tbl, pool: pool}
+func NewForwarder(tbl *routing.Table, pool *peer.Pool, self string) *Forwarder {
+	return &Forwarder{tbl: tbl, pool: pool, self: self}
 }
 
 // idExtractor pulls the routable id from a request that has one.
 type idExtractor interface{ GetId() string }
 
+// nodeIDExtractor pulls a target node id from a node-control request (Cordon/Drain).
+type nodeIDExtractor interface{ GetNodeId() string }
+
+// isNodeControlMethod reports whether the full method is one of the three
+// node-control RPCs that accept a node_id for cross-node routing.
+// This guard is required to prevent RevokeNode (whose request also has GetNodeId)
+// from being misrouted.
+func isNodeControlMethod(m string) bool {
+	return m == "/sbxswarm.v1.NodeService/Cordon" ||
+		m == "/sbxswarm.v1.NodeService/Uncordon" ||
+		m == "/sbxswarm.v1.NodeService/Drain"
+}
+
+// routableNode pulls a target node id from a node-control request.
+func routableNode(req any) (string, bool) {
+	e, ok := req.(nodeIDExtractor)
+	if !ok {
+		return "", false
+	}
+	id := e.GetNodeId()
+	if id == "" {
+		return "", false
+	}
+	return id, true
+}
+
 // UnaryInterceptor relays unary calls whose request carries a remote sandbox id.
 func (f *Forwarder) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		// Node-control routing: Cordon/Uncordon/Drain with a peer node_id.
+		if isNodeControlMethod(info.FullMethod) {
+			if nodeID, ok := routableNode(req); ok && nodeID != f.self {
+				addr, ok := f.tbl.Addr(nodeID)
+				if !ok {
+					return handler(ctx, req) // unknown node: let local handler answer
+				}
+				conn, err := f.pool.Conn(addr, nodeID)
+				if err != nil {
+					return nil, err
+				}
+				out := newReplyFor(info.FullMethod)
+				if out == nil {
+					return handler(ctx, req)
+				}
+				if md, ok := metadata.FromIncomingContext(ctx); ok {
+					ctx = metadata.NewOutgoingContext(ctx, md)
+				}
+				if err := conn.Invoke(ctx, info.FullMethod, req, out); err != nil {
+					return nil, err
+				}
+				return out, nil
+			}
+		}
+
 		id, ok := routableID(req)
 		if !ok || f.tbl.IsLocal(id) {
 			return handler(ctx, req)
@@ -100,6 +152,10 @@ func newReplyFor(fullMethod string) any {
 		return new(sbxv1.Operation)
 	case "/sbxswarm.v1.SandboxService/KeepAlive":
 		return new(sbxv1.Sandbox)
+	case "/sbxswarm.v1.NodeService/Cordon",
+		"/sbxswarm.v1.NodeService/Uncordon",
+		"/sbxswarm.v1.NodeService/Drain":
+		return new(sbxv1.NodeInfo)
 	default:
 		return nil
 	}
