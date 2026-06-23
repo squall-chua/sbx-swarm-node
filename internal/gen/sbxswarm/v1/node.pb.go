@@ -277,6 +277,7 @@ type NodeInfo struct {
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
 	Cordoned      bool                   `protobuf:"varint,4,opt,name=cordoned,proto3" json:"cordoned,omitempty"`
 	Draining      bool                   `protobuf:"varint,5,opt,name=draining,proto3" json:"draining,omitempty"`
+	Role          string                 `protobuf:"bytes,6,opt,name=role,proto3" json:"role,omitempty"` // caller's role: "admin" | "read-only" | "" (node/none)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -344,6 +345,13 @@ func (x *NodeInfo) GetDraining() bool {
 		return x.Draining
 	}
 	return false
+}
+
+func (x *NodeInfo) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
 }
 
 type ListNodesRequest struct {
@@ -760,13 +768,14 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x14\n" +
 	"\x12ListRevokedRequest\"(\n" +
 	"\vRevokedList\x12\x19\n" +
-	"\bnode_ids\x18\x01 \x03(\tR\anodeIds\"\x92\x01\n" +
+	"\bnode_ids\x18\x01 \x03(\tR\anodeIds\"\xa6\x01\n" +
 	"\bNodeInfo\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1a\n" +
 	"\bcordoned\x18\x04 \x01(\bR\bcordoned\x12\x1a\n" +
-	"\bdraining\x18\x05 \x01(\bR\bdraining\"\x12\n" +
+	"\bdraining\x18\x05 \x01(\bR\bdraining\x12\x12\n" +
+	"\x04role\x18\x06 \x01(\tR\x04role\"\x12\n" +
 	"\x10ListNodesRequest\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x18.sbxswarm.v1.NodeSummaryR\x05nodes\"\x16\n" +

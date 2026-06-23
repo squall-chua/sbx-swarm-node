@@ -63,6 +63,7 @@ message NodeInfo {
   string version = 3;
   bool cordoned = 4;
   bool draining = 5;
+  string role = 6; // caller's role: "admin" | "read-only" | "" (node/none)
 }
 
 message ListNodesRequest {}

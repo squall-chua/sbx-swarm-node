@@ -81,11 +81,12 @@ func (s *NodeService) ListRevoked(_ context.Context, _ *sbxv1.ListRevokedRequest
 }
 
 // GetNodeInfo returns static node identity.
-func (s *NodeService) GetNodeInfo(_ context.Context, _ *sbxv1.GetNodeInfoRequest) (*sbxv1.NodeInfo, error) {
+func (s *NodeService) GetNodeInfo(ctx context.Context, _ *sbxv1.GetNodeInfoRequest) (*sbxv1.NodeInfo, error) {
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
+		Role:     principalFromContext(ctx).userRole,
 	}, nil
 }
 

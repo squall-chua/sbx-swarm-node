@@ -88,6 +88,20 @@ func TestNodeService_ListTemplates(t *testing.T) {
 	require.Equal(t, "i", resp.Templates[0].Id)
 }
 
+func TestGetNodeInfo_ReturnsCallerRole(t *testing.T) {
+	svc := NewNodeService("n1", "node-one", "v1.2.3")
+
+	adminCtx := context.WithValue(context.Background(), principalCtxKey{}, principal{userRole: "admin"})
+	info, err := svc.GetNodeInfo(adminCtx, &sbxv1.GetNodeInfoRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "admin", info.Role)
+
+	roCtx := context.WithValue(context.Background(), principalCtxKey{}, principal{userRole: "read-only"})
+	info, err = svc.GetNodeInfo(roCtx, &sbxv1.GetNodeInfoRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "read-only", info.Role)
+}
+
 func TestNodeService_ListNodes(t *testing.T) {
 	svc := NewNodeService("n1", "node-one", "test")
 
