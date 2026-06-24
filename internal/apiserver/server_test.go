@@ -49,7 +49,7 @@ func startTestServer(t *testing.T) (addr string, cleanup func()) {
 		Signer: testSigner(),
 		Cert:   cert,
 	}
-	h, grpcSrv, err := Build(opts)
+	h, _, grpcSrv, err := Build(opts)
 	require.NoError(t, err)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -120,7 +120,7 @@ func startTestServerWithSandboxes(t *testing.T) (addr string, cleanup func()) {
 		Cert:      cert,
 		Sandboxes: svc,
 	}
-	h, grpcSrv, err := Build(opts)
+	h, _, grpcSrv, err := Build(opts)
 	require.NoError(t, err)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

@@ -27,23 +27,26 @@ type Options struct {
 	Keys                      auth.KeyStore
 	Signer                    *auth.Signer
 	Cert                      tls.Certificate
-	Health                    *obs.Health     // optional; health routes mounted if set
-	Sandboxes                 *SandboxService // optional; registered if set
-	Events                    *events.Bus     // optional; mounts /v1/events (SSE) under auth if set
-	Policy                    *PolicyService  // optional; registered if set
-	Forward                   *Forwarder      // optional; mounts unary forwarding interceptor if set
-	Routing                   *routing.Table  // optional; used for SSE peer-merge when combined with Peers
-	Peers                     *peer.Pool      // optional; used for SSE peer-merge when Routing is set
-	Pins                      PinResolver     // optional; resolves per-node TLS pin for OwnerProxy
+	Health                    *obs.Health      // optional; health routes mounted if set
+	Sandboxes                 *SandboxService  // optional; registered if set
+	Events                    *events.Bus      // optional; mounts /v1/events (SSE) under auth if set
+	Policy                    *PolicyService   // optional; registered if set
+	Forward                   *Forwarder       // optional; mounts unary forwarding interceptor if set
+	Routing                   *routing.Table   // optional; used for SSE peer-merge when combined with Peers
+	Peers                     *peer.Pool       // optional; used for SSE peer-merge when Routing is set
+	Pins                      PinResolver      // optional; resolves per-node TLS pin for OwnerProxy
 	Internal                  *InternalService // optional; node->node provision RPC (grpc-only, no gateway)
-	NodeSvc                   *NodeService    // optional; if set, used instead of creating a new one (allows pre-wired Cordoner)
+	NodeSvc                   *NodeService     // optional; if set, used instead of creating a new one (allows pre-wired Cordoner)
 	Denylist                  func(nodeID string) bool
 	PubKeyFor                 func(nodeID string) ([]byte, bool)
 }
 
-// Build constructs the one-port handler and the gRPC server. The caller serves
-// the handler over TLS (ALPN h2) and stops grpcSrv on shutdown.
-func Build(opts Options) (http.Handler, *grpc.Server, error) {
+// Build constructs the primary handler (gRPC + REST multiplex), the bare REST
+// handler (SPA + /v1 + SSE + terminal WS, no gRPC surface), and the gRPC server.
+// The caller serves the primary handler over the pinned TLS port; the REST
+// handler can additionally be served on a browser-facing console port with a
+// browser-compatible cert. The caller stops grpcSrv on shutdown.
+func Build(opts Options) (http.Handler, http.Handler, *grpc.Server, error) {
 	node := opts.NodeSvc
 	if node == nil {
 		node = NewNodeService(opts.NodeID, opts.NodeName, opts.Version)
@@ -82,7 +85,7 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 	// signed x-sbx-authz token.
 	loopConn, _, err := loopback(grpcSrv)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	gw := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
@@ -93,16 +96,16 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 		runtime.WithMetadata(roleAnnotator(opts.Signer)),
 	)
 	if err := sbxv1.RegisterNodeServiceHandler(context.Background(), gw, loopConn); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if opts.Sandboxes != nil {
 		if err := sbxv1.RegisterSandboxServiceHandler(context.Background(), gw, loopConn); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	if opts.Policy != nil {
 		if err := sbxv1.RegisterPolicyServiceHandler(context.Background(), gw, loopConn); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -150,7 +153,7 @@ func Build(opts Options) (http.Handler, *grpc.Server, error) {
 		rest.Handle("/metrics", opts.Health.Handler())
 	}
 
-	return Multiplex(grpcSrv, rest), grpcSrv, nil
+	return Multiplex(grpcSrv, rest), rest, grpcSrv, nil
 }
 
 // roleAnnotator injects the HTTP-authenticated role across the loopback as a

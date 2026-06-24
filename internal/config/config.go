@@ -14,13 +14,20 @@ import (
 
 // Config is the node configuration. Extended in M4 with cluster fields.
 type Config struct {
-	NodeName    string   `yaml:"node_name"`
-	DataDir     string   `yaml:"data_dir"`
-	ListenAddr  string   `yaml:"listen_addr"`
-	LogLevel    string   `yaml:"log_level"`
-	TLSCertFile string   `yaml:"tls_cert_file"`
-	TLSKeyFile  string   `yaml:"tls_key_file"`
-	APIKeys     []APIKey `yaml:"api_keys"`
+	NodeName    string `yaml:"node_name"`
+	DataDir     string `yaml:"data_dir"`
+	ListenAddr  string `yaml:"listen_addr"`
+	LogLevel    string `yaml:"log_level"`
+	TLSCertFile string `yaml:"tls_cert_file"`
+	TLSKeyFile  string `yaml:"tls_key_file"`
+	// ConsoleAddr, when set, starts a SECOND browser-facing listener that serves
+	// the embedded console SPA + REST over a browser-compatible cert. The main
+	// ListenAddr keeps its pinned Ed25519 identity cert (ADR-0004), which
+	// browsers reject. Empty disables the console listener.
+	ConsoleAddr        string   `yaml:"console_addr"`
+	ConsoleTLSCertFile string   `yaml:"console_tls_cert_file"` // optional; empty → self-signed ECDSA
+	ConsoleTLSKeyFile  string   `yaml:"console_tls_key_file"`
+	APIKeys            []APIKey `yaml:"api_keys"`
 
 	// M4 cluster fields.
 	ClusterSecret           string            `yaml:"cluster_secret"`
@@ -32,7 +39,7 @@ type Config struct {
 	Workspaces              []WorkspaceConfig `yaml:"workspaces"`
 	DefaultStrategy         string            `yaml:"default_strategy"`
 	DefaultSandboxResources SandboxResources  `yaml:"default_sandbox_resources"`
-	Backend                 string            `yaml:"backend"`       // "fake" (default) | "sdk"
+	Backend                 string            `yaml:"backend"`      // "fake" (default) | "sdk"
 	IdleTimeout             string            `yaml:"idle_timeout"` // Go duration, e.g. "30m"; "" or <=0 disables idle-stop
 }
 
@@ -120,11 +127,12 @@ func Load(args []string, lookupEnv func(string) (string, bool)) (*Config, error)
 
 	fs := flag.NewFlagSet("sbx-swarm-node", flag.ContinueOnError)
 	var (
-		configPath = fs.String("config", "", "path to YAML config file")
-		nodeName   = fs.String("node-name", "", "human-readable node name")
-		dataDir    = fs.String("data-dir", "", "directory for node key and database")
-		listenAddr = fs.String("listen-addr", "", "address for the HTTP server")
-		logLevel   = fs.String("log-level", "", "debug|info|warn|error")
+		configPath  = fs.String("config", "", "path to YAML config file")
+		nodeName    = fs.String("node-name", "", "human-readable node name")
+		dataDir     = fs.String("data-dir", "", "directory for node key and database")
+		listenAddr  = fs.String("listen-addr", "", "address for the HTTP server")
+		consoleAddr = fs.String("console-addr", "", "address for the browser console listener (empty disables)")
+		logLevel    = fs.String("log-level", "", "debug|info|warn|error")
 	)
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -151,6 +159,9 @@ func Load(args []string, lookupEnv func(string) (string, bool)) (*Config, error)
 	if v, ok := lookupEnv("SBX_LISTEN_ADDR"); ok {
 		cfg.ListenAddr = v
 	}
+	if v, ok := lookupEnv("SBX_CONSOLE_ADDR"); ok {
+		cfg.ConsoleAddr = v
+	}
 	if v, ok := lookupEnv("SBX_LOG_LEVEL"); ok {
 		cfg.LogLevel = v
 	}
@@ -164,6 +175,8 @@ func Load(args []string, lookupEnv func(string) (string, bool)) (*Config, error)
 			cfg.DataDir = *dataDir
 		case "listen-addr":
 			cfg.ListenAddr = *listenAddr
+		case "console-addr":
+			cfg.ConsoleAddr = *consoleAddr
 		case "log-level":
 			cfg.LogLevel = *logLevel
 		}

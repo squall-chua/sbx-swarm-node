@@ -25,7 +25,7 @@ func startRoleGateServer(t *testing.T) (string, func()) {
 	gen := ids.NewGen("n1")
 	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, gen)
 	svc := NewSandboxService(mgr, ops.NewManager(st, gen))
-	h, grpcSrv, err := Build(Options{
+	h, _, grpcSrv, err := Build(Options{
 		NodeID: "n1", NodeName: "n", Version: "v0",
 		Keys:      keyMap{"adm": "admin", "ro": "read-only"},
 		Signer:    testSigner(),

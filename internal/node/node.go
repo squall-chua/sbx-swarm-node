@@ -42,20 +42,22 @@ import (
 
 // Node is a single standalone node.
 type Node struct {
-	cfg     *config.Config
-	log     *slog.Logger
-	id      *identity.Identity
-	ids     *ids.Gen
-	store   *store.Store
-	mgr     *sandbox.Manager
-	health  *obs.Health
-	srv     *http.Server
-	grpcSrv *grpc.Server
-	cert    tls.Certificate
-	ln      net.Listener
-	cancel  context.CancelFunc  // cancels background collector goroutines
-	cluster *membership.Cluster // nil when not in cluster mode
-	pool    *peer.Pool          // nil when not in cluster mode
+	cfg        *config.Config
+	log        *slog.Logger
+	id         *identity.Identity
+	ids        *ids.Gen
+	store      *store.Store
+	mgr        *sandbox.Manager
+	health     *obs.Health
+	srv        *http.Server
+	grpcSrv    *grpc.Server
+	cert       tls.Certificate
+	ln         net.Listener
+	consoleSrv *http.Server // nil unless cfg.ConsoleAddr is set (browser-facing listener)
+	consoleLn  net.Listener
+	cancel     context.CancelFunc  // cancels background collector goroutines
+	cluster    *membership.Cluster // nil when not in cluster mode
+	pool       *peer.Pool          // nil when not in cluster mode
 }
 
 // New constructs a node: it establishes identity, opens the store, loads the TLS
@@ -276,7 +278,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		},
 	)
 
-	handler, grpcSrv, err := apiserver.Build(apiserver.Options{
+	handler, consoleHandler, grpcSrv, err := apiserver.Build(apiserver.Options{
 		NodeID:    id.NodeID,
 		NodeName:  cfg.NodeName,
 		Version:   version,
@@ -324,7 +326,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		log.Info("recovered interrupted operations", "count", n)
 	}
 
-	return &Node{
+	nodeInst := &Node{
 		cfg:     cfg,
 		log:     log,
 		id:      id,
@@ -341,7 +343,30 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		},
 		grpcSrv: grpcSrv,
 		cert:    cert,
-	}, nil
+	}
+
+	// Optional browser-facing console listener: serves the SPA + REST (no gRPC
+	// surface) over a browser-compatible cert (operator-provided, else a
+	// self-signed ECDSA P-256 cert persisted under DataDir/console). The main
+	// ListenAddr keeps its pinned Ed25519 identity cert (browsers reject it).
+	if cfg.ConsoleAddr != "" {
+		consoleCert, cerr := tlsutil.LoadOrGenerate(cfg.ConsoleTLSCertFile, cfg.ConsoleTLSKeyFile, filepath.Join(cfg.DataDir, "console"))
+		if cerr != nil {
+			cancel()
+			_ = st.Close()
+			pool.Close()
+			if clusterInstance != nil {
+				_ = clusterInstance.Shutdown()
+			}
+			return nil, fmt.Errorf("console tls: %w", cerr)
+		}
+		nodeInst.consoleSrv = &http.Server{
+			Handler:   consoleHandler,
+			TLSConfig: &tls.Config{Certificates: []tls.Certificate{consoleCert}, NextProtos: []string{"h2", "http/1.1"}},
+		}
+	}
+
+	return nodeInst, nil
 }
 
 // NodeID returns this node's identifier.
@@ -353,6 +378,15 @@ func (n *Node) Addr() string {
 		return n.cfg.ListenAddr
 	}
 	return n.ln.Addr().String()
+}
+
+// ConsoleAddr returns the browser console listen address (valid after Start);
+// empty when no console listener is configured.
+func (n *Node) ConsoleAddr() string {
+	if n.consoleLn == nil {
+		return n.cfg.ConsoleAddr
+	}
+	return n.consoleLn.Addr().String()
 }
 
 // Cluster returns the membership.Cluster (nil in standalone mode).
@@ -372,6 +406,20 @@ func (n *Node) Start() error {
 			n.log.Error("http server stopped", "err", err)
 		}
 	}()
+	if n.consoleSrv != nil {
+		cln, err := net.Listen("tcp", n.cfg.ConsoleAddr)
+		if err != nil {
+			return fmt.Errorf("listen console %s: %w", n.cfg.ConsoleAddr, err)
+		}
+		n.consoleLn = cln
+		go func() {
+			if err := n.consoleSrv.ServeTLS(cln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				n.log.Error("console server stopped", "err", err)
+			}
+		}()
+		n.log.Info("console serving", "addr", n.ConsoleAddr())
+	}
+
 	n.health.SetReady(true)
 	n.log.Info("node serving", "addr", n.Addr())
 
@@ -406,6 +454,9 @@ func (n *Node) Stop(ctx context.Context) error {
 		n.pool.Close()
 	}
 
+	if n.consoleSrv != nil {
+		_ = n.consoleSrv.Shutdown(ctx)
+	}
 	err := n.srv.Shutdown(ctx)
 	n.grpcSrv.Stop()
 	if cerr := n.store.Close(); cerr != nil && err == nil {
