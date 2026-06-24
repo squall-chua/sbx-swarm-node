@@ -2,6 +2,7 @@ node_modules/
 .nuxt/
 .nuxtrc
 .output/
-# Built SPA is produced by scripts/build.sh; keep only the placeholder index.html.
+# Built SPA is produced by scripts/build.sh and is fully gitignored. A tracked
+# empty .gitkeep keeps dist/ present so `//go:embed all:dist` compiles before a build.
 dist/*
-!dist/index.html
+!dist/.gitkeep
