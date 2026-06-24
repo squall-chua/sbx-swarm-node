@@ -433,21 +433,22 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 	}
 	out := Secrets{}
 	for _, st := range secs.Stored {
-		out.Stored = append(out.Stored, StoredSecret{Name: st.Name})
+		out.Stored = append(out.Stored, StoredSecret{Name: st.Name, Type: st.Type})
 	}
 	for _, c := range secs.Custom {
-		// Value field is intentionally empty — write-only (spec §11).
-		out.Custom = append(out.Custom, CustomSecret{Host: c.Target, Env: c.Env})
+		// Value field is intentionally empty — write-only (spec §11). Placeholder
+		// is the non-secret injection token and IS surfaced.
+		out.Custom = append(out.Custom, CustomSecret{Host: c.Target, Env: c.Env, Placeholder: c.Placeholder})
 	}
 	return out, nil
 }
 
-// SecretRemove deletes a secret in scope. NOTE (unverified, integration-only):
-// sdksecret.Remove documents its last arg as `service`, but custom secrets are
-// keyed by target host. Whether passing the host here actually removes a
-// set-custom entry needs a live-daemon integration test to confirm.
+// SecretRemove deletes the custom (set-custom) secret for a target host in scope.
+// Custom secrets are keyed by host, so this uses sdksecret.RemoveCustom (which
+// shells out to `secret rm --host`) — NOT sdksecret.Remove, whose positional arg
+// is a *service* name (passing a host there is a silent no-op). Added in SDK v0.1.4.
 func (b *SDKBackend) SecretRemove(ctx context.Context, scope, host string) error {
-	return sdksecret.Remove(ctx, b.cl, scope, host)
+	return sdksecret.RemoveCustom(ctx, b.cl, scope, host)
 }
 
 // ListTemplates returns the template refs the daemon holds (repository:tag).

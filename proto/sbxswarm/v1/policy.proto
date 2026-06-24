@@ -54,16 +54,25 @@ message SetPolicyRequest {
   string host = 3;
 }
 
-// SecretMsg describes a secret entry. Value is NEVER included (write-only, spec §11).
+// SecretMsg describes a custom secret entry. The secret value is NEVER included
+// (write-only, spec §11). placeholder is the non-secret injection token the proxy
+// swaps for the real value — safe to surface (it is visible inside every sandbox).
 message SecretMsg {
   string host = 1;
   string env = 2;
+  string placeholder = 3;
+}
+
+// StoredSecretMsg describes a stored (service/registry) secret. No value, ever.
+message StoredSecretMsg {
+  string name = 1;
+  string type = 2; // "service" | "registry"
 }
 
 // ListSecretsResponse is the response for ListSecrets. No value fields, ever.
 message ListSecretsResponse {
   repeated SecretMsg custom = 1;
-  repeated string stored = 2;
+  repeated StoredSecretMsg stored = 2;
 }
 
 // SetSecretRequest sets a custom secret. value is write-only: not stored, not

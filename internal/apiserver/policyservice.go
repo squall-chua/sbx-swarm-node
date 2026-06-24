@@ -24,10 +24,17 @@ func NewPolicyService(mgr *sandbox.Manager, a *audit.Log) *PolicyService {
 	return &PolicyService{mgr: mgr, audit: a}
 }
 
-// scopeName resolves a swarm scope to a backend name. "" is returned as-is
-// (node-global means no per-sandbox scoping at the SDK layer).
+// nodeGlobalScope is the URL-safe sentinel for node-global scope. The empty
+// scope "" can't be addressed over HTTP: Go's mux collapses the "//" empty path
+// segment in /v1/sandboxes//policy and 301-redirects it, breaking the request.
+// A dotless sentinel both survives that and is passed through to the local
+// gateway by OwnerProxy (which only forwards ids containing a ".").
+const nodeGlobalScope = "_node"
+
+// scopeName resolves a swarm scope to a backend name. "" and the node-global
+// sentinel both mean node-global (no per-sandbox scoping at the SDK layer).
 func (s *PolicyService) scopeName(ctx context.Context, scope string) (string, error) {
-	if scope == "" {
+	if scope == "" || scope == nodeGlobalScope {
 		return "", nil
 	}
 	return s.mgr.Resolve(ctx, scope)
@@ -148,11 +155,12 @@ func (s *PolicyService) ListSecrets(ctx context.Context, r *sbxv1.ScopeRequest) 
 	}
 	out := &sbxv1.ListSecretsResponse{}
 	for _, c := range secs.Custom {
-		// Value is intentionally omitted from SecretMsg (no value field exists on SecretMsg).
-		out.Custom = append(out.Custom, &sbxv1.SecretMsg{Host: c.Host, Env: c.Env})
+		// Value is intentionally omitted (write-only). Placeholder is the non-secret
+		// injection token and is safe to return.
+		out.Custom = append(out.Custom, &sbxv1.SecretMsg{Host: c.Host, Env: c.Env, Placeholder: c.Placeholder})
 	}
 	for _, st := range secs.Stored {
-		out.Stored = append(out.Stored, st.Name)
+		out.Stored = append(out.Stored, &sbxv1.StoredSecretMsg{Name: st.Name, Type: st.Type})
 	}
 	return out, nil
 }

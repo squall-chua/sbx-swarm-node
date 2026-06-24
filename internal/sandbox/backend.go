@@ -105,16 +105,19 @@ type PolicyRule struct {
 }
 
 // CustomSecret is a proxy-injected credential. Value is write-only and never
-// returned by reads.
+// returned by reads. Placeholder is the non-secret injection token (returned by
+// reads — it is visible inside every sandbox, not a secret).
 type CustomSecret struct {
-	Host  string `json:"host"`
-	Env   string `json:"env"`
-	Value string `json:"value,omitempty"`
+	Host        string `json:"host"`
+	Env         string `json:"env"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Value       string `json:"value,omitempty"`
 }
 
-// StoredSecret is a non-custom secret entry (name only).
+// StoredSecret is a non-custom secret entry: a service or registry credential.
 type StoredSecret struct {
 	Name string `json:"name"`
+	Type string `json:"type"` // "service" | "registry"
 }
 
 // Secrets is the structured secret inventory (values always masked).

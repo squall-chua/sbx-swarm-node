@@ -295,11 +295,14 @@ func (x *SetPolicyRequest) GetHost() string {
 	return ""
 }
 
-// SecretMsg describes a secret entry. Value is NEVER included (write-only, spec §11).
+// SecretMsg describes a custom secret entry. The secret value is NEVER included
+// (write-only, spec §11). placeholder is the non-secret injection token the proxy
+// swaps for the real value — safe to surface (it is visible inside every sandbox).
 type SecretMsg struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
 	Env           string                 `protobuf:"bytes,2,opt,name=env,proto3" json:"env,omitempty"`
+	Placeholder   string                 `protobuf:"bytes,3,opt,name=placeholder,proto3" json:"placeholder,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -348,18 +351,78 @@ func (x *SecretMsg) GetEnv() string {
 	return ""
 }
 
+func (x *SecretMsg) GetPlaceholder() string {
+	if x != nil {
+		return x.Placeholder
+	}
+	return ""
+}
+
+// StoredSecretMsg describes a stored (service/registry) secret. No value, ever.
+type StoredSecretMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"` // "service" | "registry"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StoredSecretMsg) Reset() {
+	*x = StoredSecretMsg{}
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StoredSecretMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoredSecretMsg) ProtoMessage() {}
+
+func (x *StoredSecretMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoredSecretMsg.ProtoReflect.Descriptor instead.
+func (*StoredSecretMsg) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *StoredSecretMsg) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *StoredSecretMsg) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
 // ListSecretsResponse is the response for ListSecrets. No value fields, ever.
 type ListSecretsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Custom        []*SecretMsg           `protobuf:"bytes,1,rep,name=custom,proto3" json:"custom,omitempty"`
-	Stored        []string               `protobuf:"bytes,2,rep,name=stored,proto3" json:"stored,omitempty"`
+	Stored        []*StoredSecretMsg     `protobuf:"bytes,2,rep,name=stored,proto3" json:"stored,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListSecretsResponse) Reset() {
 	*x = ListSecretsResponse{}
-	mi := &file_sbxswarm_v1_policy_proto_msgTypes[6]
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -371,7 +434,7 @@ func (x *ListSecretsResponse) String() string {
 func (*ListSecretsResponse) ProtoMessage() {}
 
 func (x *ListSecretsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_policy_proto_msgTypes[6]
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +447,7 @@ func (x *ListSecretsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSecretsResponse.ProtoReflect.Descriptor instead.
 func (*ListSecretsResponse) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{6}
+	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListSecretsResponse) GetCustom() []*SecretMsg {
@@ -394,7 +457,7 @@ func (x *ListSecretsResponse) GetCustom() []*SecretMsg {
 	return nil
 }
 
-func (x *ListSecretsResponse) GetStored() []string {
+func (x *ListSecretsResponse) GetStored() []*StoredSecretMsg {
 	if x != nil {
 		return x.Stored
 	}
@@ -415,7 +478,7 @@ type SetSecretRequest struct {
 
 func (x *SetSecretRequest) Reset() {
 	*x = SetSecretRequest{}
-	mi := &file_sbxswarm_v1_policy_proto_msgTypes[7]
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -427,7 +490,7 @@ func (x *SetSecretRequest) String() string {
 func (*SetSecretRequest) ProtoMessage() {}
 
 func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_policy_proto_msgTypes[7]
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +503,7 @@ func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretRequest.ProtoReflect.Descriptor instead.
 func (*SetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{7}
+	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SetSecretRequest) GetScope() string {
@@ -482,7 +545,7 @@ type DeleteSecretRequest struct {
 
 func (x *DeleteSecretRequest) Reset() {
 	*x = DeleteSecretRequest{}
-	mi := &file_sbxswarm_v1_policy_proto_msgTypes[8]
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +557,7 @@ func (x *DeleteSecretRequest) String() string {
 func (*DeleteSecretRequest) ProtoMessage() {}
 
 func (x *DeleteSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_policy_proto_msgTypes[8]
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +570,7 @@ func (x *DeleteSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSecretRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSecretRequest) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{8}
+	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteSecretRequest) GetScope() string {
@@ -547,13 +610,17 @@ const file_sbxswarm_v1_policy_proto_rawDesc = "" +
 	"\x10SetPolicyRequest\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x12\n" +
-	"\x04host\x18\x03 \x01(\tR\x04host\"1\n" +
+	"\x04host\x18\x03 \x01(\tR\x04host\"S\n" +
 	"\tSecretMsg\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x10\n" +
-	"\x03env\x18\x02 \x01(\tR\x03env\"]\n" +
+	"\x03env\x18\x02 \x01(\tR\x03env\x12 \n" +
+	"\vplaceholder\x18\x03 \x01(\tR\vplaceholder\"9\n" +
+	"\x0fStoredSecretMsg\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\"{\n" +
 	"\x13ListSecretsResponse\x12.\n" +
-	"\x06custom\x18\x01 \x03(\v2\x16.sbxswarm.v1.SecretMsgR\x06custom\x12\x16\n" +
-	"\x06stored\x18\x02 \x03(\tR\x06stored\"d\n" +
+	"\x06custom\x18\x01 \x03(\v2\x16.sbxswarm.v1.SecretMsgR\x06custom\x124\n" +
+	"\x06stored\x18\x02 \x03(\v2\x1c.sbxswarm.v1.StoredSecretMsgR\x06stored\"d\n" +
 	"\x10SetSecretRequest\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x12\n" +
 	"\x04host\x18\x02 \x01(\tR\x04host\x12\x10\n" +
@@ -583,7 +650,7 @@ func file_sbxswarm_v1_policy_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_policy_proto_rawDescData
 }
 
-var file_sbxswarm_v1_policy_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_sbxswarm_v1_policy_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_sbxswarm_v1_policy_proto_goTypes = []any{
 	(*Empty)(nil),               // 0: sbxswarm.v1.Empty
 	(*ScopeRequest)(nil),        // 1: sbxswarm.v1.ScopeRequest
@@ -591,28 +658,30 @@ var file_sbxswarm_v1_policy_proto_goTypes = []any{
 	(*ListPolicyResponse)(nil),  // 3: sbxswarm.v1.ListPolicyResponse
 	(*SetPolicyRequest)(nil),    // 4: sbxswarm.v1.SetPolicyRequest
 	(*SecretMsg)(nil),           // 5: sbxswarm.v1.SecretMsg
-	(*ListSecretsResponse)(nil), // 6: sbxswarm.v1.ListSecretsResponse
-	(*SetSecretRequest)(nil),    // 7: sbxswarm.v1.SetSecretRequest
-	(*DeleteSecretRequest)(nil), // 8: sbxswarm.v1.DeleteSecretRequest
+	(*StoredSecretMsg)(nil),     // 6: sbxswarm.v1.StoredSecretMsg
+	(*ListSecretsResponse)(nil), // 7: sbxswarm.v1.ListSecretsResponse
+	(*SetSecretRequest)(nil),    // 8: sbxswarm.v1.SetSecretRequest
+	(*DeleteSecretRequest)(nil), // 9: sbxswarm.v1.DeleteSecretRequest
 }
 var file_sbxswarm_v1_policy_proto_depIdxs = []int32{
 	2, // 0: sbxswarm.v1.ListPolicyResponse.rules:type_name -> sbxswarm.v1.PolicyRuleMsg
 	5, // 1: sbxswarm.v1.ListSecretsResponse.custom:type_name -> sbxswarm.v1.SecretMsg
-	1, // 2: sbxswarm.v1.PolicyService.ListPolicy:input_type -> sbxswarm.v1.ScopeRequest
-	4, // 3: sbxswarm.v1.PolicyService.SetPolicy:input_type -> sbxswarm.v1.SetPolicyRequest
-	1, // 4: sbxswarm.v1.PolicyService.ListSecrets:input_type -> sbxswarm.v1.ScopeRequest
-	7, // 5: sbxswarm.v1.PolicyService.SetSecret:input_type -> sbxswarm.v1.SetSecretRequest
-	8, // 6: sbxswarm.v1.PolicyService.DeleteSecret:input_type -> sbxswarm.v1.DeleteSecretRequest
-	3, // 7: sbxswarm.v1.PolicyService.ListPolicy:output_type -> sbxswarm.v1.ListPolicyResponse
-	0, // 8: sbxswarm.v1.PolicyService.SetPolicy:output_type -> sbxswarm.v1.Empty
-	6, // 9: sbxswarm.v1.PolicyService.ListSecrets:output_type -> sbxswarm.v1.ListSecretsResponse
-	0, // 10: sbxswarm.v1.PolicyService.SetSecret:output_type -> sbxswarm.v1.Empty
-	0, // 11: sbxswarm.v1.PolicyService.DeleteSecret:output_type -> sbxswarm.v1.Empty
-	7, // [7:12] is the sub-list for method output_type
-	2, // [2:7] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	6, // 2: sbxswarm.v1.ListSecretsResponse.stored:type_name -> sbxswarm.v1.StoredSecretMsg
+	1, // 3: sbxswarm.v1.PolicyService.ListPolicy:input_type -> sbxswarm.v1.ScopeRequest
+	4, // 4: sbxswarm.v1.PolicyService.SetPolicy:input_type -> sbxswarm.v1.SetPolicyRequest
+	1, // 5: sbxswarm.v1.PolicyService.ListSecrets:input_type -> sbxswarm.v1.ScopeRequest
+	8, // 6: sbxswarm.v1.PolicyService.SetSecret:input_type -> sbxswarm.v1.SetSecretRequest
+	9, // 7: sbxswarm.v1.PolicyService.DeleteSecret:input_type -> sbxswarm.v1.DeleteSecretRequest
+	3, // 8: sbxswarm.v1.PolicyService.ListPolicy:output_type -> sbxswarm.v1.ListPolicyResponse
+	0, // 9: sbxswarm.v1.PolicyService.SetPolicy:output_type -> sbxswarm.v1.Empty
+	7, // 10: sbxswarm.v1.PolicyService.ListSecrets:output_type -> sbxswarm.v1.ListSecretsResponse
+	0, // 11: sbxswarm.v1.PolicyService.SetSecret:output_type -> sbxswarm.v1.Empty
+	0, // 12: sbxswarm.v1.PolicyService.DeleteSecret:output_type -> sbxswarm.v1.Empty
+	8, // [8:13] is the sub-list for method output_type
+	3, // [3:8] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_sbxswarm_v1_policy_proto_init() }
@@ -626,7 +695,7 @@ func file_sbxswarm_v1_policy_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_policy_proto_rawDesc), len(file_sbxswarm_v1_policy_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
