@@ -219,7 +219,24 @@ func (b *SDKBackend) Ports(ctx context.Context, name string) ([]PublishedPort, e
 	for _, p := range ports {
 		out = append(out, PublishedPort{ContainerPort: p.SandboxPort, HostPort: p.HostPort})
 	}
-	return out, nil
+	return dedupePorts(out), nil
+}
+
+// dedupePorts collapses mappings that are identical in the fields we surface
+// (container + host port). The daemon lists one row per host IP, so a single
+// published port appears twice (e.g. 127.0.0.1 and ::1) — confusingly identical
+// once host_ip is dropped. Order is preserved.
+func dedupePorts(ports []PublishedPort) []PublishedPort {
+	seen := make(map[PublishedPort]struct{}, len(ports))
+	out := make([]PublishedPort, 0, len(ports))
+	for _, p := range ports {
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 func (b *SDKBackend) UnpublishPort(ctx context.Context, name string, containerPort int) error {
