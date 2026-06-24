@@ -5,8 +5,8 @@ const api = useApi()
 const session = useSession()
 const toast = useToast()
 
-interface CustomSecret { host: string; env: string }
-interface StoredSecret { name: string }
+interface CustomSecret { host: string; env: string; placeholder?: string }
+interface StoredSecret { name: string; type: string } // type: "service" | "registry"
 interface SecretsResponse { custom: CustomSecret[]; stored: StoredSecret[] }
 
 const secrets = ref<SecretsResponse>({ custom: [], stored: [] })
@@ -94,10 +94,17 @@ onMounted(fetchSecrets)
             :key="`${s.host}:${s.env}`"
             class="flex items-center justify-between gap-3 rounded-md bg-elevated px-3 py-2 text-sm"
           >
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="font-mono text-default truncate">{{ s.host }}</span>
-              <span class="text-muted">·</span>
-              <span class="font-mono text-muted text-xs">{{ s.env }}</span>
+            <div class="flex flex-col gap-0.5 min-w-0">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="font-mono text-default truncate">{{ s.host }}</span>
+                <span class="text-muted">·</span>
+                <span class="font-mono text-muted text-xs">{{ s.env }}</span>
+              </div>
+              <span
+                v-if="s.placeholder"
+                class="font-mono text-xs text-dimmed truncate"
+                :title="s.placeholder"
+              >placeholder {{ s.placeholder }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <UBadge label="write-only" color="neutral" variant="subtle" size="xs" />
@@ -124,15 +131,20 @@ onMounted(fetchSecrets)
           <span class="font-mono text-xs font-normal ml-1">({{ secrets.stored.length }})</span>
         </p>
         <div class="flex flex-wrap gap-2">
-          <UBadge
+          <div
             v-for="s in secrets.stored"
             :key="s.name"
-            :label="s.name"
-            color="neutral"
-            variant="subtle"
-            size="sm"
-            class="font-mono"
-          />
+            class="flex items-center gap-1.5 rounded-md bg-elevated px-2 py-1"
+          >
+            <UBadge
+              :label="s.type || 'secret'"
+              :color="s.type === 'registry' ? 'info' : 'neutral'"
+              variant="subtle"
+              size="xs"
+              class="capitalize"
+            />
+            <span class="font-mono text-xs text-default">{{ s.name }}</span>
+          </div>
         </div>
       </div>
 

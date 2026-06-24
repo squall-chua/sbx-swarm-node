@@ -1,6 +1,8 @@
 export default defineNuxtConfig({
   ssr: false,                          // SPA embedded in the Go binary
   modules: ['@nuxt/ui'],
+  css: ['~/assets/css/main.css'],      // OLED theme + Fira fonts (see main.css)
+  colorMode: { preference: 'dark', fallback: 'dark' }, // dark-only ops console
   // Only scan .vue files as components; prevents ProvisionModal.ts (pure builder) from
   // shadowing ProvisionModal.vue in Nuxt's component registry.
   components: [{ path: '~/components', extensions: ['vue'] }],

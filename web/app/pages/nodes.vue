@@ -156,6 +156,7 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
               <UBadge
                 v-if="node.cordoned"
                 label="Cordoned"
+                icon="i-lucide-shield-off"
                 color="warning"
                 variant="subtle"
                 size="xs"
@@ -163,6 +164,7 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
               <UBadge
                 v-if="node.draining"
                 label="Draining"
+                icon="i-lucide-droplet"
                 color="warning"
                 variant="subtle"
                 size="xs"

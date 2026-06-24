@@ -1,8 +1,10 @@
 <script setup lang="ts">
 const swarm = useSwarm()
+const status = useStatus()
+
+const ready = computed(() => swarm?.ready.value ?? false)
 
 // ── Stat computations ─────────────────────────────────────────────────────────
-
 const nodeCount = computed(() => swarm?.nodes.value.length ?? 0)
 
 const sandboxesByStatus = computed(() => {
@@ -14,35 +16,12 @@ const sandboxesByStatus = computed(() => {
 })
 
 const totalSandboxes = computed(() =>
-  Object.values(sandboxesByStatus.value).reduce((a, b) => a + b, 0)
+  Object.values(sandboxesByStatus.value).reduce((a, b) => a + b, 0),
 )
-
 const runningSandboxes = computed(() => sandboxesByStatus.value['running'] ?? 0)
 
-const cpuAllocTotal = computed(() =>
-  (swarm?.nodes.value ?? []).reduce((sum: number, n: any) => sum + (n.alloc_cpu ?? 0), 0)
-)
-const cpuLimitTotal = computed(() =>
-  (swarm?.nodes.value ?? []).reduce((sum: number, n: any) => sum + (n.limit_cpu ?? 0), 0)
-)
-
-// TODO: blocked-egress distinct count not available from current /v1/nodes API
-// (would require per-sandbox network-policy data). Omitted until endpoint ships.
-
-const recentOps = computed(() => (swarm?.operations.value ?? []).slice(0, 5))
-
-// ── Status badge color ────────────────────────────────────────────────────────
-const opStatusColor: Record<string, string> = {
-  done: 'success',
-  running: 'warning',
-  pending: 'warning',
-  error: 'error',
-  failed: 'error',
-}
-
-function opColor(status: string): string {
-  return opStatusColor[status] ?? 'neutral'
-}
+// Operations carry a `state` field (see operations.vue) — not `status`.
+const recentOps = computed(() => (swarm?.operations.value ?? []).slice(0, 6))
 
 async function refresh() {
   await swarm?.refreshAll()
@@ -65,99 +44,88 @@ async function refresh() {
       />
     </div>
 
-    <!-- ── Stat cards ─────────────────────────────────────────────────────── -->
+    <!-- ── KPI cards (each drills into its page) ──────────────────────────── -->
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       <!-- Nodes -->
-      <UCard variant="outline">
-        <template #header>
-          <div class="flex items-center gap-2 text-muted text-xs font-medium uppercase tracking-wide">
-            <UIcon name="i-lucide-server" class="size-3.5" />
-            Nodes
-          </div>
-        </template>
-        <p class="text-3xl font-bold text-highlighted tabular-nums">{{ nodeCount }}</p>
-        <p class="text-xs text-muted mt-1">total in swarm</p>
-      </UCard>
+      <UTooltip text="View all nodes">
+        <NuxtLink to="/nodes" class="group block">
+          <UCard variant="outline" class="h-full transition-colors group-hover:border-accented">
+            <template #header>
+              <div class="flex items-center gap-2 text-muted text-xs font-medium uppercase tracking-wide">
+                <UIcon name="i-lucide-server" class="size-3.5" />
+                Nodes
+                <UIcon name="i-lucide-arrow-right" class="size-3.5 ml-auto opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" />
+              </div>
+            </template>
+            <USkeleton v-if="!ready" class="h-9 w-12" />
+            <p v-else class="text-3xl font-bold text-highlighted tabular-nums font-mono">{{ nodeCount }}</p>
+            <p class="text-xs text-muted mt-1">total in swarm</p>
+          </UCard>
+        </NuxtLink>
+      </UTooltip>
 
       <!-- Sandboxes -->
-      <UCard variant="outline">
-        <template #header>
-          <div class="flex items-center gap-2 text-muted text-xs font-medium uppercase tracking-wide">
-            <UIcon name="i-lucide-box" class="size-3.5" />
-            Sandboxes
-          </div>
-        </template>
-        <p class="text-3xl font-bold text-highlighted tabular-nums">{{ totalSandboxes }}</p>
-        <p class="text-xs text-muted mt-1">
-          <span class="text-success font-medium">{{ runningSandboxes }} running</span>
-          <template v-if="totalSandboxes - runningSandboxes > 0">
-            &nbsp;· {{ totalSandboxes - runningSandboxes }} other
-          </template>
-        </p>
-      </UCard>
+      <UTooltip text="View all sandboxes">
+        <NuxtLink to="/sandboxes" class="group block">
+          <UCard variant="outline" class="h-full transition-colors group-hover:border-accented">
+            <template #header>
+              <div class="flex items-center gap-2 text-muted text-xs font-medium uppercase tracking-wide">
+                <UIcon name="i-lucide-box" class="size-3.5" />
+                Sandboxes
+                <UIcon name="i-lucide-arrow-right" class="size-3.5 ml-auto opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" />
+              </div>
+            </template>
+            <USkeleton v-if="!ready" class="h-9 w-12" />
+            <template v-else>
+              <p class="text-3xl font-bold text-highlighted tabular-nums font-mono">{{ totalSandboxes }}</p>
+              <p class="text-xs text-muted mt-1">
+                <span class="text-success font-medium">{{ runningSandboxes }} running</span>
+                <template v-if="totalSandboxes - runningSandboxes > 0">
+                  &nbsp;· {{ totalSandboxes - runningSandboxes }} other
+                </template>
+              </p>
+            </template>
+          </UCard>
+        </NuxtLink>
+      </UTooltip>
 
-      <!-- CPU -->
-      <UCard variant="outline">
-        <template #header>
-          <div class="flex items-center gap-2 text-muted text-xs font-medium uppercase tracking-wide">
-            <UIcon name="i-lucide-cpu" class="size-3.5" />
-            CPU (alloc / limit)
-          </div>
-        </template>
-        <p class="text-3xl font-bold text-highlighted tabular-nums">
-          {{ cpuAllocTotal }}<span class="text-muted text-lg font-normal"> / {{ cpuLimitTotal }}</span>
-        </p>
-        <UProgress
-          v-if="cpuLimitTotal > 0"
-          :model-value="Math.round((cpuAllocTotal / cpuLimitTotal) * 100)"
-          color="primary"
-          size="xs"
-          class="mt-2"
-          aria-label="Total CPU allocation"
-        />
-        <p v-else class="text-xs text-muted mt-1">no nodes</p>
-      </UCard>
+      <!-- CPU — live swarm-average utilisation + trend -->
+      <UTooltip text="Live CPU — open per-node detail">
+        <NuxtLink to="/nodes" class="group block">
+          <UCard variant="outline" class="h-full transition-colors group-hover:border-accented">
+            <USkeleton v-if="!ready" class="h-14 w-full" />
+            <Sparkline v-else label="CPU · live avg" :values="swarm.cpuHistory.value" />
+          </UCard>
+        </NuxtLink>
+      </UTooltip>
 
-      <!-- Recent operations -->
-      <UCard variant="outline">
-        <template #header>
-          <div class="flex items-center gap-2 text-muted text-xs font-medium uppercase tracking-wide">
-            <UIcon name="i-lucide-activity" class="size-3.5" />
-            Recent operations
-          </div>
-        </template>
-        <div v-if="recentOps.length > 0" class="flex flex-col gap-1.5">
-          <div
-            v-for="op in recentOps"
-            :key="op.id"
-            class="flex items-center justify-between gap-2"
-          >
-            <span class="font-mono text-xs text-default truncate">{{ op.id }}</span>
-            <UBadge
-              :label="op.status"
-              :color="opColor(op.status)"
-              variant="subtle"
-              size="xs"
-            />
-          </div>
-        </div>
-        <p v-else class="text-xs text-muted italic">No recent operations</p>
-      </UCard>
+      <!-- Memory — live swarm-average utilisation + trend -->
+      <UTooltip text="Live memory — open per-node detail">
+        <NuxtLink to="/nodes" class="group block">
+          <UCard variant="outline" class="h-full transition-colors group-hover:border-accented">
+            <USkeleton v-if="!ready" class="h-14 w-full" />
+            <Sparkline v-else label="Memory · live avg" :values="swarm.memHistory.value" />
+          </UCard>
+        </NuxtLink>
+      </UTooltip>
     </div>
 
     <!-- ── Swarm map ──────────────────────────────────────────────────────── -->
     <div>
-      <h2 class="text-sm font-medium text-muted uppercase tracking-wide mb-3">Swarm map</h2>
-      <div
-        v-if="swarm?.nodes.value.length"
-        class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
-      >
-        <NodeCard
-          v-for="node in swarm.nodes.value"
-          :key="node.node_id"
-          :node="node"
-        />
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium text-muted uppercase tracking-wide">Swarm map</h2>
+        <ULink to="/nodes" class="text-xs text-primary hover:underline inline-flex items-center gap-1">
+          All nodes <UIcon name="i-lucide-arrow-right" class="size-3.5" />
+        </ULink>
       </div>
+
+      <!-- First-load skeletons -->
+      <div v-if="!ready" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <USkeleton v-for="i in 3" :key="i" class="h-40 w-full" />
+      </div>
+
+      <SwarmMap v-else-if="swarm.nodes.value.length" />
+
       <UAlert
         v-else
         icon="i-lucide-server-off"
@@ -166,6 +134,32 @@ async function refresh() {
         color="neutral"
         variant="subtle"
       />
+    </div>
+
+    <!-- ── Recent operations ──────────────────────────────────────────────── -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-medium text-muted uppercase tracking-wide">Recent operations</h2>
+        <ULink to="/operations" class="text-xs text-primary hover:underline inline-flex items-center gap-1">
+          All operations <UIcon name="i-lucide-arrow-right" class="size-3.5" />
+        </ULink>
+      </div>
+      <UCard variant="outline">
+        <div v-if="recentOps.length > 0" class="flex flex-col divide-y divide-default/60">
+          <div
+            v-for="op in recentOps"
+            :key="op.id"
+            class="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"
+          >
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="font-mono text-xs text-muted">{{ op.type }}</span>
+              <span class="font-mono text-xs text-default truncate">{{ op.id }}</span>
+            </div>
+            <StatusPill :status="op.state" kind="operation" size="xs" />
+          </div>
+        </div>
+        <p v-else class="text-sm text-muted italic">No recent operations.</p>
+      </UCard>
     </div>
   </div>
 </template>

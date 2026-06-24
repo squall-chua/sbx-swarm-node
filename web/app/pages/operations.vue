@@ -18,13 +18,6 @@ const operations = computed<Operation[]>(() => {
   return [...ops].reverse()
 })
 
-function stateColor(state: string): string {
-  if (state === 'done') return 'success'
-  if (state === 'error') return 'error'
-  if (state === 'pending' || state === 'running') return 'warning'
-  return 'neutral'
-}
-
 function fmtDate(ts: string | null | undefined): string {
   if (!ts) return '—'
   try { return new Date(ts).toLocaleString() } catch { return ts }
@@ -69,12 +62,7 @@ const columns: TableColumn<Operation>[] = [
         <span class="text-sm text-default">{{ row.original.type }}</span>
       </template>
       <template #state-cell="{ row }">
-        <UBadge
-          :label="row.original.state"
-          :color="stateColor(row.original.state)"
-          variant="subtle"
-          size="sm"
-        />
+        <StatusPill :status="row.original.state" kind="operation" />
       </template>
       <template #sandbox_id-cell="{ row }">
         <span class="font-mono text-sm text-muted">{{ row.original.sandbox_id }}</span>

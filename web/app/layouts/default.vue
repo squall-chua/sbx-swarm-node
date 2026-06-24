@@ -30,6 +30,46 @@ const navItems = computed<NavigationMenuItem[]>(() => [
   { label: 'Operations', icon: 'i-lucide-activity', to: '/operations' },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
 ])
+
+// ── Command palette (⌘K / Ctrl-K) ─────────────────────────────────────────────
+const swarm = useSwarm()
+const status = useStatus()
+const paletteOpen = ref(false)
+
+defineShortcuts({ meta_k: () => { paletteOpen.value = true } })
+
+function go(to: string) {
+  paletteOpen.value = false
+  navigateTo(to)
+}
+
+const paletteGroups = computed(() => [
+  {
+    id: 'pages',
+    label: 'Pages',
+    items: navItems.value.map(n => ({ label: n.label as string, icon: n.icon as string, onSelect: () => go(n.to as string) })),
+  },
+  {
+    id: 'sandboxes',
+    label: 'Sandboxes',
+    items: (swarm?.sandboxes.value ?? []).map((sb: any) => ({
+      label: sb.id,
+      icon: status.sandbox(sb.status).icon,
+      suffix: sb.status,
+      onSelect: () => go(`/sandboxes?id=${encodeURIComponent(sb.id)}`),
+    })),
+  },
+  {
+    id: 'nodes',
+    label: 'Nodes',
+    items: (swarm?.nodes.value ?? []).map((n: any) => ({
+      label: n.node_name,
+      icon: 'i-lucide-server',
+      suffix: n.node_id,
+      onSelect: () => go('/nodes'),
+    })),
+  },
+])
 </script>
 
 <template>
@@ -86,6 +126,22 @@ const navItems = computed<NavigationMenuItem[]>(() => [
           </template>
 
           <template #right>
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-search"
+              aria-label="Open command palette"
+              @click="paletteOpen = true"
+            >
+              <span class="hidden sm:inline text-muted">Search</span>
+              <template #trailing>
+                <div class="hidden sm:flex items-center gap-0.5">
+                  <UKbd value="meta" />
+                  <UKbd value="k" />
+                </div>
+              </template>
+            </UButton>
             <UBadge
               v-if="session.role.value"
               :color="roleBadgeColor"
@@ -110,5 +166,18 @@ const navItems = computed<NavigationMenuItem[]>(() => [
         <slot />
       </template>
     </UDashboardPanel>
+
+    <!-- Command palette (⌘K) — jump to any node, sandbox, or page -->
+    <UModal v-model:open="paletteOpen" :ui="{ content: 'sm:max-w-xl' }">
+      <template #content>
+        <UCommandPalette
+          :groups="paletteGroups"
+          placeholder="Search nodes, sandboxes, pages…"
+          close
+          class="h-80"
+          @update:open="paletteOpen = $event"
+        />
+      </template>
+    </UModal>
   </UDashboardGroup>
 </template>

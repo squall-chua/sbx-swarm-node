@@ -15,11 +15,35 @@ export function createSwarmStore(api: Api, subscribe: Subscribe, opts: { debounc
   const nodes = ref<any[]>([])
   const sandboxes = ref<any[]>([])
   const operations = ref<any[]>([])
+  const ready = ref(false) // true after the first refreshAll — gates empty-state flashes
 
-  const refreshNodes = async () => { nodes.value = (await api.get('/v1/nodes'))?.nodes ?? [] }
+  // Live util trend: capped ring buffer of swarm-average actual CPU/mem %, sampled
+  // each time nodes refresh. Feeds the dashboard sparklines.
+  // ponytail: unweighted average across nodes — fine for small swarms; weight by
+  // capacity if heterogeneous fleets need it.
+  const HISTORY = 30
+  const cpuHistory = ref<number[]>([])
+  const memHistory = ref<number[]>([])
+  const avgPct = (key: string) => {
+    const ns = nodes.value
+    if (!ns.length) return 0
+    return Math.round((ns.reduce((s, n) => s + (n[key] ?? 0), 0) / ns.length) * 100)
+  }
+  const sampleHistory = () => {
+    cpuHistory.value = [...cpuHistory.value, avgPct('actual_cpu')].slice(-HISTORY)
+    memHistory.value = [...memHistory.value, avgPct('actual_mem')].slice(-HISTORY)
+  }
+
+  const refreshNodes = async () => {
+    nodes.value = (await api.get('/v1/nodes'))?.nodes ?? []
+    sampleHistory()
+  }
   const refreshSandboxes = async () => { sandboxes.value = (await api.get('/v1/sandboxes'))?.sandboxes ?? [] }
   const refreshOperations = async () => { operations.value = (await api.get('/v1/operations'))?.operations ?? [] }
-  const refreshAll = () => Promise.all([refreshNodes(), refreshSandboxes(), refreshOperations()])
+  const refreshAll = async () => {
+    await Promise.all([refreshNodes(), refreshSandboxes(), refreshOperations()])
+    ready.value = true
+  }
 
   const debounce = (fn: () => void, ms: number) => {
     let t: any
@@ -37,7 +61,7 @@ export function createSwarmStore(api: Api, subscribe: Subscribe, opts: { debounc
   const interval = setInterval(refreshAll, opts.backstopMs ?? 25_000)
   const stop = () => { unsub(); clearInterval(interval) }
 
-  return { nodes, sandboxes, operations, refreshAll, refreshNodes, refreshSandboxes, refreshOperations, stop }
+  return { nodes, sandboxes, operations, ready, cpuHistory, memHistory, refreshAll, refreshNodes, refreshSandboxes, refreshOperations, stop }
 }
 
 // Nuxt singleton: created once, shared across views.

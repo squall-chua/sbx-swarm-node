@@ -9,35 +9,23 @@ const session = useSession()
 const selectedId = ref<string | null>(null)
 const drawerOpen = ref(false)
 
+// Deep-link: /sandboxes?id=<id> (e.g. from the ⌘K palette) opens that drawer.
+const route = useRoute()
+function openFromQuery(id: unknown) {
+  if (typeof id === 'string' && id) {
+    selectedId.value = id
+    drawerOpen.value = true
+  }
+}
+onMounted(() => openFromQuery(route.query.id))
+watch(() => route.query.id, openFromQuery)
+
 // @nuxt/ui v4 calls onSelect(event, row) — the DOM event is first, the TanStack Row
 // (with .original = the data item) second. Take the row as the SECOND arg.
 function onRowClick(_e: Event, row: any) {
   selectedId.value = row?.original?.id ?? null
   drawerOpen.value = selectedId.value != null
   // Task 10 will mount <SandboxDrawer :id="selectedId" v-model:open="drawerOpen" /> below.
-}
-
-// ── Status → color map (from design-language.md) ────────────────────────────
-function statusColor(status: string): string {
-  switch (status) {
-    case 'running':
-    case 'published':
-    case 'done':
-      return 'success'
-    case 'pending':
-    case 'running-operation':
-    case 'draining':
-      return 'warning'
-    case 'stopped':
-    case 'deleted':
-    case 'lost':
-    case 'error':
-    case 'publish_failed':
-    case 'revoke':
-      return 'error'
-    default:
-      return 'neutral'
-  }
 }
 
 // ── Filters ──────────────────────────────────────────────────────────────────
@@ -166,14 +154,9 @@ function fmtDate(ts: string | null | undefined): string {
         <span class="font-mono text-sm text-muted">{{ row.original.owner_node ?? '—' }}</span>
       </template>
 
-      <!-- Status: UBadge -->
+      <!-- Status -->
       <template #status-cell="{ row }">
-        <UBadge
-          :label="row.original.status ?? 'unknown'"
-          :color="statusColor(row.original.status)"
-          variant="subtle"
-          size="sm"
-        />
+        <StatusPill :status="row.original.status ?? 'unknown'" kind="sandbox" />
       </template>
 
       <!-- Branch: monospace -->

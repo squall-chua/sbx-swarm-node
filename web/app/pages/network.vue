@@ -1,22 +1,36 @@
 <script setup lang="ts">
-// Network / Security page — node-global scope ("").
-// Policy and secrets use scope="" which renders as /v1/sandboxes//policy
-// (empty path segment) — that is the node-global scope the gateway expects.
+// Network / Security page — node-global scope.
+// Node-global is addressed with the "_node" sentinel segment, not an empty one:
+// /v1/sandboxes//policy gets path-cleaned + 301-redirected by Go's HTTP mux, so
+// the empty-segment trick 404s. The server maps "_node" -> node-global scope.
 
 const api = useApi()
 const session = useSession()
 const toast = useToast()
 
 // ── Policy ───────────────────────────────────────────────────────────────────
-interface PolicyRule { host: string; decision: 'allow' | 'deny' }
+// Matches the ListPolicy response (snake_case JSON). A rule bundles many hosts
+// under a name (e.g. "default-ai-services"); user-added rules get a uuid name.
+interface PolicyRule {
+  decision: 'allow' | 'deny'
+  rule: string        // rule name
+  resources: string   // comma-separated host:port list
+  provenance: string  // "local" | "kit"
+  applies_to: string  // "all" | "sandbox:<id>"
+}
 
 const policy = ref<PolicyRule[]>([])
 const policyLoading = ref(false)
 
+// resources is a comma-separated host:port list; split for a per-host display.
+function hostList(rule: PolicyRule): string[] {
+  return rule.resources ? rule.resources.split(',').filter(Boolean) : []
+}
+
 async function fetchPolicy() {
   policyLoading.value = true
   try {
-    const res = await api.get('/v1/sandboxes//policy')
+    const res = await api.get('/v1/sandboxes/_node/policy')
     policy.value = res?.rules ?? []
   } catch (e: any) {
     toast.add({ title: 'Failed to load policy', description: e?.message, color: 'error' })
@@ -38,8 +52,8 @@ async function doAddRule() {
   if (!addHost.value) return
   addLoading.value = true
   try {
-    await api.put('/v1/sandboxes//policy', {
-      scope: '',
+    await api.put('/v1/sandboxes/_node/policy', {
+      scope: '_node',
       decision: addDecision.value,
       host: addHost.value,
     })
@@ -54,8 +68,8 @@ async function doAddRule() {
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────────────
-interface CustomSecret { host: string; env: string }
-interface StoredSecret { name: string }
+interface CustomSecret { host: string; env: string; placeholder?: string }
+interface StoredSecret { name: string; type: string } // type: "service" | "registry"
 interface SecretsResponse { custom: CustomSecret[]; stored: StoredSecret[] }
 
 const secrets = ref<SecretsResponse>({ custom: [], stored: [] })
@@ -64,7 +78,7 @@ const secretsLoading = ref(false)
 async function fetchSecrets() {
   secretsLoading.value = true
   try {
-    const res = await api.get('/v1/sandboxes//secrets')
+    const res = await api.get('/v1/sandboxes/_node/secrets')
     secrets.value = res ?? { custom: [], stored: [] }
   } catch (e: any) {
     toast.add({ title: 'Failed to load secrets', description: e?.message, color: 'error' })
@@ -82,8 +96,8 @@ async function doAddSecret() {
   if (!secretHost.value || !secretEnv.value || !secretValue.value) return
   secretAddLoading.value = true
   try {
-    await api.put('/v1/sandboxes//secrets', {
-      scope: '',
+    await api.put('/v1/sandboxes/_node/secrets', {
+      scope: '_node',
       host: secretHost.value,
       env: secretEnv.value,
       value: secretValue.value,
@@ -106,7 +120,7 @@ async function doDeleteSecret(host: string) {
   if (!confirm(`Delete all secrets for host "${host}"?`)) return
   secretDeleteLoading.value = host
   try {
-    await api.del(`/v1/sandboxes//secrets/${host}`)
+    await api.del(`/v1/sandboxes/_node/secrets/${host}`)
     toast.add({ title: 'Secret deleted', color: 'success' })
     await fetchSecrets()
   } catch (e: any) {
@@ -159,21 +173,55 @@ onMounted(() => {
           <USkeleton class="h-4 w-3/4" />
         </div>
 
-        <!-- Rules list -->
+        <!-- Rules list — each rule's hosts collapse behind its header -->
         <div v-else-if="policy.length > 0" class="flex flex-col gap-2">
-          <div
-            v-for="rule in policy"
-            :key="`${rule.decision}:${rule.host}`"
-            class="flex items-center gap-3 rounded-md bg-elevated px-3 py-2 text-sm"
+          <UCollapsible
+            v-for="(rule, i) in policy"
+            :key="rule.rule || i"
+            class="rounded-md bg-elevated border border-default"
           >
-            <UBadge
-              :label="rule.decision"
-              :color="rule.decision === 'allow' ? 'success' : 'error'"
-              variant="subtle"
-              size="xs"
-            />
-            <span class="font-mono text-default truncate">{{ rule.host }}</span>
-          </div>
+            <button
+              type="button"
+              class="group flex items-center gap-2 w-full px-3 py-2 text-sm text-left cursor-pointer hover:bg-accented/40 rounded-md transition-colors"
+            >
+              <UBadge
+                :label="rule.decision"
+                :icon="rule.decision === 'allow' ? 'i-lucide-check' : 'i-lucide-ban'"
+                :color="rule.decision === 'allow' ? 'success' : 'error'"
+                variant="subtle"
+                size="xs"
+              />
+              <span class="font-mono text-default font-medium truncate">{{ rule.rule }}</span>
+              <UBadge
+                v-if="rule.provenance"
+                :label="rule.provenance"
+                color="neutral"
+                variant="subtle"
+                size="xs"
+              />
+              <span
+                v-if="rule.applies_to && rule.applies_to !== 'all'"
+                class="font-mono text-xs text-muted truncate hidden sm:inline"
+              >{{ rule.applies_to }}</span>
+              <span class="ml-auto text-xs text-muted tabular-nums shrink-0">
+                {{ hostList(rule).length }} host{{ hostList(rule).length === 1 ? '' : 's' }}
+              </span>
+              <UIcon
+                name="i-lucide-chevron-down"
+                class="size-4 text-muted shrink-0 transition-transform group-data-[state=open]:rotate-180"
+              />
+            </button>
+            <template #content>
+              <div class="flex flex-wrap gap-1.5 px-3 pb-3 pt-2 border-t border-default">
+                <span
+                  v-for="h in hostList(rule)"
+                  :key="h"
+                  class="font-mono text-xs text-toned bg-default rounded px-1.5 py-0.5 border border-default"
+                >{{ h }}</span>
+                <span v-if="!hostList(rule).length" class="text-xs text-muted italic">no hosts</span>
+              </div>
+            </template>
+          </UCollapsible>
         </div>
         <p v-else class="text-sm text-muted">No policy rules configured.</p>
 
@@ -248,10 +296,17 @@ onMounted(() => {
                 :key="`${s.host}:${s.env}`"
                 class="flex items-center justify-between gap-3 rounded-md bg-elevated px-3 py-2 text-sm"
               >
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="font-mono text-default truncate">{{ s.host }}</span>
-                  <span class="text-muted">·</span>
-                  <span class="font-mono text-muted text-xs">{{ s.env }}</span>
+                <div class="flex flex-col gap-0.5 min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="font-mono text-default truncate">{{ s.host }}</span>
+                    <span class="text-muted">·</span>
+                    <span class="font-mono text-muted text-xs">{{ s.env }}</span>
+                  </div>
+                  <span
+                    v-if="s.placeholder"
+                    class="font-mono text-xs text-dimmed truncate"
+                    :title="s.placeholder"
+                  >placeholder {{ s.placeholder }}</span>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
                   <UBadge label="write-only" color="neutral" variant="subtle" size="xs" />
@@ -278,15 +333,20 @@ onMounted(() => {
               <span class="font-mono text-xs font-normal ml-1">({{ secrets.stored.length }})</span>
             </p>
             <div class="flex flex-wrap gap-2">
-              <UBadge
+              <div
                 v-for="s in secrets.stored"
                 :key="s.name"
-                :label="s.name"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-                class="font-mono"
-              />
+                class="flex items-center gap-1.5 rounded-md bg-elevated px-2 py-1"
+              >
+                <UBadge
+                  :label="s.type || 'secret'"
+                  :color="s.type === 'registry' ? 'info' : 'neutral'"
+                  variant="subtle"
+                  size="xs"
+                  class="capitalize"
+                />
+                <span class="font-mono text-xs text-default">{{ s.name }}</span>
+              </div>
             </div>
           </div>
 

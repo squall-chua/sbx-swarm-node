@@ -52,24 +52,7 @@ function fmtMem(kb: number): string {
   return `${kb} KB`
 }
 
-// status → color map
-const statusColor: Record<string, string> = {
-  running: 'success',
-  published: 'success',
-  done: 'success',
-  pending: 'warning',
-  draining: 'warning',
-  stopped: 'error',
-  deleted: 'error',
-  lost: 'error',
-  error: 'error',
-  publish_failed: 'error',
-  revoke: 'error',
-}
-
-function sandboxColor(status: string): string {
-  return statusColor[status] ?? 'neutral'
-}
+const status = useStatus()
 
 const cpuBarColor = computed(() => {
   if (cpuActualPct.value >= 90) return 'error'
@@ -101,6 +84,7 @@ const memAllocBarColor = computed(() => {
           <UBadge
             v-if="node.cordoned"
             label="Cordoned"
+            icon="i-lucide-shield-off"
             color="warning"
             variant="subtle"
             size="xs"
@@ -108,6 +92,7 @@ const memAllocBarColor = computed(() => {
           <UBadge
             v-if="node.draining"
             label="Draining"
+            icon="i-lucide-droplet"
             color="warning"
             variant="subtle"
             size="xs"
@@ -174,7 +159,8 @@ const memAllocBarColor = computed(() => {
           v-for="sb in nodeSandboxes"
           :key="sb.id"
           :label="sb.id"
-          :color="sandboxColor(sb.status)"
+          :icon="status.sandbox(sb.status).icon"
+          :color="status.sandbox(sb.status).color"
           variant="subtle"
           size="xs"
           class="font-mono"

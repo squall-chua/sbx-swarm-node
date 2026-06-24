@@ -13,6 +13,14 @@ const emit = defineEmits<{
 const api = useApi()
 const toast = useToast()
 
+async function copyId() {
+  if (!props.id) return
+  try {
+    await navigator.clipboard.writeText(props.id)
+    toast.add({ title: 'Sandbox ID copied', color: 'success', icon: 'i-lucide-copy' })
+  } catch { /* clipboard unavailable — non-critical */ }
+}
+
 // ── Sandbox data ─────────────────────────────────────────────────────────────
 const sandbox = ref<any>(null)
 const loading = ref(false)
@@ -77,6 +85,47 @@ const tabItems = computed<TabsItem[]>(() => {
     :ui="{ width: 'max-w-2xl' }"
     @update:open="emit('update:open', $event)"
   >
+    <!-- Rich header: id + status + owner + branch + copy -->
+    <template #header="{ close }">
+      <div class="flex items-start justify-between gap-3 w-full">
+        <div class="flex flex-col gap-1.5 min-w-0">
+          <div class="flex items-center gap-1.5">
+            <UIcon name="i-lucide-box" class="size-4 text-primary shrink-0" />
+            <span class="font-mono text-sm font-semibold text-highlighted truncate">{{ id }}</span>
+            <UButton
+              icon="i-lucide-copy"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              aria-label="Copy sandbox ID"
+              @click="copyId"
+            />
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <StatusPill v-if="sandbox?.status" :status="sandbox.status" kind="sandbox" size="xs" />
+            <span v-if="sandbox?.owner_node" class="font-mono text-xs text-muted">{{ sandbox.owner_node }}</span>
+            <UBadge
+              v-if="sandbox?.branch"
+              :label="sandbox.branch"
+              icon="i-lucide-git-branch"
+              color="neutral"
+              variant="subtle"
+              size="xs"
+              class="font-mono"
+            />
+          </div>
+        </div>
+        <UButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Close"
+          @click="close"
+        />
+      </div>
+    </template>
+
     <template #body>
       <!-- Loading state -->
       <div v-if="loading" class="flex flex-col gap-3 p-4">

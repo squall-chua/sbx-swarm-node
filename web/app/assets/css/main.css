@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Fira Sans (UI) + Fira Code (mono) — auto-loaded by @nuxt/fonts in Nuxt.
+   Fira Code is the data face: IDs, metrics, terminal, tabular numbers. */
+@theme {
+  --font-sans: 'Fira Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, 'SF Mono', monospace;
+}
+
+/* OLED control-plane surfaces: shift the default dark ramp one shade darker so
+   the page reads near-black and cards lift subtly above it. Overrides @nuxt/ui's
+   .dark block (imported above), so it must come after the @import. */
+.dark {
+  --ui-bg: var(--ui-color-neutral-950);
+  --ui-bg-muted: var(--ui-color-neutral-900);
+  --ui-bg-elevated: var(--ui-color-neutral-900);
+  --ui-bg-accented: var(--ui-color-neutral-800);
+  --ui-border: var(--ui-color-neutral-800);
+  --ui-border-muted: var(--ui-color-neutral-800);
+  --ui-border-accented: var(--ui-color-neutral-700);
+}
