@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { markRaw, ref } from 'vue'
 import type { Api } from './useApi'
 import { SWARM_EVENT_TYPES } from './useEvents'
 
@@ -44,7 +44,11 @@ export function createSwarmStore(api: Api, subscribe: Subscribe, opts: { debounc
 export const useSwarm = () => {
   const holder = useState<ReturnType<typeof createSwarmStore> | null>('sbx_swarm', () => null)
   if (!holder.value && import.meta.client) {
-    holder.value = createSwarmStore(useApi(), useEvents())
+    // markRaw: the store holds live refs (nodes/sandboxes/operations). useState
+    // backs holder with Vue reactive state, which would deeply reactify the store
+    // and UNWRAP those nested refs — making `swarm.nodes.value` undefined and
+    // crashing every consumer. markRaw keeps the store's refs intact.
+    holder.value = markRaw(createSwarmStore(useApi(), useEvents()))
     holder.value.refreshAll()
   }
   return holder.value!
