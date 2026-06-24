@@ -6,7 +6,10 @@ import (
 	"io/fs"
 )
 
-//go:embed dist
+// all: includes files whose names start with "_" or "." — Nuxt emits all its
+// JS/CSS under dist/_nuxt/, which a plain //go:embed dist would silently drop.
+//
+//go:embed all:dist
 var dist embed.FS
 
 // FS returns the embedded SPA file system rooted at the dist directory.
