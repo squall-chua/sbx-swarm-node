@@ -92,22 +92,18 @@ func TestPolicyService_AuditActorFromGRPCPrincipal(t *testing.T) {
 }
 
 func TestPolicyService_DeleteStoredSecretAudits(t *testing.T) {
-	svc, a, mgr := buildPolicySvcMgr(t)
+	svc, a := buildPolicySvc(t)
 	ctx := context.Background()
 
-	// node-global delete (scope ""): no resolution; the fake stored-remove is a no-op.
-	_, err := svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: "", Name: "openai"})
+	// node-global delete (sentinel -> ""); the fake stored-remove is a no-op.
+	_, err := svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: nodeGlobalScope, Name: "openai"})
 	require.NoError(t, err)
 
-	// per-sandbox delete exercises scopeName -> Resolve with a real id.
-	rec, err := mgr.Create(ctx, sandbox.CreateSpec{})
+	// Regression: a stored secret's scope is a raw daemon sandbox name (e.g. set via
+	// the CLI) that the swarm does NOT track. It must pass through verbatim, not 404
+	// via mgr.Resolve — the original DeleteStoredSecret bug.
+	_, err = svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: "my-sandbox", Name: "ghcr.io"})
 	require.NoError(t, err)
-	_, err = svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: rec.ID, Name: "ghcr.io"})
-	require.NoError(t, err)
-
-	// unknown scope -> NotFound (not Internal); records no audit entry.
-	_, err = svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: "does-not-exist", Name: "x"})
-	require.Equal(t, codes.NotFound, status.Code(err))
 
 	// audit: two successful removes, name-only target, action secret.remove_stored.
 	entries, err := a.List()

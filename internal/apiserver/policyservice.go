@@ -40,6 +40,18 @@ func (s *PolicyService) scopeName(ctx context.Context, scope string) (string, er
 	return s.mgr.Resolve(ctx, scope)
 }
 
+// storedScopeName maps the node-global sentinel to "" and passes every other
+// scope through unchanged. Unlike scopeName it does NOT resolve via the swarm
+// store: a stored secret's scope is a raw daemon sandbox name from `secret ls`
+// (1:1 with the swarm id, but possibly set directly via the CLI and never
+// swarm-tracked), so resolving it would 404 a valid delete (see DeleteStoredSecret).
+func storedScopeName(scope string) string {
+	if scope == "" || scope == nodeGlobalScope {
+		return ""
+	}
+	return scope
+}
+
 // scopeStatusErr maps a scopeName error to a gRPC status: a missing sandbox is
 // NotFound; any other error (store I/O, JSON decode) is Internal — so real
 // backend failures are not masked as "not found".
@@ -190,11 +202,11 @@ func (s *PolicyService) DeleteSecret(ctx context.Context, r *sbxv1.DeleteSecretR
 // scope. The scope is the secret's own owning sandbox id (or the node-global
 // sentinel), so a delete issued from the aggregated view targets the right scope.
 func (s *PolicyService) DeleteStoredSecret(ctx context.Context, r *sbxv1.DeleteStoredSecretRequest) (*sbxv1.Empty, error) {
-	name, err := s.scopeName(ctx, r.Scope)
-	if err != nil {
-		return nil, scopeStatusErr(err)
-	}
-	derr := s.mgr.Backend().SecretRemoveStored(ctx, name, r.Name)
+	// Pass the scope through verbatim (storedScopeName, not scopeName): it is a raw
+	// daemon sandbox name from `secret ls`, which mgr.Resolve would 404 on. A remote
+	// (dotted) id was already routed to its owner by OwnerProxy, so the scope here is
+	// always local to this node's daemon.
+	derr := s.mgr.Backend().SecretRemoveStored(ctx, storedScopeName(r.Scope), r.Name)
 	_ = s.audit.Record(audit.Entry{
 		Actor:   actor(ctx),
 		Action:  "secret.remove_stored",
