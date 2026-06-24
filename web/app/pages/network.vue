@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
 // Network / Security page — node-global scope.
 // Node-global is addressed with the "_node" sentinel segment, not an empty one:
 // /v1/sandboxes//policy gets path-cleaned + 301-redirected by Go's HTTP mux, so
@@ -71,6 +72,19 @@ async function doAddRule() {
 interface CustomSecret { host: string; env: string; placeholder?: string }
 interface StoredSecret { name: string; type: string; scope?: string } // type: "service" | "registry"; scope: "" = node-global, else owning sandbox id
 interface SecretsResponse { custom: CustomSecret[]; stored: StoredSecret[] }
+
+const customColumns: TableColumn<CustomSecret>[] = [
+  { accessorKey: 'host', header: 'Host' },
+  { accessorKey: 'env', header: 'Env' },
+  { accessorKey: 'placeholder', header: 'Placeholder' },
+  { id: 'actions', header: '' },
+]
+const storedColumns: TableColumn<StoredSecret>[] = [
+  { accessorKey: 'type', header: 'Type' },
+  { accessorKey: 'name', header: 'Name' },
+  { accessorKey: 'scope', header: 'Scope' },
+  { id: 'actions', header: '' },
+]
 
 const secrets = ref<SecretsResponse>({ custom: [], stored: [] })
 const secretsLoading = ref(false)
@@ -303,32 +317,24 @@ onMounted(() => {
 
         <template v-else>
           <!-- Custom secrets -->
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-2">
             <p class="text-xs font-semibold text-muted uppercase tracking-wide">
               Custom (host + env)
               <span class="font-mono text-xs font-normal ml-1">({{ secrets.custom.length }})</span>
             </p>
-
-            <div v-if="secrets.custom.length > 0" class="flex flex-col gap-2">
-              <div
-                v-for="s in secrets.custom"
-                :key="`${s.host}:${s.env}`"
-                class="flex items-center justify-between gap-3 rounded-md bg-elevated px-3 py-2 text-sm"
-              >
-                <div class="flex flex-col gap-0.5 min-w-0">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="font-mono text-default truncate">{{ s.host }}</span>
-                    <span class="text-muted">·</span>
-                    <span class="font-mono text-muted text-xs">{{ s.env }}</span>
-                  </div>
-                  <span
-                    v-if="s.placeholder"
-                    class="font-mono text-xs text-dimmed truncate"
-                    :title="s.placeholder"
-                  >placeholder {{ s.placeholder }}</span>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <UBadge label="write-only" color="neutral" variant="subtle" size="xs" />
+            <UTable :data="secrets.custom" :columns="customColumns" class="w-full">
+              <template #host-cell="{ row }">
+                <span class="font-mono text-sm text-default">{{ row.original.host }}</span>
+              </template>
+              <template #env-cell="{ row }">
+                <span class="font-mono text-sm text-muted">{{ row.original.env }}</span>
+              </template>
+              <template #placeholder-cell="{ row }">
+                <span v-if="row.original.placeholder" class="font-mono text-xs text-dimmed">{{ row.original.placeholder }}</span>
+                <span v-else class="text-muted">—</span>
+              </template>
+              <template #actions-cell="{ row }">
+                <div class="flex justify-end">
                   <UButton
                     v-if="session.isAdmin.value"
                     icon="i-lucide-trash-2"
@@ -336,51 +342,60 @@ onMounted(() => {
                     color="error"
                     variant="ghost"
                     aria-label="Delete secret"
-                    :loading="secretDeleteLoading === s.host"
-                    @click="doDeleteSecret(s.host)"
+                    :loading="secretDeleteLoading === row.original.host"
+                    @click="doDeleteSecret(row.original.host)"
                   />
                 </div>
-              </div>
-            </div>
-            <p v-else class="text-sm text-muted">No custom secrets configured.</p>
+              </template>
+              <template #empty>
+                <p class="text-sm text-muted py-4 text-center">No custom secrets configured.</p>
+              </template>
+            </UTable>
           </div>
 
           <!-- Stored secrets -->
-          <div v-if="secrets.stored.length > 0" class="flex flex-col gap-3">
+          <div class="flex flex-col gap-2">
             <p class="text-xs font-semibold text-muted uppercase tracking-wide">
               Stored
               <span class="font-mono text-xs font-normal ml-1">({{ secrets.stored.length }})</span>
             </p>
-            <div class="flex flex-wrap gap-2">
-              <div
-                v-for="s in secrets.stored"
-                :key="`${s.scope}:${s.name}`"
-                class="flex items-center gap-1.5 rounded-md bg-elevated px-2 py-1"
-              >
+            <UTable :data="secrets.stored" :columns="storedColumns" class="w-full">
+              <template #type-cell="{ row }">
                 <UBadge
-                  :label="s.type || 'secret'"
-                  :color="s.type === 'registry' ? 'info' : 'neutral'"
+                  :label="row.original.type || 'secret'"
+                  :color="row.original.type === 'registry' ? 'info' : 'neutral'"
                   variant="subtle"
                   size="xs"
                   class="capitalize"
                 />
-                <span class="font-mono text-xs text-default">{{ s.name }}</span>
+              </template>
+              <template #name-cell="{ row }">
+                <span class="font-mono text-sm text-default">{{ row.original.name }}</span>
+              </template>
+              <template #scope-cell="{ row }">
                 <span
-                  class="font-mono text-[10px] text-dimmed truncate max-w-[12rem]"
-                  :title="s.scope || 'node-global'"
-                >{{ s.scope || 'global' }}</span>
-                <UButton
-                  v-if="session.isAdmin.value"
-                  icon="i-lucide-trash-2"
-                  size="xs"
-                  color="error"
-                  variant="ghost"
-                  aria-label="Delete stored secret"
-                  :loading="storedDeleteLoading === `${s.scope}:${s.name}`"
-                  @click="doDeleteStored(s)"
-                />
-              </div>
-            </div>
+                  class="font-mono text-xs text-muted truncate max-w-[14rem] inline-block align-bottom"
+                  :title="row.original.scope || 'node-global'"
+                >{{ row.original.scope || 'global' }}</span>
+              </template>
+              <template #actions-cell="{ row }">
+                <div class="flex justify-end">
+                  <UButton
+                    v-if="session.isAdmin.value"
+                    icon="i-lucide-trash-2"
+                    size="xs"
+                    color="error"
+                    variant="ghost"
+                    aria-label="Delete stored secret"
+                    :loading="storedDeleteLoading === `${row.original.scope}:${row.original.name}`"
+                    @click="doDeleteStored(row.original)"
+                  />
+                </div>
+              </template>
+              <template #empty>
+                <p class="text-sm text-muted py-4 text-center">No stored secrets.</p>
+              </template>
+            </UTable>
           </div>
 
           <!-- Add secret form (admin only) -->
