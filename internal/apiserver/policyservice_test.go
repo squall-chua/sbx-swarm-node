@@ -91,6 +91,35 @@ func TestPolicyService_AuditActorFromGRPCPrincipal(t *testing.T) {
 	}
 }
 
+func TestPolicyService_DeleteStoredSecretAudits(t *testing.T) {
+	svc, a, mgr := buildPolicySvcMgr(t)
+	ctx := context.Background()
+
+	// node-global delete (scope ""): no resolution; the fake stored-remove is a no-op.
+	_, err := svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: "", Name: "openai"})
+	require.NoError(t, err)
+
+	// per-sandbox delete exercises scopeName -> Resolve with a real id.
+	rec, err := mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	_, err = svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: rec.ID, Name: "ghcr.io"})
+	require.NoError(t, err)
+
+	// unknown scope -> NotFound (not Internal); records no audit entry.
+	_, err = svc.DeleteStoredSecret(ctx, &sbxv1.DeleteStoredSecretRequest{Scope: "does-not-exist", Name: "x"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+
+	// audit: two successful removes, name-only target, action secret.remove_stored.
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	for _, e := range entries {
+		require.Equal(t, "secret.remove_stored", e.Action)
+	}
+	require.Equal(t, "openai", entries[0].Target)
+	require.Equal(t, "ghcr.io", entries[1].Target)
+}
+
 func TestPolicyService_PerSandboxScope(t *testing.T) {
 	svc, _, mgr := buildPolicySvcMgr(t)
 	ctx := context.Background()

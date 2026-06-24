@@ -116,8 +116,9 @@ type CustomSecret struct {
 
 // StoredSecret is a non-custom secret entry: a service or registry credential.
 type StoredSecret struct {
-	Name string `json:"name"`
-	Type string `json:"type"` // "service" | "registry"
+	Name  string `json:"name"`
+	Type  string `json:"type"`            // "service" | "registry"
+	Scope string `json:"scope,omitempty"` // "" = node-global, else owning sandbox id
 }
 
 // Secrets is the structured secret inventory (values always masked).
@@ -185,6 +186,8 @@ type Backend interface {
 	SecretSet(ctx context.Context, scope string, s CustomSecret) error
 	SecretList(ctx context.Context, scope string) (Secrets, error)
 	SecretRemove(ctx context.Context, scope, host string) error
+	// SecretRemoveStored deletes a stored (service/registry) secret by name.
+	SecretRemoveStored(ctx context.Context, scope, name string) error
 
 	// ExecInteractive opens a Terminal session (TTY when tty=true).
 	ExecInteractive(ctx context.Context, name string, cmd []string, tty bool) (Session, error)

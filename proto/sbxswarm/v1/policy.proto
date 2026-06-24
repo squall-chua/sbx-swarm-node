@@ -22,6 +22,9 @@ service PolicyService {
   rpc DeleteSecret(DeleteSecretRequest) returns (Empty) {
     option (google.api.http) = {delete: "/v1/sandboxes/{scope}/secrets/{host}"};
   }
+  rpc DeleteStoredSecret(DeleteStoredSecretRequest) returns (Empty) {
+    option (google.api.http) = {delete: "/v1/sandboxes/{scope}/stored-secrets/{name}"};
+  }
 }
 
 // Empty is a placeholder response for mutating RPCs.
@@ -67,6 +70,7 @@ message SecretMsg {
 message StoredSecretMsg {
   string name = 1;
   string type = 2; // "service" | "registry"
+  string scope = 3; // "" = node-global, else the owning sandbox id
 }
 
 // ListSecretsResponse is the response for ListSecrets. No value fields, ever.
@@ -88,4 +92,10 @@ message SetSecretRequest {
 message DeleteSecretRequest {
   string scope = 1;
   string host = 2;
+}
+
+// DeleteStoredSecretRequest removes a stored (service/registry) secret by name.
+message DeleteStoredSecretRequest {
+  string scope = 1;
+  string name = 2;
 }

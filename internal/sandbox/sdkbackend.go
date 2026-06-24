@@ -433,7 +433,7 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 	}
 	out := Secrets{}
 	for _, st := range secs.Stored {
-		out.Stored = append(out.Stored, StoredSecret{Name: st.Name, Type: st.Type})
+		out.Stored = append(out.Stored, StoredSecret{Name: st.Name, Type: st.Type, Scope: st.Scope})
 	}
 	for _, c := range secs.Custom {
 		// Value field is intentionally empty — write-only (spec §11). Placeholder
@@ -449,6 +449,13 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 // is a *service* name (passing a host there is a silent no-op). Added in SDK v0.1.4.
 func (b *SDKBackend) SecretRemove(ctx context.Context, scope, host string) error {
 	return sdksecret.RemoveCustom(ctx, b.cl, scope, host)
+}
+
+// SecretRemoveStored deletes a stored (service/registry) secret by name in scope
+// ("" = node-global). Stored secrets are keyed by name, so this uses the SDK's
+// positional `secret rm <scope> <name>` (sdksecret.Remove) — not the --host form.
+func (b *SDKBackend) SecretRemoveStored(ctx context.Context, scope, name string) error {
+	return sdksecret.Remove(ctx, b.cl, scope, name)
 }
 
 // ListTemplates returns the template refs the daemon holds (repository:tag).

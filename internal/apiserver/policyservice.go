@@ -160,7 +160,9 @@ func (s *PolicyService) ListSecrets(ctx context.Context, r *sbxv1.ScopeRequest) 
 		out.Custom = append(out.Custom, &sbxv1.SecretMsg{Host: c.Host, Env: c.Env, Placeholder: c.Placeholder})
 	}
 	for _, st := range secs.Stored {
-		out.Stored = append(out.Stored, &sbxv1.StoredSecretMsg{Name: st.Name, Type: st.Type})
+		// Scope (owning sandbox id, "" = node-global) is needed to attribute and
+		// delete a stored secret from the aggregated node-global view.
+		out.Stored = append(out.Stored, &sbxv1.StoredSecretMsg{Name: st.Name, Type: st.Type, Scope: st.Scope})
 	}
 	return out, nil
 }
@@ -176,6 +178,27 @@ func (s *PolicyService) DeleteSecret(ctx context.Context, r *sbxv1.DeleteSecretR
 		Actor:   actor(ctx),
 		Action:  "secret.remove",
 		Target:  r.Host,
+		Outcome: outcomeOf(derr),
+	})
+	if derr != nil {
+		return nil, status.Error(codes.Internal, derr.Error())
+	}
+	return &sbxv1.Empty{}, nil
+}
+
+// DeleteStoredSecret removes a stored (service/registry) secret by name within a
+// scope. The scope is the secret's own owning sandbox id (or the node-global
+// sentinel), so a delete issued from the aggregated view targets the right scope.
+func (s *PolicyService) DeleteStoredSecret(ctx context.Context, r *sbxv1.DeleteStoredSecretRequest) (*sbxv1.Empty, error) {
+	name, err := s.scopeName(ctx, r.Scope)
+	if err != nil {
+		return nil, scopeStatusErr(err)
+	}
+	derr := s.mgr.Backend().SecretRemoveStored(ctx, name, r.Name)
+	_ = s.audit.Record(audit.Entry{
+		Actor:   actor(ctx),
+		Action:  "secret.remove_stored",
+		Target:  r.Name,
 		Outcome: outcomeOf(derr),
 	})
 	if derr != nil {

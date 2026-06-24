@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PolicyService_ListPolicy_FullMethodName   = "/sbxswarm.v1.PolicyService/ListPolicy"
-	PolicyService_SetPolicy_FullMethodName    = "/sbxswarm.v1.PolicyService/SetPolicy"
-	PolicyService_ListSecrets_FullMethodName  = "/sbxswarm.v1.PolicyService/ListSecrets"
-	PolicyService_SetSecret_FullMethodName    = "/sbxswarm.v1.PolicyService/SetSecret"
-	PolicyService_DeleteSecret_FullMethodName = "/sbxswarm.v1.PolicyService/DeleteSecret"
+	PolicyService_ListPolicy_FullMethodName         = "/sbxswarm.v1.PolicyService/ListPolicy"
+	PolicyService_SetPolicy_FullMethodName          = "/sbxswarm.v1.PolicyService/SetPolicy"
+	PolicyService_ListSecrets_FullMethodName        = "/sbxswarm.v1.PolicyService/ListSecrets"
+	PolicyService_SetSecret_FullMethodName          = "/sbxswarm.v1.PolicyService/SetSecret"
+	PolicyService_DeleteSecret_FullMethodName       = "/sbxswarm.v1.PolicyService/DeleteSecret"
+	PolicyService_DeleteStoredSecret_FullMethodName = "/sbxswarm.v1.PolicyService/DeleteStoredSecret"
 )
 
 // PolicyServiceClient is the client API for PolicyService service.
@@ -35,6 +36,7 @@ type PolicyServiceClient interface {
 	ListSecrets(ctx context.Context, in *ScopeRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error)
 	SetSecret(ctx context.Context, in *SetSecretRequest, opts ...grpc.CallOption) (*Empty, error)
 	DeleteSecret(ctx context.Context, in *DeleteSecretRequest, opts ...grpc.CallOption) (*Empty, error)
+	DeleteStoredSecret(ctx context.Context, in *DeleteStoredSecretRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type policyServiceClient struct {
@@ -95,6 +97,16 @@ func (c *policyServiceClient) DeleteSecret(ctx context.Context, in *DeleteSecret
 	return out, nil
 }
 
+func (c *policyServiceClient) DeleteStoredSecret(ctx context.Context, in *DeleteStoredSecretRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, PolicyService_DeleteStoredSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PolicyServiceServer is the server API for PolicyService service.
 // All implementations must embed UnimplementedPolicyServiceServer
 // for forward compatibility.
@@ -104,6 +116,7 @@ type PolicyServiceServer interface {
 	ListSecrets(context.Context, *ScopeRequest) (*ListSecretsResponse, error)
 	SetSecret(context.Context, *SetSecretRequest) (*Empty, error)
 	DeleteSecret(context.Context, *DeleteSecretRequest) (*Empty, error)
+	DeleteStoredSecret(context.Context, *DeleteStoredSecretRequest) (*Empty, error)
 	mustEmbedUnimplementedPolicyServiceServer()
 }
 
@@ -128,6 +141,9 @@ func (UnimplementedPolicyServiceServer) SetSecret(context.Context, *SetSecretReq
 }
 func (UnimplementedPolicyServiceServer) DeleteSecret(context.Context, *DeleteSecretRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSecret not implemented")
+}
+func (UnimplementedPolicyServiceServer) DeleteStoredSecret(context.Context, *DeleteStoredSecretRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteStoredSecret not implemented")
 }
 func (UnimplementedPolicyServiceServer) mustEmbedUnimplementedPolicyServiceServer() {}
 func (UnimplementedPolicyServiceServer) testEmbeddedByValue()                       {}
@@ -240,6 +256,24 @@ func _PolicyService_DeleteSecret_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_DeleteStoredSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteStoredSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).DeleteStoredSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_DeleteStoredSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).DeleteStoredSecret(ctx, req.(*DeleteStoredSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PolicyService_ServiceDesc is the grpc.ServiceDesc for PolicyService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +300,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteSecret",
 			Handler:    _PolicyService_DeleteSecret_Handler,
+		},
+		{
+			MethodName: "DeleteStoredSecret",
+			Handler:    _PolicyService_DeleteStoredSecret_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

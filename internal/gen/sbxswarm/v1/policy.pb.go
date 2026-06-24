@@ -362,7 +362,8 @@ func (x *SecretMsg) GetPlaceholder() string {
 type StoredSecretMsg struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"` // "service" | "registry"
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`   // "service" | "registry"
+	Scope         string                 `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"` // "" = node-global, else the owning sandbox id
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -407,6 +408,13 @@ func (x *StoredSecretMsg) GetName() string {
 func (x *StoredSecretMsg) GetType() string {
 	if x != nil {
 		return x.Type
+	}
+	return ""
+}
+
+func (x *StoredSecretMsg) GetScope() string {
+	if x != nil {
+		return x.Scope
 	}
 	return ""
 }
@@ -587,6 +595,59 @@ func (x *DeleteSecretRequest) GetHost() string {
 	return ""
 }
 
+// DeleteStoredSecretRequest removes a stored (service/registry) secret by name.
+type DeleteStoredSecretRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteStoredSecretRequest) Reset() {
+	*x = DeleteStoredSecretRequest{}
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteStoredSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteStoredSecretRequest) ProtoMessage() {}
+
+func (x *DeleteStoredSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_policy_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteStoredSecretRequest.ProtoReflect.Descriptor instead.
+func (*DeleteStoredSecretRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_policy_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DeleteStoredSecretRequest) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *DeleteStoredSecretRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 var File_sbxswarm_v1_policy_proto protoreflect.FileDescriptor
 
 const file_sbxswarm_v1_policy_proto_rawDesc = "" +
@@ -614,10 +675,11 @@ const file_sbxswarm_v1_policy_proto_rawDesc = "" +
 	"\tSecretMsg\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x10\n" +
 	"\x03env\x18\x02 \x01(\tR\x03env\x12 \n" +
-	"\vplaceholder\x18\x03 \x01(\tR\vplaceholder\"9\n" +
+	"\vplaceholder\x18\x03 \x01(\tR\vplaceholder\"O\n" +
 	"\x0fStoredSecretMsg\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04type\x18\x02 \x01(\tR\x04type\"{\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
+	"\x05scope\x18\x03 \x01(\tR\x05scope\"{\n" +
 	"\x13ListSecretsResponse\x12.\n" +
 	"\x06custom\x18\x01 \x03(\v2\x16.sbxswarm.v1.SecretMsgR\x06custom\x124\n" +
 	"\x06stored\x18\x02 \x03(\v2\x1c.sbxswarm.v1.StoredSecretMsgR\x06stored\"d\n" +
@@ -628,14 +690,18 @@ const file_sbxswarm_v1_policy_proto_rawDesc = "" +
 	"\x05value\x18\x04 \x01(\tR\x05value\"?\n" +
 	"\x13DeleteSecretRequest\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x12\n" +
-	"\x04host\x18\x02 \x01(\tR\x04host2\xb9\x04\n" +
+	"\x04host\x18\x02 \x01(\tR\x04host\"E\n" +
+	"\x19DeleteStoredSecretRequest\x12\x14\n" +
+	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name2\xc1\x05\n" +
 	"\rPolicyService\x12n\n" +
 	"\n" +
 	"ListPolicy\x12\x19.sbxswarm.v1.ScopeRequest\x1a\x1f.sbxswarm.v1.ListPolicyResponse\"$\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/sandboxes/{scope}/policy\x12g\n" +
 	"\tSetPolicy\x12\x1d.sbxswarm.v1.SetPolicyRequest\x1a\x12.sbxswarm.v1.Empty\"'\x82\xd3\xe4\x93\x02!:\x01*\x1a\x1c/v1/sandboxes/{scope}/policy\x12q\n" +
 	"\vListSecrets\x12\x19.sbxswarm.v1.ScopeRequest\x1a .sbxswarm.v1.ListSecretsResponse\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/sandboxes/{scope}/secrets\x12h\n" +
 	"\tSetSecret\x12\x1d.sbxswarm.v1.SetSecretRequest\x1a\x12.sbxswarm.v1.Empty\"(\x82\xd3\xe4\x93\x02\":\x01*\x1a\x1d/v1/sandboxes/{scope}/secrets\x12r\n" +
-	"\fDeleteSecret\x12 .sbxswarm.v1.DeleteSecretRequest\x1a\x12.sbxswarm.v1.Empty\",\x82\xd3\xe4\x93\x02&*$/v1/sandboxes/{scope}/secrets/{host}B\xb6\x01\n" +
+	"\fDeleteSecret\x12 .sbxswarm.v1.DeleteSecretRequest\x1a\x12.sbxswarm.v1.Empty\",\x82\xd3\xe4\x93\x02&*$/v1/sandboxes/{scope}/secrets/{host}\x12\x85\x01\n" +
+	"\x12DeleteStoredSecret\x12&.sbxswarm.v1.DeleteStoredSecretRequest\x1a\x12.sbxswarm.v1.Empty\"3\x82\xd3\xe4\x93\x02-*+/v1/sandboxes/{scope}/stored-secrets/{name}B\xb6\x01\n" +
 	"\x0fcom.sbxswarm.v1B\vPolicyProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -650,38 +716,41 @@ func file_sbxswarm_v1_policy_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_policy_proto_rawDescData
 }
 
-var file_sbxswarm_v1_policy_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_sbxswarm_v1_policy_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_sbxswarm_v1_policy_proto_goTypes = []any{
-	(*Empty)(nil),               // 0: sbxswarm.v1.Empty
-	(*ScopeRequest)(nil),        // 1: sbxswarm.v1.ScopeRequest
-	(*PolicyRuleMsg)(nil),       // 2: sbxswarm.v1.PolicyRuleMsg
-	(*ListPolicyResponse)(nil),  // 3: sbxswarm.v1.ListPolicyResponse
-	(*SetPolicyRequest)(nil),    // 4: sbxswarm.v1.SetPolicyRequest
-	(*SecretMsg)(nil),           // 5: sbxswarm.v1.SecretMsg
-	(*StoredSecretMsg)(nil),     // 6: sbxswarm.v1.StoredSecretMsg
-	(*ListSecretsResponse)(nil), // 7: sbxswarm.v1.ListSecretsResponse
-	(*SetSecretRequest)(nil),    // 8: sbxswarm.v1.SetSecretRequest
-	(*DeleteSecretRequest)(nil), // 9: sbxswarm.v1.DeleteSecretRequest
+	(*Empty)(nil),                     // 0: sbxswarm.v1.Empty
+	(*ScopeRequest)(nil),              // 1: sbxswarm.v1.ScopeRequest
+	(*PolicyRuleMsg)(nil),             // 2: sbxswarm.v1.PolicyRuleMsg
+	(*ListPolicyResponse)(nil),        // 3: sbxswarm.v1.ListPolicyResponse
+	(*SetPolicyRequest)(nil),          // 4: sbxswarm.v1.SetPolicyRequest
+	(*SecretMsg)(nil),                 // 5: sbxswarm.v1.SecretMsg
+	(*StoredSecretMsg)(nil),           // 6: sbxswarm.v1.StoredSecretMsg
+	(*ListSecretsResponse)(nil),       // 7: sbxswarm.v1.ListSecretsResponse
+	(*SetSecretRequest)(nil),          // 8: sbxswarm.v1.SetSecretRequest
+	(*DeleteSecretRequest)(nil),       // 9: sbxswarm.v1.DeleteSecretRequest
+	(*DeleteStoredSecretRequest)(nil), // 10: sbxswarm.v1.DeleteStoredSecretRequest
 }
 var file_sbxswarm_v1_policy_proto_depIdxs = []int32{
-	2, // 0: sbxswarm.v1.ListPolicyResponse.rules:type_name -> sbxswarm.v1.PolicyRuleMsg
-	5, // 1: sbxswarm.v1.ListSecretsResponse.custom:type_name -> sbxswarm.v1.SecretMsg
-	6, // 2: sbxswarm.v1.ListSecretsResponse.stored:type_name -> sbxswarm.v1.StoredSecretMsg
-	1, // 3: sbxswarm.v1.PolicyService.ListPolicy:input_type -> sbxswarm.v1.ScopeRequest
-	4, // 4: sbxswarm.v1.PolicyService.SetPolicy:input_type -> sbxswarm.v1.SetPolicyRequest
-	1, // 5: sbxswarm.v1.PolicyService.ListSecrets:input_type -> sbxswarm.v1.ScopeRequest
-	8, // 6: sbxswarm.v1.PolicyService.SetSecret:input_type -> sbxswarm.v1.SetSecretRequest
-	9, // 7: sbxswarm.v1.PolicyService.DeleteSecret:input_type -> sbxswarm.v1.DeleteSecretRequest
-	3, // 8: sbxswarm.v1.PolicyService.ListPolicy:output_type -> sbxswarm.v1.ListPolicyResponse
-	0, // 9: sbxswarm.v1.PolicyService.SetPolicy:output_type -> sbxswarm.v1.Empty
-	7, // 10: sbxswarm.v1.PolicyService.ListSecrets:output_type -> sbxswarm.v1.ListSecretsResponse
-	0, // 11: sbxswarm.v1.PolicyService.SetSecret:output_type -> sbxswarm.v1.Empty
-	0, // 12: sbxswarm.v1.PolicyService.DeleteSecret:output_type -> sbxswarm.v1.Empty
-	8, // [8:13] is the sub-list for method output_type
-	3, // [3:8] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	2,  // 0: sbxswarm.v1.ListPolicyResponse.rules:type_name -> sbxswarm.v1.PolicyRuleMsg
+	5,  // 1: sbxswarm.v1.ListSecretsResponse.custom:type_name -> sbxswarm.v1.SecretMsg
+	6,  // 2: sbxswarm.v1.ListSecretsResponse.stored:type_name -> sbxswarm.v1.StoredSecretMsg
+	1,  // 3: sbxswarm.v1.PolicyService.ListPolicy:input_type -> sbxswarm.v1.ScopeRequest
+	4,  // 4: sbxswarm.v1.PolicyService.SetPolicy:input_type -> sbxswarm.v1.SetPolicyRequest
+	1,  // 5: sbxswarm.v1.PolicyService.ListSecrets:input_type -> sbxswarm.v1.ScopeRequest
+	8,  // 6: sbxswarm.v1.PolicyService.SetSecret:input_type -> sbxswarm.v1.SetSecretRequest
+	9,  // 7: sbxswarm.v1.PolicyService.DeleteSecret:input_type -> sbxswarm.v1.DeleteSecretRequest
+	10, // 8: sbxswarm.v1.PolicyService.DeleteStoredSecret:input_type -> sbxswarm.v1.DeleteStoredSecretRequest
+	3,  // 9: sbxswarm.v1.PolicyService.ListPolicy:output_type -> sbxswarm.v1.ListPolicyResponse
+	0,  // 10: sbxswarm.v1.PolicyService.SetPolicy:output_type -> sbxswarm.v1.Empty
+	7,  // 11: sbxswarm.v1.PolicyService.ListSecrets:output_type -> sbxswarm.v1.ListSecretsResponse
+	0,  // 12: sbxswarm.v1.PolicyService.SetSecret:output_type -> sbxswarm.v1.Empty
+	0,  // 13: sbxswarm.v1.PolicyService.DeleteSecret:output_type -> sbxswarm.v1.Empty
+	0,  // 14: sbxswarm.v1.PolicyService.DeleteStoredSecret:output_type -> sbxswarm.v1.Empty
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_sbxswarm_v1_policy_proto_init() }
@@ -695,7 +764,7 @@ func file_sbxswarm_v1_policy_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_policy_proto_rawDesc), len(file_sbxswarm_v1_policy_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

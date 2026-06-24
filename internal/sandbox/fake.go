@@ -267,6 +267,11 @@ func (f *Fake) SecretRemove(_ context.Context, scope, host string) error {
 	return nil
 }
 
+// SecretRemoveStored is a no-op: the fake tracks only custom secrets.
+func (f *Fake) SecretRemoveStored(_ context.Context, _, _ string) error {
+	return nil
+}
+
 type fakeSession struct {
 	r      *io.PipeReader
 	w      *io.PipeWriter

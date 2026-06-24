@@ -69,7 +69,7 @@ async function doAddRule() {
 
 // ── Secrets ───────────────────────────────────────────────────────────────────
 interface CustomSecret { host: string; env: string; placeholder?: string }
-interface StoredSecret { name: string; type: string } // type: "service" | "registry"
+interface StoredSecret { name: string; type: string; scope?: string } // type: "service" | "registry"; scope: "" = node-global, else owning sandbox id
 interface SecretsResponse { custom: CustomSecret[]; stored: StoredSecret[] }
 
 const secrets = ref<SecretsResponse>({ custom: [], stored: [] })
@@ -127,6 +127,25 @@ async function doDeleteSecret(host: string) {
     toast.add({ title: 'Failed to delete secret', description: e?.message, color: 'error' })
   } finally {
     secretDeleteLoading.value = null
+  }
+}
+
+// Stored secrets delete via the secret's OWN scope (not the _node view scope):
+// "" -> _node sentinel for the URL; a dotted sandbox id routes to its owner node.
+const storedDeleteLoading = ref<string | null>(null)
+
+async function doDeleteStored(s: StoredSecret) {
+  if (!confirm(`Delete stored ${s.type || 'secret'} "${s.name}" (${s.scope || 'global'})?`)) return
+  const key = `${s.scope}:${s.name}`
+  storedDeleteLoading.value = key
+  try {
+    await api.del(`/v1/sandboxes/${s.scope || '_node'}/stored-secrets/${s.name}`)
+    toast.add({ title: 'Stored secret deleted', color: 'success' })
+    await fetchSecrets()
+  } catch (e: any) {
+    toast.add({ title: 'Failed to delete stored secret', description: e?.message, color: 'error' })
+  } finally {
+    storedDeleteLoading.value = null
   }
 }
 
@@ -335,7 +354,7 @@ onMounted(() => {
             <div class="flex flex-wrap gap-2">
               <div
                 v-for="s in secrets.stored"
-                :key="s.name"
+                :key="`${s.scope}:${s.name}`"
                 class="flex items-center gap-1.5 rounded-md bg-elevated px-2 py-1"
               >
                 <UBadge
@@ -346,6 +365,20 @@ onMounted(() => {
                   class="capitalize"
                 />
                 <span class="font-mono text-xs text-default">{{ s.name }}</span>
+                <span
+                  class="font-mono text-[10px] text-dimmed truncate max-w-[12rem]"
+                  :title="s.scope || 'node-global'"
+                >{{ s.scope || 'global' }}</span>
+                <UButton
+                  v-if="session.isAdmin.value"
+                  icon="i-lucide-trash-2"
+                  size="xs"
+                  color="error"
+                  variant="ghost"
+                  aria-label="Delete stored secret"
+                  :loading="storedDeleteLoading === `${s.scope}:${s.name}`"
+                  @click="doDeleteStored(s)"
+                />
               </div>
             </div>
           </div>
