@@ -58,7 +58,10 @@ func (s *SandboxService) TerminalHandler() http.Handler {
 		defer c.CloseNow()
 
 		_ = s.mgr.BumpActivity(r.Context(), id) // a Terminal session is Activity
-		sess, err := s.mgr.Backend().ExecInteractive(r.Context(), name, []string{"/bin/sh"}, true)
+		// Prefer bash (tab completion + history) but fall back to sh where it isn't
+		// installed. exec replaces the bootstrap sh so signals/PTY pass straight through.
+		shell := []string{"/bin/sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec /bin/sh; fi"}
+		sess, err := s.mgr.Backend().ExecInteractive(r.Context(), name, shell, true)
 		if err != nil {
 			_ = c.Close(websocket.StatusInternalError, "exec failed")
 			return
