@@ -80,7 +80,11 @@ func bridgeTerminal(ctx context.Context, c *websocket.Conn, sess sandbox.Session
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// session stdout -> websocket
+	// session stdout -> websocket. This MUST be the only reader of sess.Stdout():
+	// the SDK's stdout is an io.Pipe, and a second concurrent reader (e.g. a
+	// sess.Wait() that drains stdout) splits the stream — each pipe write goes to
+	// just one waiting reader, so half the bytes (every other echoed keystroke)
+	// would be stolen. End-of-session is detected here via EOF instead.
 	go func() {
 		buf := make([]byte, 32*1024)
 		for {
@@ -92,17 +96,11 @@ func bridgeTerminal(ctx context.Context, c *websocket.Conn, sess sandbox.Session
 				}
 			}
 			if err != nil {
+				_ = c.Close(websocket.StatusNormalClosure, "session ended")
 				cancel()
 				return
 			}
 		}
-	}()
-
-	// session exit -> close
-	go func() {
-		_, _ = sess.Wait(ctx)
-		_ = c.Close(websocket.StatusNormalClosure, "session ended")
-		cancel()
 	}()
 
 	// websocket -> session stdin (and resize control frames)
