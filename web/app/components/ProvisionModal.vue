@@ -56,10 +56,10 @@ const defaultForm = (): ProvisionForm => ({
   clone: false,
   branch: '',
   strategy: '',
-  env: {},
-  labels: {},
-  node_affinity: {},
-  node_anti_affinity: {},
+  env: [],
+  labels: [],
+  node_affinity: [],
+  node_anti_affinity: [],
 })
 
 const form = reactive<ProvisionForm>(defaultForm())
@@ -88,30 +88,19 @@ function toggleReadOnly(name: string) {
   }))
 }
 
-// Key-value editor helpers
-type KVMap = Record<string, string>
+// Key-value editor helpers. Rows carry a stable id so editing a key doesn't
+// remount the input (focus loss); blank/duplicate keys are allowed while typing
+// and resolved into a Record at submit (buildCreateBody). v-model binds the row
+// fields directly — no per-keystroke object rebuild.
 type KVKey = 'env' | 'labels' | 'node_affinity' | 'node_anti_affinity'
+let nextKVId = 0
 
 function addKV(key: KVKey) {
-  form[key] = { ...form[key], '': '' }
+  form[key].push({ id: nextKVId++, k: '', v: '' })
 }
 
-function removeKV(key: KVKey, k: string) {
-  const next = { ...form[key] }
-  delete next[k]
-  form[key] = next
-}
-
-function updateKVKey(key: KVKey, oldK: string, newK: string) {
-  const next: KVMap = {}
-  for (const [k, v] of Object.entries(form[key])) {
-    next[k === oldK ? newK : k] = v
-  }
-  form[key] = next
-}
-
-function updateKVVal(key: KVKey, k: string, val: string) {
-  form[key] = { ...form[key], [k]: val }
+function removeKV(key: KVKey, id: number) {
+  form[key] = form[key].filter((row) => row.id !== id)
 }
 
 // Advanced section open state
@@ -357,27 +346,25 @@ function onClose() {
                     />
                   </div>
                   <div
-                    v-if="Object.keys(form[kvKey]).length > 0"
+                    v-if="form[kvKey].length > 0"
                     class="space-y-1"
                   >
                     <div
-                      v-for="(val, k) in form[kvKey]"
-                      :key="k"
+                      v-for="row in form[kvKey]"
+                      :key="row.id"
                       class="flex items-center gap-2"
                     >
                       <UInput
-                        :model-value="k"
+                        v-model="row.k"
                         placeholder="key"
                         class="w-1/3 font-mono text-xs"
                         :aria-label="`${kvKey} key`"
-                        @update:model-value="updateKVKey(kvKey, k, $event)"
                       />
                       <UInput
-                        :model-value="val"
+                        v-model="row.v"
                         placeholder="value"
                         class="flex-1 font-mono text-xs"
                         :aria-label="`${kvKey} value`"
-                        @update:model-value="updateKVVal(kvKey, k, $event)"
                       />
                       <UButton
                         icon="i-lucide-x"
@@ -385,7 +372,7 @@ function onClose() {
                         color="neutral"
                         variant="ghost"
                         :aria-label="`Remove ${kvKey} entry`"
-                        @click="removeKV(kvKey, k)"
+                        @click="removeKV(kvKey, row.id)"
                       />
                     </div>
                   </div>
