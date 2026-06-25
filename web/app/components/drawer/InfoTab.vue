@@ -14,6 +14,8 @@ const props = defineProps<{
   }
 }>()
 
+const emit = defineEmits<{ updated: [sandbox: any] }>()
+
 const api = useApi()
 const session = useSession()
 const toast = useToast()
@@ -81,8 +83,15 @@ const isRunning = computed(() => props.sandbox.status === 'running')
 async function doAction(action: string) {
   actionLoading.value = action
   try {
-    await api.post(`/v1/sandboxes/${props.sandbox.id}/${action}`)
-    toast.add({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} triggered`, color: 'success' })
+    // Start/Stop/KeepAlive are synchronous and return the updated sandbox. Bubble it
+    // up so the drawer reflects the new status, and toast the actual result.
+    const updated = await api.post(`/v1/sandboxes/${props.sandbox.id}/${action}`)
+    if (updated && typeof updated === 'object') emit('updated', updated)
+    if (action === 'keepalive') {
+      toast.add({ title: 'Keep-alive sent', color: 'success', icon: 'i-lucide-heart-pulse' })
+    } else {
+      toast.add({ title: `Sandbox is now ${updated?.status ?? action}`, color: 'success', icon: 'i-lucide-check-circle' })
+    }
   } catch (e: any) {
     toast.add({ title: `Failed: ${action}`, description: e?.message, color: 'error' })
   } finally {

@@ -140,7 +140,7 @@ const tabItems = computed<TabsItem[]>(() => {
           <!-- Info tab: real implementation -->
           <template #info>
             <div class="pt-4">
-              <DrawerInfoTab v-if="sandbox" :sandbox="sandbox" />
+              <DrawerInfoTab v-if="sandbox" :sandbox="sandbox" @updated="sandbox = $event" />
               <UAlert
                 v-else
                 color="neutral"
