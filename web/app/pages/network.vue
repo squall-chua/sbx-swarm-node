@@ -28,6 +28,13 @@ function hostList(rule: PolicyRule): string[] {
   return rule.resources ? rule.resources.split(',').filter(Boolean) : []
 }
 
+// This page manages the node-global scope, whose own rules are applies_to "all".
+// Sandbox-scoped rules (applies_to "sandbox:<id>") also list here but belong to
+// that sandbox's drawer, so they aren't removable from here.
+function isOwnScope(rule: PolicyRule): boolean {
+  return rule.applies_to === 'all'
+}
+
 async function fetchPolicy() {
   policyLoading.value = true
   try {
@@ -276,7 +283,7 @@ onMounted(() => {
                   >{{ h }}</span>
                   <span v-if="!hostList(rule).length" class="text-xs text-muted italic">no hosts</span>
                 </div>
-                <div v-if="session.isAdmin.value && hostList(rule).length" class="pt-1">
+                <div v-if="session.isAdmin.value && isOwnScope(rule) && hostList(rule).length" class="pt-1">
                   <UButton
                     label="Remove rule"
                     icon="i-lucide-trash-2"

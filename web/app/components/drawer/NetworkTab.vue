@@ -59,6 +59,12 @@ function hostsOf(rule: PolicyRule): string[] {
   return rule.resources ? rule.resources.split(',').map((h) => h.trim()).filter(Boolean) : []
 }
 
+// Only this sandbox's OWN rules are removable from its scope. Inherited node-global
+// rules (applies_to "all") belong to the node scope, not this sandbox.
+function isOwnScope(rule: PolicyRule): boolean {
+  return rule.applies_to === `sandbox:${props.id}`
+}
+
 const policy = ref<PolicyResponse>({ rules: [] })
 const policyLoading = ref(false)
 
@@ -257,8 +263,8 @@ onMounted(() => {
                 <span v-if="rule.rule && rule.type !== 'raw'">rule <span class="font-mono text-default">{{ rule.rule }}</span></span>
               </div>
 
-              <!-- remove (admin only; needs at least one resource to target) -->
-              <div v-if="session.isAdmin.value && hostsOf(rule).length > 0" class="pt-1">
+              <!-- remove (admin only; only this sandbox's own rules, with a resource to target) -->
+              <div v-if="session.isAdmin.value && isOwnScope(rule) && hostsOf(rule).length > 0" class="pt-1">
                 <UButton
                   label="Remove rule"
                   icon="i-lucide-trash-2"
