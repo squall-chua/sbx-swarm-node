@@ -257,7 +257,17 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
           <!-- Workspaces -->
           <div v-if="(node.workspaces ?? []).length" class="flex flex-col gap-1">
             <span class="text-xs text-muted uppercase tracking-wide font-medium">Workspaces</span>
-            <p class="text-xs text-muted tabular-nums">{{ (node.workspaces ?? []).length }}</p>
+            <div class="flex flex-wrap gap-1">
+              <UBadge
+                v-for="w in node.workspaces"
+                :key="w"
+                :label="w"
+                color="neutral"
+                variant="subtle"
+                size="xs"
+                class="font-mono"
+              />
+            </div>
           </div>
 
           <!-- Templates -->
