@@ -5,6 +5,7 @@ const props = defineProps<{
     name?: string
     owner_node?: string
     status?: string
+    agent?: string
     branch?: string
     last_publish?: string
     labels?: Record<string, string>
@@ -142,6 +143,11 @@ onMounted(fetchPorts)
           variant="subtle"
           size="sm"
         />
+
+        <template v-if="sandbox.agent">
+          <span class="text-muted font-medium">Agent</span>
+          <span class="text-sm text-default">{{ sandbox.agent }}</span>
+        </template>
 
         <template v-if="sandbox.branch">
           <span class="text-muted font-medium">Branch</span>

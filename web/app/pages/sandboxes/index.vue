@@ -85,6 +85,10 @@ const columns: TableColumn<any>[] = [
     header: 'Agent',
   },
   {
+    accessorKey: 'workspaces',
+    header: 'Workspaces',
+  },
+  {
     accessorKey: 'labels',
     header: 'Labels',
   },
@@ -203,6 +207,25 @@ function fmtDate(ts: string | null | undefined): string {
       <!-- Agent -->
       <template #agent-cell="{ row }">
         <span v-if="row.original.agent" class="text-sm text-default">{{ row.original.agent }}</span>
+        <span v-else class="text-muted">—</span>
+      </template>
+
+      <!-- Workspaces: name badges, (ro) suffix for read-only -->
+      <template #workspaces-cell="{ row }">
+        <div
+          v-if="row.original.workspaces && row.original.workspaces.length"
+          class="flex flex-wrap gap-1"
+        >
+          <UBadge
+            v-for="w in row.original.workspaces"
+            :key="w.name"
+            :label="w.read_only ? `${w.name} (ro)` : w.name"
+            :color="w.read_only ? 'neutral' : 'info'"
+            variant="subtle"
+            size="xs"
+            class="font-mono"
+          />
+        </div>
         <span v-else class="text-muted">—</span>
       </template>
 
