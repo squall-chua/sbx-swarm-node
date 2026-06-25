@@ -40,11 +40,19 @@ const allStatuses = computed(() => {
   return ['All', ...Array.from(seen).sort()]
 })
 
+// Flatten labels to a "key=value key=value" haystack for substring search. The old
+// approach matched the raw JSON, which silently failed natural "key=value"/"key:value"
+// queries and false-matched JSON punctuation (":", "{").
+function labelHaystack(labels: Record<string, string> | undefined): string {
+  return Object.entries(labels ?? {}).map(([k, v]) => `${k}=${v}`).join(' ').toLowerCase()
+}
+
 const filtered = computed(() => {
+  // Normalize the query: trim, lowercase, accept ":" as "=" so both separators work.
+  const q = labelFilter.value.trim().toLowerCase().replace(/:/g, '=')
   return (swarm?.sandboxes.value ?? []).filter((sb: any) => {
     const matchStatus = statusFilter.value === 'All' || sb.status === statusFilter.value
-    const matchLabel = !labelFilter.value
-      || JSON.stringify(sb.labels ?? {}).toLowerCase().includes(labelFilter.value.toLowerCase())
+    const matchLabel = !q || labelHaystack(sb.labels).includes(q)
     return matchStatus && matchLabel
   })
 })
@@ -62,6 +70,10 @@ const columns: TableColumn<any>[] = [
   {
     accessorKey: 'status',
     header: 'Status',
+  },
+  {
+    accessorKey: 'labels',
+    header: 'Labels',
   },
   {
     accessorKey: 'branch',
@@ -109,7 +121,7 @@ function fmtDate(ts: string | null | undefined): string {
         <UInput
           v-model="labelFilter"
           icon="i-lucide-tag"
-          placeholder="Filter by label…"
+          placeholder="Filter by label (key=value)…"
           size="sm"
           aria-label="Filter by label"
           class="min-w-40"
@@ -157,6 +169,24 @@ function fmtDate(ts: string | null | undefined): string {
       <!-- Status -->
       <template #status-cell="{ row }">
         <StatusPill :status="row.original.status ?? 'unknown'" kind="sandbox" />
+      </template>
+
+      <!-- Labels: key=value badges -->
+      <template #labels-cell="{ row }">
+        <div
+          v-if="row.original.labels && Object.keys(row.original.labels).length"
+          class="flex flex-wrap gap-1"
+        >
+          <UBadge
+            v-for="(v, k) in row.original.labels"
+            :key="k"
+            :label="`${k}=${v}`"
+            color="neutral"
+            variant="subtle"
+            size="xs"
+          />
+        </div>
+        <span v-else class="text-muted">—</span>
       </template>
 
       <!-- Branch: monospace -->
