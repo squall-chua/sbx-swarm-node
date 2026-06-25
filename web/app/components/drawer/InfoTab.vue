@@ -75,6 +75,9 @@ async function doPublishPort() {
 const actionLoading = ref<string | null>(null)
 const deleteConfirmOpen = ref(false)
 
+// Lifecycle gating: Start only makes sense when not running, Stop only when running.
+const isRunning = computed(() => props.sandbox.status === 'running')
+
 async function doAction(action: string) {
   actionLoading.value = action
   try {
@@ -203,6 +206,7 @@ onMounted(fetchPorts)
             color="success"
             variant="outline"
             :loading="actionLoading === 'start'"
+            :disabled="isRunning"
             @click="doAction('start')"
           />
           <UButton
@@ -213,6 +217,7 @@ onMounted(fetchPorts)
             color="warning"
             variant="outline"
             :loading="actionLoading === 'stop'"
+            :disabled="!isRunning"
             @click="doAction('stop')"
           />
           <UButton
