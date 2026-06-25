@@ -6,7 +6,7 @@
 export type KVRow = { id: number; k: string; v: string }
 
 export type ProvisionForm = {
-  agent: string; template: string; cpus: number; memory_bytes: number; disk_gb: number
+  name: string; agent: string; template: string; cpus: number; memory_bytes: number; disk_gb: number
   workspaces: { name: string; read_only: boolean }[]
   clone: boolean; branch: string; strategy: string
   env: KVRow[]; labels: KVRow[]
@@ -18,6 +18,7 @@ export function buildCreateBody(f: ProvisionForm): Record<string, any> {
     agent: f.agent, cpus: f.cpus,
     memory_bytes: f.memory_bytes, disk_gb: f.disk_gb,
   }
+  if (f.name) body.name = f.name // optional: blank => server derives a display name
   if (f.template) body.template = f.template // optional: sbx uses the agent's default image when omitted
   if (f.workspaces.length) body.workspaces = f.workspaces
   if (f.clone) { body.clone = true; if (f.branch) body.branch = f.branch }

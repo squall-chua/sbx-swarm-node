@@ -2,11 +2,13 @@
 const props = defineProps<{
   sandbox: {
     id: string
+    name?: string
     owner_node?: string
     status?: string
     branch?: string
     last_publish?: string
     labels?: Record<string, string>
+    workspaces?: Array<{ name: string; read_only?: boolean }>
     ports?: Array<{ container_port: number; host_port?: number; protocol?: string }>
   }
 }>()
@@ -122,6 +124,11 @@ onMounted(fetchPorts)
     <!-- ── Metadata ─────────────────────────────────────────────────────── -->
     <div class="flex flex-col gap-3">
       <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-baseline text-sm">
+        <template v-if="sandbox.name">
+          <span class="text-muted font-medium">Name</span>
+          <span class="text-sm font-medium text-default break-all">{{ sandbox.name }}</span>
+        </template>
+
         <span class="text-muted font-medium">ID</span>
         <span class="font-mono text-sm text-default break-all">{{ sandbox.id }}</span>
 
@@ -143,6 +150,21 @@ onMounted(fetchPorts)
 
         <span class="text-muted font-medium">Last publish</span>
         <span class="text-xs text-muted tabular-nums">{{ fmtDate(sandbox.last_publish) }}</span>
+
+        <template v-if="sandbox.workspaces && sandbox.workspaces.length > 0">
+          <span class="text-muted font-medium">Workspaces</span>
+          <div class="flex flex-wrap gap-1">
+            <UBadge
+              v-for="w in sandbox.workspaces"
+              :key="w.name"
+              :label="w.read_only ? `${w.name} (ro)` : w.name"
+              :color="w.read_only ? 'neutral' : 'info'"
+              variant="subtle"
+              size="sm"
+              class="font-mono"
+            />
+          </div>
+        </template>
 
         <template v-if="sandbox.labels && Object.keys(sandbox.labels).length > 0">
           <span class="text-muted font-medium">Labels</span>

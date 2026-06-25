@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -145,6 +146,7 @@ func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 	return sandbox.CreateSpec{
 		Agent: r.Agent, Template: r.Template, CPUs: int(r.Cpus),
 		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, Workspaces: ws, Env: r.Env, Labels: r.Labels,
+		DisplayName: r.Name,
 	}
 }
 
@@ -153,6 +155,10 @@ func toProto(rec *sandbox.Record) *sbxv1.Sandbox {
 	for _, p := range rec.Ports {
 		ports = append(ports, &sbxv1.Port{ContainerPort: int32(p.ContainerPort), HostPort: int32(p.HostPort)})
 	}
+	ws := make([]*sbxv1.WorkspaceMount, 0, len(rec.Spec.Workspaces))
+	for _, w := range rec.Spec.Workspaces {
+		ws = append(ws, &sbxv1.WorkspaceMount{Name: w.Name, ReadOnly: w.ReadOnly})
+	}
 	var lastPub string
 	if !rec.LastPublish.IsZero() {
 		lastPub = rec.LastPublish.UTC().Format(time.RFC3339)
@@ -160,7 +166,35 @@ func toProto(rec *sandbox.Record) *sbxv1.Sandbox {
 	return &sbxv1.Sandbox{
 		Id: rec.ID, OwnerNode: rec.OwnerNode, Status: rec.Status, Ports: ports, Labels: rec.Labels,
 		Branch: rec.Spec.Branch, LastPublish: lastPub, Agent: rec.Spec.Agent,
+		Name: displayName(rec), Workspaces: ws,
 	}
+}
+
+// displayName returns the human-readable sandbox name: the custom name if set,
+// else one derived from agent + first workspace + a short id suffix (the routing
+// id is never readable). Display only — not unique, not a key.
+func displayName(rec *sandbox.Record) string {
+	if rec.Spec.DisplayName != "" {
+		return rec.Spec.DisplayName
+	}
+	parts := make([]string, 0, 3)
+	if rec.Spec.Agent != "" {
+		parts = append(parts, rec.Spec.Agent)
+	}
+	if len(rec.Spec.Workspaces) > 0 {
+		parts = append(parts, rec.Spec.Workspaces[0].Name)
+	}
+	if i := strings.LastIndexByte(rec.ID, '.'); i >= 0 && i+1 < len(rec.ID) {
+		u := rec.ID[i+1:]
+		if len(u) > 6 {
+			u = u[len(u)-6:]
+		}
+		parts = append(parts, strings.ToLower(u))
+	}
+	if len(parts) == 0 {
+		return rec.ID
+	}
+	return strings.Join(parts, "-")
 }
 
 func opProto(op *ops.Operation) *sbxv1.Operation {

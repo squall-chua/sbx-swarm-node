@@ -4,7 +4,7 @@ import { buildCreateBody } from '../app/components/ProvisionModal'
 describe('buildCreateBody', () => {
   it('maps the form to a snake_case CreateSandbox body, dropping empties', () => {
     const body = buildCreateBody({
-      agent: 'claude', template: 'base', cpus: 2, memory_bytes: 1073741824, disk_gb: 5,
+      name: 'my-box', agent: 'claude', template: 'base', cpus: 2, memory_bytes: 1073741824, disk_gb: 5,
       workspaces: [{ name: 'repo', read_only: true }],
       clone: true, branch: 'feat/x', strategy: 'bin-pack',
       env: [{ id: 0, k: 'FOO', v: 'bar' }], labels: [],
@@ -15,6 +15,7 @@ describe('buildCreateBody', () => {
     expect(body.clone).toBe(true)
     expect(body.branch).toBe('feat/x')
     expect(body.template).toBe('base')
+    expect(body.name).toBe('my-box')
     expect(body.env).toEqual({ FOO: 'bar' })
     expect('labels' in body).toBe(false)        // empty row lists dropped
     expect('node_affinity' in body).toBe(false)
@@ -22,7 +23,7 @@ describe('buildCreateBody', () => {
 
   it('converts KV rows to a record: trims keys, skips blanks, last write wins', () => {
     const body = buildCreateBody({
-      agent: 'shell', template: '', cpus: 1, memory_bytes: 0, disk_gb: 0,
+      name: '', agent: 'shell', template: '', cpus: 1, memory_bytes: 0, disk_gb: 0,
       workspaces: [], clone: false, branch: '', strategy: '',
       env: [
         { id: 0, k: 'FOO', v: '1' },
@@ -34,5 +35,6 @@ describe('buildCreateBody', () => {
     })
     expect(body.env).toEqual({ FOO: 'override', BAR: '2' })
     expect('template' in body).toBe(false) // optional: omitted when blank -> sbx uses the agent default
+    expect('name' in body).toBe(false)     // optional: omitted when blank -> server derives a display name
   })
 })

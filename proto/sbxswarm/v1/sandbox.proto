@@ -73,6 +73,7 @@ message CreateSandboxRequest {
   map<string, string> node_affinity = 11;       // match node labels (zone/rack/gpu), not the sandbox's own labels
   map<string, string> node_anti_affinity = 12;  // exclude nodes whose labels match (node labels, not the sandbox's own)
   string branch = 13; // clone-mode: branch the agent works on / auto-publish target
+  string name = 14;   // optional human-readable display name (blank => auto-derived)
 }
 
 message Sandbox {
@@ -84,6 +85,8 @@ message Sandbox {
   string branch = 6;       // clone-mode recorded branch
   string last_publish = 7; // RFC3339; empty if never published
   string agent = 8;        // the agent the sandbox runs (from its create spec)
+  string name = 9;         // human-readable display name (custom or auto-derived); NOT the routing id
+  repeated WorkspaceMount workspaces = 10; // workspaces mounted into the sandbox
 }
 
 message GetSandboxRequest { string id = 1; }

@@ -54,6 +54,7 @@ const agentOptions = [
 // ── Form state ───────────────────────────────────────────────────────────────
 
 const defaultForm = (): ProvisionForm => ({
+  name: '',
   agent: '',
   template: '',
   cpus: 1,
@@ -184,6 +185,20 @@ function onClose() {
       <div class="space-y-4">
         <!-- ── Core fields ──────────────────────────────────────────────── -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Name (optional) -->
+          <div class="sm:col-span-2">
+            <label class="block text-sm font-medium text-default mb-1" for="prov-name">
+              Name <span class="text-muted font-normal">(optional)</span>
+            </label>
+            <UInput
+              id="prov-name"
+              v-model="form.name"
+              placeholder="Auto-derived from agent + workspace"
+              aria-label="Sandbox name"
+              class="w-full"
+            />
+          </div>
+
           <!-- Agent -->
           <div class="sm:col-span-2">
             <label class="block text-sm font-medium text-default mb-1" for="prov-agent">

@@ -19,7 +19,8 @@ type WorkspaceMount struct {
 
 // CreateSpec describes a sandbox to provision.
 type CreateSpec struct {
-	Name        string
+	Name        string // daemon/backend sandbox name (set to the routing id by the manager)
+	DisplayName string // optional human-readable name (blank => derived for display); never the routing id
 	Agent       string
 	Template    string
 	CPUs        int

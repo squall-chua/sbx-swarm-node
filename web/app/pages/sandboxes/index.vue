@@ -59,6 +59,7 @@ const filtered = computed(() => {
     const matchStatus = statusFilter.value === 'All' || sb.status === statusFilter.value
     const matchLabel = !q || labelHaystack(sb.labels).includes(q)
     const matchSearch = !s
+      || String(sb.name ?? '').toLowerCase().includes(s)
       || String(sb.id ?? '').toLowerCase().includes(s)
       || String(sb.owner_node ?? '').toLowerCase().includes(s)
     return matchStatus && matchLabel && matchSearch
@@ -69,7 +70,7 @@ const filtered = computed(() => {
 const columns: TableColumn<any>[] = [
   {
     accessorKey: 'id',
-    header: 'ID',
+    header: 'Name',
   },
   {
     accessorKey: 'owner_node',
@@ -180,7 +181,13 @@ function fmtDate(ts: string | null | undefined): string {
     >
       <!-- ID column: monospace -->
       <template #id-cell="{ row }">
-        <span class="font-mono text-sm text-default">{{ row.original.id }}</span>
+        <div class="flex flex-col">
+          <span class="text-sm font-medium text-default">{{ row.original.name || row.original.id }}</span>
+          <span
+            class="font-mono text-xs text-muted truncate max-w-[20rem]"
+            :title="row.original.id"
+          >{{ row.original.id }}</span>
+        </div>
       </template>
 
       <!-- Owner node: monospace -->
