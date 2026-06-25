@@ -116,40 +116,7 @@ const advancedOpen = ref(false)
 // ── Submit ───────────────────────────────────────────────────────────────────
 
 const submitting = ref(false)
-
-// Provisioning is async: POST returns a pending operation, the real create/failure
-// lands later. Watch the live operations list for this op id to reach a terminal
-// state (done/error) and toast then — otherwise a failed provision is silent.
-function trackProvision(opId: string, agent: string) {
-  if (!opId || !swarm) return
-  let stopWatch: (() => void) | null = null
-  let timer: ReturnType<typeof setTimeout> | null = null
-  const finish = () => { stopWatch?.(); if (timer) clearTimeout(timer) }
-  stopWatch = watch(() => swarm!.operations.value, (ops) => {
-    const op = (ops ?? []).find((o: any) => o.id === opId)
-    if (!op) return
-    if (op.state === 'done') {
-      finish()
-      toast.add({
-        title: 'Sandbox created',
-        description: `"${agent}" sandbox ${op.sandbox_id ?? ''} is ready.`.trim(),
-        color: 'success',
-        icon: 'i-lucide-check-circle',
-      })
-      swarm!.refreshSandboxes()
-    } else if (op.state === 'error') {
-      finish()
-      toast.add({
-        title: 'Provision failed',
-        description: op.error || 'The sandbox could not be created.',
-        color: 'error',
-        icon: 'i-lucide-alert-circle',
-      })
-    }
-  })
-  // Stop watching if the op never reaches a terminal state (missed event / list cap).
-  timer = setTimeout(finish, 5 * 60_000)
-}
+const trackOp = useOpTracker()
 
 async function onSubmit() {
   submitting.value = true
@@ -164,7 +131,23 @@ async function onSubmit() {
       color: 'info',
       icon: 'i-lucide-loader',
     })
-    trackProvision(op?.id, agent)
+    trackOp(op?.id, {
+      onDone: (o) => {
+        toast.add({
+          title: 'Sandbox created',
+          description: `"${agent}" sandbox ${o.sandbox_id ?? ''} is ready.`.trim(),
+          color: 'success',
+          icon: 'i-lucide-check-circle',
+        })
+        swarm?.refreshSandboxes()
+      },
+      onError: (o) => toast.add({
+        title: 'Provision failed',
+        description: o.error || 'The sandbox could not be created.',
+        color: 'error',
+        icon: 'i-lucide-alert-circle',
+      }),
+    })
     await swarm?.refreshSandboxes()
     // reset
     Object.assign(form, defaultForm())

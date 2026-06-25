@@ -7,6 +7,8 @@ import InfoTab from '../app/components/drawer/InfoTab.vue'
 const post = vi.fn(async () => ({}))
 vi.mock('../app/composables/useApi', () => ({ useApi: () => ({ post, get: vi.fn(async () => ({})) }) }))
 vi.mock('../app/composables/useSession', () => ({ useSession: () => ({ isAdmin: ref(true) }) }))
+// useOpTracker pulls in the swarm/events store (EventSource); the no-op keeps InfoTab mountable.
+vi.mock('../app/composables/useOpTracker', () => ({ useOpTracker: () => () => {} }))
 
 describe('InfoTab actions', () => {
   it('Stop posts to the stop endpoint', async () => {

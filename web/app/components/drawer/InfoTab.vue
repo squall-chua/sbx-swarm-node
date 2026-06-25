@@ -14,6 +14,7 @@ const props = defineProps<{
 const api = useApi()
 const session = useSession()
 const toast = useToast()
+const trackOp = useOpTracker()
 
 // ── Status → color ──────────────────────────────────────────────────────────
 function statusColor(status: string | undefined): string {
@@ -87,8 +88,19 @@ async function doDelete() {
   deleteConfirmOpen.value = false
   actionLoading.value = 'delete'
   try {
-    await api.del(`/v1/sandboxes/${props.sandbox.id}`)
-    toast.add({ title: 'Sandbox deleted', color: 'success' })
+    // Delete is async: the API returns a pending operation. Toast on the actual
+    // removal (terminal op), not on accept — otherwise a failed delete is silent.
+    const op = await api.del(`/v1/sandboxes/${props.sandbox.id}`)
+    toast.add({ title: 'Removing sandbox…', color: 'info', icon: 'i-lucide-loader' })
+    trackOp(op?.id, {
+      onDone: () => toast.add({ title: 'Sandbox removed', color: 'success', icon: 'i-lucide-check-circle' }),
+      onError: (o) => toast.add({
+        title: 'Failed to remove sandbox',
+        description: o.error || 'The sandbox could not be removed.',
+        color: 'error',
+        icon: 'i-lucide-alert-circle',
+      }),
+    })
   } catch (e: any) {
     toast.add({ title: 'Failed to delete sandbox', description: e?.message, color: 'error' })
   } finally {
