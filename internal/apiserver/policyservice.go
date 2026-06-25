@@ -105,6 +105,26 @@ func (s *PolicyService) SetPolicy(ctx context.Context, r *sbxv1.SetPolicyRequest
 	return &sbxv1.Empty{}, nil
 }
 
+// DeletePolicyRule removes a network policy rule by resource (host[:port]) within
+// a scope.
+func (s *PolicyService) DeletePolicyRule(ctx context.Context, r *sbxv1.DeletePolicyRuleRequest) (*sbxv1.Empty, error) {
+	name, err := s.scopeName(ctx, r.Scope)
+	if err != nil {
+		return nil, scopeStatusErr(err)
+	}
+	derr := s.mgr.Backend().PolicyRemoveRule(ctx, name, r.Resource)
+	_ = s.audit.Record(audit.Entry{
+		Actor:   actor(ctx),
+		Action:  "policy.remove",
+		Target:  r.Resource,
+		Outcome: outcomeOf(derr),
+	})
+	if derr != nil {
+		return nil, status.Error(codes.Internal, derr.Error())
+	}
+	return &sbxv1.Empty{}, nil
+}
+
 // ListPolicy returns the current policy rules for a scope.
 func (s *PolicyService) ListPolicy(ctx context.Context, r *sbxv1.ScopeRequest) (*sbxv1.ListPolicyResponse, error) {
 	name, err := s.scopeName(ctx, r.Scope)

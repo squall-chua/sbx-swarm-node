@@ -68,6 +68,28 @@ async function doAddRule() {
   }
 }
 
+// Remove a rule by deleting each of its resources (sbx removes one host at a time).
+const removingKey = ref<string | null>(null)
+function ruleKey(rule: PolicyRule): string {
+  return `${rule.decision}:${rule.rule}:${rule.resources}`
+}
+async function doRemoveRule(rule: PolicyRule) {
+  const hosts = hostList(rule)
+  if (!hosts.length) return
+  removingKey.value = ruleKey(rule)
+  try {
+    for (const h of hosts) {
+      await api.del(`/v1/sandboxes/_node/policy/${encodeURIComponent(h)}`)
+    }
+    toast.add({ title: 'Policy rule removed', color: 'success' })
+  } catch (e: any) {
+    toast.add({ title: 'Failed to remove rule', description: e?.message, color: 'error' })
+  } finally {
+    await fetchPolicy()
+    removingKey.value = null
+  }
+}
+
 // ── Secrets ───────────────────────────────────────────────────────────────────
 interface CustomSecret { host: string; env: string; placeholder?: string }
 interface StoredSecret { name: string; type: string; scope?: string } // type: "service" | "registry"; scope: "" = node-global, else owning sandbox id
@@ -245,13 +267,26 @@ onMounted(() => {
               />
             </button>
             <template #content>
-              <div class="flex flex-wrap gap-1.5 px-3 pb-3 pt-2 border-t border-default">
-                <span
-                  v-for="h in hostList(rule)"
-                  :key="h"
-                  class="font-mono text-xs text-toned bg-default rounded px-1.5 py-0.5 border border-default"
-                >{{ h }}</span>
-                <span v-if="!hostList(rule).length" class="text-xs text-muted italic">no hosts</span>
+              <div class="flex flex-col gap-2 px-3 pb-3 pt-2 border-t border-default">
+                <div class="flex flex-wrap gap-1.5">
+                  <span
+                    v-for="h in hostList(rule)"
+                    :key="h"
+                    class="font-mono text-xs text-toned bg-default rounded px-1.5 py-0.5 border border-default"
+                  >{{ h }}</span>
+                  <span v-if="!hostList(rule).length" class="text-xs text-muted italic">no hosts</span>
+                </div>
+                <div v-if="session.isAdmin.value && hostList(rule).length" class="pt-1">
+                  <UButton
+                    label="Remove rule"
+                    icon="i-lucide-trash-2"
+                    color="error"
+                    variant="subtle"
+                    size="xs"
+                    :loading="removingKey === ruleKey(rule)"
+                    @click="doRemoveRule(rule)"
+                  />
+                </div>
               </div>
             </template>
           </UCollapsible>

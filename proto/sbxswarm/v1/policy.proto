@@ -13,6 +13,9 @@ service PolicyService {
   rpc SetPolicy(SetPolicyRequest) returns (Empty) {
     option (google.api.http) = {put: "/v1/sandboxes/{scope}/policy" body: "*"};
   }
+  rpc DeletePolicyRule(DeletePolicyRuleRequest) returns (Empty) {
+    option (google.api.http) = {delete: "/v1/sandboxes/{scope}/policy/{resource}"};
+  }
   rpc ListSecrets(ScopeRequest) returns (ListSecretsResponse) {
     option (google.api.http) = {get: "/v1/sandboxes/{scope}/secrets"};
   }
@@ -55,6 +58,12 @@ message SetPolicyRequest {
   string scope = 1;
   string decision = 2; // "allow" | "deny"
   string host = 3;
+}
+
+// DeletePolicyRuleRequest removes a network policy rule by resource (host[:port]).
+message DeletePolicyRuleRequest {
+  string scope = 1;
+  string resource = 2;
 }
 
 // SecretMsg describes a custom secret entry. The secret value is NEVER included

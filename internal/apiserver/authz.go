@@ -21,22 +21,24 @@ func (p principal) authenticated() bool { return p.userRole != "" || p.node }
 // credential alongside the node-key. Keep in sync with the proto — the drift
 // guard test (TestAuthz_AllMethodsClassified) fails if a new method is unlisted.
 var mutatingMethods = map[string]bool{
-	"/sbxswarm.v1.SandboxService/CreateSandbox": true,
-	"/sbxswarm.v1.SandboxService/DeleteSandbox": true,
-	"/sbxswarm.v1.SandboxService/StartSandbox":  true,
-	"/sbxswarm.v1.SandboxService/StopSandbox":   true,
-	"/sbxswarm.v1.SandboxService/Exec":          true,
-	"/sbxswarm.v1.SandboxService/AgentRun":      true,
-	"/sbxswarm.v1.SandboxService/PublishPort":      true,
-	"/sbxswarm.v1.SandboxService/PublishSandbox":   true,
-	"/sbxswarm.v1.SandboxService/KeepAlive":        true,
-	"/sbxswarm.v1.PolicyService/SetPolicy":      true,
-	"/sbxswarm.v1.PolicyService/SetSecret":      true,
-	"/sbxswarm.v1.PolicyService/DeleteSecret":   true,
-	"/sbxswarm.v1.NodeService/Cordon":           true,
-	"/sbxswarm.v1.NodeService/Uncordon":         true,
-	"/sbxswarm.v1.NodeService/Drain":            true,
-	"/sbxswarm.v1.NodeService/RevokeNode":       true,
+	"/sbxswarm.v1.SandboxService/CreateSandbox":     true,
+	"/sbxswarm.v1.SandboxService/DeleteSandbox":     true,
+	"/sbxswarm.v1.SandboxService/StartSandbox":      true,
+	"/sbxswarm.v1.SandboxService/StopSandbox":       true,
+	"/sbxswarm.v1.SandboxService/Exec":              true,
+	"/sbxswarm.v1.SandboxService/AgentRun":          true,
+	"/sbxswarm.v1.SandboxService/PublishPort":       true,
+	"/sbxswarm.v1.SandboxService/PublishSandbox":    true,
+	"/sbxswarm.v1.SandboxService/KeepAlive":         true,
+	"/sbxswarm.v1.PolicyService/SetPolicy":          true,
+	"/sbxswarm.v1.PolicyService/DeletePolicyRule":   true,
+	"/sbxswarm.v1.PolicyService/SetSecret":          true,
+	"/sbxswarm.v1.PolicyService/DeleteSecret":       true,
+	"/sbxswarm.v1.PolicyService/DeleteStoredSecret": true,
+	"/sbxswarm.v1.NodeService/Cordon":               true,
+	"/sbxswarm.v1.NodeService/Uncordon":             true,
+	"/sbxswarm.v1.NodeService/Drain":                true,
+	"/sbxswarm.v1.NodeService/RevokeNode":           true,
 }
 
 // internalMethods are node->node RPCs authorized by node identity alone
@@ -48,19 +50,19 @@ var internalMethods = map[string]bool{
 
 // readMethods are explicitly read/internal (any authenticated principal).
 var readMethods = map[string]bool{
-	"/sbxswarm.v1.SandboxService/GetSandbox":    true,
-	"/sbxswarm.v1.SandboxService/ListSandboxes": true,
-	"/sbxswarm.v1.SandboxService/ListPorts":     true,
-	"/sbxswarm.v1.SandboxService/GetStats":      true,
-	"/sbxswarm.v1.SandboxService/ListBlocked":   true,
-	"/sbxswarm.v1.NodeService/GetNodeInfo":      true,
-	"/sbxswarm.v1.NodeService/ListRevoked":      true,
-	"/sbxswarm.v1.PolicyService/ListPolicy":     true,
-	"/sbxswarm.v1.PolicyService/ListSecrets":    true,
-	"/sbxswarm.v1.EventService/WatchEvents":        true,
-	"/sbxswarm.v1.SandboxService/ListOperations":   true,
-	"/sbxswarm.v1.NodeService/ListNodes":            true,
-	"/sbxswarm.v1.NodeService/ListTemplates":        true,
+	"/sbxswarm.v1.SandboxService/GetSandbox":     true,
+	"/sbxswarm.v1.SandboxService/ListSandboxes":  true,
+	"/sbxswarm.v1.SandboxService/ListPorts":      true,
+	"/sbxswarm.v1.SandboxService/GetStats":       true,
+	"/sbxswarm.v1.SandboxService/ListBlocked":    true,
+	"/sbxswarm.v1.NodeService/GetNodeInfo":       true,
+	"/sbxswarm.v1.NodeService/ListRevoked":       true,
+	"/sbxswarm.v1.PolicyService/ListPolicy":      true,
+	"/sbxswarm.v1.PolicyService/ListSecrets":     true,
+	"/sbxswarm.v1.EventService/WatchEvents":      true,
+	"/sbxswarm.v1.SandboxService/ListOperations": true,
+	"/sbxswarm.v1.NodeService/ListNodes":         true,
+	"/sbxswarm.v1.NodeService/ListTemplates":     true,
 }
 
 func classified(fullMethod string) bool {

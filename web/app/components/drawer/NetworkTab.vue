@@ -102,6 +102,28 @@ async function doAddRule() {
   }
 }
 
+// Remove a rule by deleting each of its resources (sbx removes one host at a time).
+const removingKey = ref<string | null>(null)
+function ruleKey(rule: PolicyRule): string {
+  return `${rule.decision}:${rule.rule}:${rule.resources}`
+}
+async function doRemoveRule(rule: PolicyRule) {
+  const hosts = hostsOf(rule)
+  if (!hosts.length) return
+  removingKey.value = ruleKey(rule)
+  try {
+    for (const h of hosts) {
+      await api.del(`/v1/sandboxes/${props.id}/policy/${encodeURIComponent(h)}`)
+    }
+    toast.add({ title: 'Policy rule removed', color: 'success' })
+  } catch (e: any) {
+    toast.add({ title: 'Failed to remove rule', description: e?.message, color: 'error' })
+  } finally {
+    await fetchPolicy()
+    removingKey.value = null
+  }
+}
+
 onMounted(() => {
   fetchBlocked()
   fetchPolicy()
@@ -168,61 +190,90 @@ onMounted(() => {
         <USkeleton class="h-4 w-2/3" />
       </div>
 
+      <!-- each rule collapses its hosts/detail behind a summary header -->
       <div v-else-if="(policy.rules ?? []).length > 0" class="flex flex-col gap-2">
-        <div
+        <UCollapsible
           v-for="(rule, i) in policy.rules"
           :key="i"
-          class="flex flex-col gap-1.5 rounded-md bg-elevated px-3 py-2 text-sm"
+          class="rounded-md bg-elevated border border-default"
         >
-          <!-- decision + the hosts the rule covers -->
-          <div class="flex items-start gap-2">
+          <button
+            type="button"
+            class="group flex items-center gap-2 w-full px-3 py-2 text-sm text-left cursor-pointer hover:bg-accented/40 rounded-md transition-colors"
+          >
             <UBadge
               v-if="rule.decision"
               :label="rule.decision"
+              :icon="rule.decision === 'allow' ? 'i-lucide-check' : 'i-lucide-ban'"
               :color="rule.decision === 'allow' ? 'success' : 'error'"
               variant="subtle"
               size="xs"
-              class="mt-0.5 shrink-0"
+              class="shrink-0"
             />
-            <div class="flex flex-wrap gap-1 min-w-0">
-              <UBadge
-                v-for="host in hostsOf(rule)"
-                :key="host"
-                :label="host"
-                color="neutral"
-                variant="subtle"
-                size="xs"
-                class="font-mono"
-              />
-              <span v-if="hostsOf(rule).length === 0 && rule.type !== 'raw'" class="text-xs text-muted self-center">any host</span>
+            <span class="font-mono text-default truncate">{{ hostsOf(rule)[0] || rule.rule || 'rule' }}</span>
+            <UBadge
+              v-if="rule.provenance"
+              :label="rule.provenance"
+              color="neutral"
+              variant="subtle"
+              size="xs"
+              class="shrink-0 hidden sm:inline-flex"
+            />
+            <span class="ml-auto text-xs text-muted tabular-nums shrink-0">
+              {{ hostsOf(rule).length }} host{{ hostsOf(rule).length === 1 ? '' : 's' }}
+            </span>
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="size-4 text-muted shrink-0 transition-transform group-data-[state=open]:rotate-180"
+            />
+          </button>
+
+          <template #content>
+            <div class="flex flex-col gap-2 px-3 pb-3 pt-2 border-t border-default">
+              <!-- hosts -->
+              <div class="flex flex-wrap gap-1">
+                <UBadge
+                  v-for="host in hostsOf(rule)"
+                  :key="host"
+                  :label="host"
+                  color="neutral"
+                  variant="subtle"
+                  size="xs"
+                  class="font-mono"
+                />
+                <span v-if="hostsOf(rule).length === 0 && rule.type !== 'raw'" class="text-xs text-muted">any host</span>
+              </div>
+
+              <!-- raw fallback: the daemon returned an unparsed rule -->
+              <pre v-if="rule.type === 'raw'" class="font-mono text-xs text-muted whitespace-pre-wrap break-all">{{ rule.rule }}</pre>
+
+              <!-- provenance / scope / rule name -->
+              <div
+                v-if="rule.applies_to || rule.provenance || (rule.rule && rule.type !== 'raw')"
+                class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted"
+              >
+                <span v-if="rule.applies_to">applies to <span class="font-mono text-default">{{ rule.applies_to }}</span></span>
+                <span v-if="rule.provenance">source <span class="font-mono text-default">{{ rule.provenance }}</span></span>
+                <span v-if="rule.rule && rule.type !== 'raw'">rule <span class="font-mono text-default">{{ rule.rule }}</span></span>
+              </div>
+
+              <!-- remove (admin only; needs at least one resource to target) -->
+              <div v-if="session.isAdmin.value && hostsOf(rule).length > 0" class="pt-1">
+                <UButton
+                  label="Remove rule"
+                  icon="i-lucide-trash-2"
+                  color="error"
+                  variant="subtle"
+                  size="xs"
+                  :loading="removingKey === ruleKey(rule)"
+                  @click="doRemoveRule(rule)"
+                />
+              </div>
             </div>
-          </div>
-
-          <!-- raw fallback: the daemon returned an unparsed rule -->
-          <pre v-if="rule.type === 'raw'" class="font-mono text-xs text-muted whitespace-pre-wrap break-all">{{ rule.rule }}</pre>
-
-          <!-- provenance / scope / rule name -->
-          <div
-            v-if="rule.applies_to || rule.provenance || (rule.rule && rule.type !== 'raw')"
-            class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted"
-          >
-            <span v-if="rule.applies_to">applies to <span class="font-mono text-default">{{ rule.applies_to }}</span></span>
-            <span v-if="rule.provenance">source <span class="font-mono text-default">{{ rule.provenance }}</span></span>
-            <span v-if="rule.rule && rule.type !== 'raw'">rule <span class="font-mono text-default">{{ rule.rule }}</span></span>
-          </div>
-        </div>
+          </template>
+        </UCollapsible>
       </div>
       <p v-else class="text-sm text-muted">No policy rules configured.</p>
-
-      <!-- Note: rules can't be deleted -->
-      <UAlert
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-info"
-        title="Add-only"
-        description="Rules cannot be deleted via the console — no remove-rule API is available."
-        size="xs"
-      />
 
       <!-- Add rule form (admin only) -->
       <template v-if="session.isAdmin.value">
