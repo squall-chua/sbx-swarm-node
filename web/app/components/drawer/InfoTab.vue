@@ -142,6 +142,7 @@ onMounted(fetchPorts)
           :color="statusColor(sandbox.status)"
           variant="subtle"
           size="sm"
+          class="justify-self-start"
         />
 
         <template v-if="sandbox.agent">
