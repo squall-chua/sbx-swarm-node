@@ -454,8 +454,10 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 	}
 	for _, c := range secs.Custom {
 		// Value field is intentionally empty — write-only (spec §11). Placeholder
-		// is the non-secret injection token and IS surfaced.
-		out.Custom = append(out.Custom, CustomSecret{Host: c.Target, Env: c.Env, Placeholder: c.Placeholder})
+		// is the non-secret injection token and IS surfaced. Targets is comma-joined
+		// when one secret covers several hosts (SDK v0.1.5); we set single-host
+		// secrets, so it is normally one host.
+		out.Custom = append(out.Custom, CustomSecret{Host: c.Targets, Env: c.Env, Placeholder: c.Placeholder})
 	}
 	return out, nil
 }
