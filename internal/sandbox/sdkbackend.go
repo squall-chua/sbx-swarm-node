@@ -56,6 +56,26 @@ func (b *SDKBackend) handle(ctx context.Context, name string) (*sdksandbox.Sandb
 	return sb, nil
 }
 
+// workspaceArg builds the sbx workspace argument for one mount, applying sbx's
+// rule that the PRIMARY (first) workspace must be read/write. In --clone mode sbx
+// clones the primary and mounts that clone read-only itself, so we just drop the
+// requested ":ro". Without clone there is no clone to protect the host directory
+// and a read-only primary would leave the agent no writable working directory, so
+// we reject it rather than silently bind-mount the host read/write. Secondary
+// workspaces may be read-only.
+func workspaceArg(name, host string, readOnly, primary, clone bool) (string, error) {
+	if primary {
+		if readOnly && !clone {
+			return "", fmt.Errorf("primary workspace %q cannot be read-only: the agent's working directory must be writable (use clone mode, or mount it as a non-primary workspace)", name)
+		}
+		return host, nil
+	}
+	if readOnly {
+		return host + ":ro", nil
+	}
+	return host, nil
+}
+
 func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbox, error) {
 	opts := []sdksandbox.Option{sdksandbox.WithName(spec.Name)}
 	if spec.CPUs > 0 {
@@ -78,13 +98,9 @@ func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbo
 		if !ok {
 			return BackendSandbox{}, fmt.Errorf("unknown workspace %q", w.Name)
 		}
-		path := host
-		// In --clone mode sbx clones the PRIMARY (first) workspace and mounts it
-		// read-only itself; it rejects an explicit ":ro" on the primary ("primary
-		// workspace must be read/write"). Extra workspaces may still be read-only.
-		primaryClone := spec.Clone && i == 0
-		if (ro || w.ReadOnly) && !primaryClone {
-			path += ":ro"
+		path, err := workspaceArg(w.Name, host, ro || w.ReadOnly, i == 0, spec.Clone)
+		if err != nil {
+			return BackendSandbox{}, err
 		}
 		opts = append(opts, sdksandbox.WithWorkspace(path))
 	}

@@ -408,3 +408,32 @@ func TestSDKBackend_ExecInteractive(t *testing.T) {
 	}
 	t.Fatalf("did not see terminal echo; got: %q", out)
 }
+
+// TestSDKBackend_ReadOnlyWorkspaceRules pins sbx's positional read-only rule
+// (regression for the read-only primary-workspace bug). The daemon requires the
+// primary (first) workspace be read/write, so a read-only primary in non-clone
+// mode is rejected by SDKBackend before any daemon round-trip; a read-only
+// SECONDARY workspace is accepted and mounted.
+func TestSDKBackend_ReadOnlyWorkspaceRules(t *testing.T) {
+	ctx := context.Background()
+	d1, d2 := t.TempDir(), t.TempDir()
+	b := dial(t, func(n string) (string, bool, bool) {
+		switch n {
+		case "a":
+			return d1, false, true
+		case "b":
+			return d2, false, true
+		}
+		return "", false, false
+	})
+
+	// Read-only PRIMARY (non-clone) is rejected locally — no daemon round-trip.
+	_, err := b.Create(ctx, CreateSpec{Agent: "shell",
+		Workspaces: []WorkspaceMount{{Name: "a", ReadOnly: true}}})
+	require.ErrorContains(t, err, "cannot be read-only")
+
+	// Read/write primary + read-only SECONDARY is accepted by the daemon.
+	sb := mkSandbox(t, b, CreateSpec{Name: "it-ro-secondary",
+		Workspaces: []WorkspaceMount{{Name: "a"}, {Name: "b", ReadOnly: true}}})
+	require.Equal(t, "it-ro-secondary", sb.Name)
+}
