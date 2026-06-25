@@ -535,7 +535,10 @@ func (b *SDKBackend) ExecInteractive(ctx context.Context, name string, cmd []str
 	}
 	popts := []sdkexec.ProcessOption{sdkexec.WithAutoStart()}
 	if tty {
-		popts = append(popts, sdkexec.WithTTY())
+		// Advertise a terminal type so pagers/editors (e.g. `git branch` -> less)
+		// don't warn "terminal is not fully functional"; xterm.js speaks xterm-256color.
+		popts = append(popts, sdkexec.WithTTY(),
+			sdkexec.WithEnv(map[string]string{"TERM": "xterm-256color"}))
 	}
 	return sdkexec.ExecInteractive(ctx, sb, cmd, popts...) // *AttachSession satisfies Session
 }
