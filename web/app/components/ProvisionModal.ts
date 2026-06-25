@@ -15,9 +15,10 @@ export type ProvisionForm = {
 
 export function buildCreateBody(f: ProvisionForm): Record<string, any> {
   const body: Record<string, any> = {
-    agent: f.agent, template: f.template, cpus: f.cpus,
+    agent: f.agent, cpus: f.cpus,
     memory_bytes: f.memory_bytes, disk_gb: f.disk_gb,
   }
+  if (f.template) body.template = f.template // optional: sbx uses the agent's default image when omitted
   if (f.workspaces.length) body.workspaces = f.workspaces
   if (f.clone) { body.clone = true; if (f.branch) body.branch = f.branch }
   if (f.strategy) body.strategy = f.strategy

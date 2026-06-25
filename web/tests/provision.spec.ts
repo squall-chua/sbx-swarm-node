@@ -14,6 +14,7 @@ describe('buildCreateBody', () => {
     expect(body.workspaces).toEqual([{ name: 'repo', read_only: true }])
     expect(body.clone).toBe(true)
     expect(body.branch).toBe('feat/x')
+    expect(body.template).toBe('base')
     expect(body.env).toEqual({ FOO: 'bar' })
     expect('labels' in body).toBe(false)        // empty row lists dropped
     expect('node_affinity' in body).toBe(false)
@@ -32,5 +33,6 @@ describe('buildCreateBody', () => {
       labels: [], node_affinity: [], node_anti_affinity: [],
     })
     expect(body.env).toEqual({ FOO: 'override', BAR: '2' })
+    expect('template' in body).toBe(false) // optional: omitted when blank -> sbx uses the agent default
   })
 })

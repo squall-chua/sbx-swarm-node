@@ -219,13 +219,13 @@ function onClose() {
           <!-- Template -->
           <div class="sm:col-span-2">
             <label class="block text-sm font-medium text-default mb-1" for="prov-template">
-              Template <span class="text-error" aria-hidden="true">*</span>
+              Template <span class="text-muted font-normal">(optional)</span>
             </label>
             <USelect
               id="prov-template"
               v-model="form.template"
               :items="templateOptions"
-              placeholder="Select a template"
+              placeholder="Default (agent's image)"
               aria-label="Sandbox template"
               class="w-full"
             />
@@ -441,7 +441,7 @@ function onClose() {
         label="Provision"
         icon="i-lucide-zap"
         :loading="submitting"
-        :disabled="!form.agent || !form.template"
+        :disabled="!form.agent"
         @click="onSubmit"
       />
     </template>
