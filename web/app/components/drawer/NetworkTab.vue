@@ -43,8 +43,21 @@ const blockedRows = computed(() =>
 )
 
 // ── Policy ───────────────────────────────────────────────────────────────────
-interface PolicyRule { host: string; decision: 'allow' | 'deny' }
+// ListPolicy returns richer rows than the add form sends: the hosts come back in
+// `resources` (comma-joined), plus provenance/applies_to/rule/type — not `host`.
+interface PolicyRule {
+  provenance?: string
+  applies_to?: string
+  rule?: string
+  type?: string
+  decision?: string
+  resources?: string
+}
 interface PolicyResponse { rules?: PolicyRule[] }
+
+function hostsOf(rule: PolicyRule): string[] {
+  return rule.resources ? rule.resources.split(',').map((h) => h.trim()).filter(Boolean) : []
+}
 
 const policy = ref<PolicyResponse>({ rules: [] })
 const policyLoading = ref(false)
@@ -157,17 +170,46 @@ onMounted(() => {
 
       <div v-else-if="(policy.rules ?? []).length > 0" class="flex flex-col gap-2">
         <div
-          v-for="rule in policy.rules"
-          :key="`${rule.decision}:${rule.host}`"
-          class="flex items-center gap-3 rounded-md bg-elevated px-3 py-2 text-sm"
+          v-for="(rule, i) in policy.rules"
+          :key="i"
+          class="flex flex-col gap-1.5 rounded-md bg-elevated px-3 py-2 text-sm"
         >
-          <UBadge
-            :label="rule.decision"
-            :color="rule.decision === 'allow' ? 'success' : 'error'"
-            variant="subtle"
-            size="xs"
-          />
-          <span class="font-mono text-default truncate">{{ rule.host }}</span>
+          <!-- decision + the hosts the rule covers -->
+          <div class="flex items-start gap-2">
+            <UBadge
+              v-if="rule.decision"
+              :label="rule.decision"
+              :color="rule.decision === 'allow' ? 'success' : 'error'"
+              variant="subtle"
+              size="xs"
+              class="mt-0.5 shrink-0"
+            />
+            <div class="flex flex-wrap gap-1 min-w-0">
+              <UBadge
+                v-for="host in hostsOf(rule)"
+                :key="host"
+                :label="host"
+                color="neutral"
+                variant="subtle"
+                size="xs"
+                class="font-mono"
+              />
+              <span v-if="hostsOf(rule).length === 0 && rule.type !== 'raw'" class="text-xs text-muted self-center">any host</span>
+            </div>
+          </div>
+
+          <!-- raw fallback: the daemon returned an unparsed rule -->
+          <pre v-if="rule.type === 'raw'" class="font-mono text-xs text-muted whitespace-pre-wrap break-all">{{ rule.rule }}</pre>
+
+          <!-- provenance / scope / rule name -->
+          <div
+            v-if="rule.applies_to || rule.provenance || (rule.rule && rule.type !== 'raw')"
+            class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted"
+          >
+            <span v-if="rule.applies_to">applies to <span class="font-mono text-default">{{ rule.applies_to }}</span></span>
+            <span v-if="rule.provenance">source <span class="font-mono text-default">{{ rule.provenance }}</span></span>
+            <span v-if="rule.rule && rule.type !== 'raw'">rule <span class="font-mono text-default">{{ rule.rule }}</span></span>
+          </div>
         </div>
       </div>
       <p v-else class="text-sm text-muted">No policy rules configured.</p>
