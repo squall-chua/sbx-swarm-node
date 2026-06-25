@@ -31,6 +31,10 @@ function onRowClick(_e: Event, row: any) {
 // ── Filters ──────────────────────────────────────────────────────────────────
 const statusFilter = ref<string>('All')
 const labelFilter = ref<string>('')
+const searchFilter = ref<string>('') // partial match on id / owner node
+
+const hasFilters = computed(() =>
+  statusFilter.value !== 'All' || !!labelFilter.value || !!searchFilter.value)
 
 const allStatuses = computed(() => {
   const seen = new Set<string>()
@@ -50,10 +54,14 @@ function labelHaystack(labels: Record<string, string> | undefined): string {
 const filtered = computed(() => {
   // Normalize the query: trim, lowercase, accept ":" as "=" so both separators work.
   const q = labelFilter.value.trim().toLowerCase().replace(/:/g, '=')
+  const s = searchFilter.value.trim().toLowerCase()
   return (swarm?.sandboxes.value ?? []).filter((sb: any) => {
     const matchStatus = statusFilter.value === 'All' || sb.status === statusFilter.value
     const matchLabel = !q || labelHaystack(sb.labels).includes(q)
-    return matchStatus && matchLabel
+    const matchSearch = !s
+      || String(sb.id ?? '').toLowerCase().includes(s)
+      || String(sb.owner_node ?? '').toLowerCase().includes(s)
+    return matchStatus && matchLabel && matchSearch
   })
 })
 
@@ -109,6 +117,16 @@ function fmtDate(ts: string | null | undefined): string {
 
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Status filter -->
+        <!-- Search: id / owner node (partial) -->
+        <UInput
+          v-model="searchFilter"
+          icon="i-lucide-search"
+          placeholder="Search id / owner node…"
+          size="sm"
+          aria-label="Search by id or owner node"
+          class="min-w-48"
+        />
+
         <USelect
           v-model="statusFilter"
           :items="allStatuses"
@@ -210,10 +228,10 @@ function fmtDate(ts: string | null | undefined): string {
         <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
           <UIcon name="i-lucide-box" class="size-8 text-muted" aria-hidden="true" />
           <p class="text-sm text-muted">
-            {{ statusFilter !== 'All' || labelFilter ? 'No sandboxes match the current filters.' : 'No sandboxes yet.' }}
+            {{ hasFilters ? 'No sandboxes match the current filters.' : 'No sandboxes yet.' }}
           </p>
           <UButton
-            v-if="session.isAdmin.value && statusFilter === 'All' && !labelFilter"
+            v-if="session.isAdmin.value && !hasFilters"
             label="Provision your first sandbox"
             variant="ghost"
             size="sm"
@@ -229,7 +247,7 @@ function fmtDate(ts: string | null | undefined): string {
       class="text-xs text-muted tabular-nums"
     >
       {{ filtered.length }} sandbox{{ filtered.length === 1 ? '' : 'es' }}
-      <template v-if="statusFilter !== 'All' || labelFilter">
+      <template v-if="hasFilters">
         (filtered from {{ swarm?.sandboxes.value.length ?? 0 }} total)
       </template>
     </p>
