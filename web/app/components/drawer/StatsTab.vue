@@ -36,10 +36,10 @@ onScopeDispose(() => {
 <template>
   <div class="flex flex-col gap-6 pt-2">
     <div class="rounded-lg border border-default bg-elevated p-4">
-      <Sparkline :values="cpuSeries" label="CPU" />
+      <Sparkline :values="cpuSeries" label="CPU" :max="100" />
     </div>
     <div class="rounded-lg border border-default bg-elevated p-4">
-      <Sparkline :values="memSeries" label="Memory" />
+      <Sparkline :values="memSeries" label="Memory" :max="100" />
     </div>
     <p v-if="cpuSeries.length === 0" class="text-xs text-muted text-center">
       Waiting for stats…
