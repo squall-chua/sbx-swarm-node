@@ -23,20 +23,34 @@ async function fetchSecrets() {
   }
 }
 
-// Add form
+// Add form. The daemon rejects a host with a scheme/port and an env name that
+// isn't UPPER_SNAKE — validate here so the user gets a clear message, not a 500.
 const addHost = ref('')
 const addEnv = ref('')
 const addValue = ref('')
 const addLoading = ref(false)
 
+const hostError = computed(() => {
+  const h = addHost.value.trim()
+  if (h && /:\/\/|:|\s/.test(h)) return 'Bare host or IP only — no scheme (https://) or port (:443).'
+  return ''
+})
+const envError = computed(() => {
+  const e = addEnv.value.trim()
+  if (e && !/^[A-Z_][A-Z0-9_]*$/.test(e)) return 'UPPER_SNAKE_CASE only (A–Z, 0–9, _; not starting with a digit).'
+  return ''
+})
+const canAdd = computed(() =>
+  !!addHost.value.trim() && !!addEnv.value.trim() && !!addValue.value && !hostError.value && !envError.value)
+
 async function doAdd() {
-  if (!addHost.value || !addEnv.value || !addValue.value) return
+  if (!canAdd.value) return
   addLoading.value = true
   try {
     await api.put(`/v1/sandboxes/${props.id}/secrets`, {
       scope: props.id,
-      host: addHost.value,
-      env: addEnv.value,
+      host: addHost.value.trim(),
+      env: addEnv.value.trim(),
       value: addValue.value,
     })
     toast.add({ title: 'Secret added', color: 'success' })
@@ -186,20 +200,28 @@ onMounted(fetchSecrets)
             Values are write-only and never displayed. Set env variables per host for this sandbox.
           </p>
           <div class="flex flex-col gap-2">
-            <UInput
-              v-model="addHost"
-              placeholder="host (e.g. api.example.com)"
-              size="sm"
-              aria-label="Secret host"
-              data-test="secret-host"
-            />
-            <UInput
-              v-model="addEnv"
-              placeholder="env var name (e.g. API_KEY)"
-              size="sm"
-              aria-label="Environment variable name"
-              data-test="secret-env"
-            />
+            <div class="flex flex-col gap-1">
+              <UInput
+                v-model="addHost"
+                placeholder="host (e.g. api.example.com)"
+                size="sm"
+                aria-label="Secret host"
+                data-test="secret-host"
+                :color="hostError ? 'error' : undefined"
+              />
+              <p v-if="hostError" class="text-xs text-error">{{ hostError }}</p>
+            </div>
+            <div class="flex flex-col gap-1">
+              <UInput
+                v-model="addEnv"
+                placeholder="env var name (e.g. API_KEY)"
+                size="sm"
+                aria-label="Environment variable name"
+                data-test="secret-env"
+                :color="envError ? 'error' : undefined"
+              />
+              <p v-if="envError" class="text-xs text-error">{{ envError }}</p>
+            </div>
             <UInput
               v-model="addValue"
               type="password"
@@ -213,7 +235,7 @@ onMounted(fetchSecrets)
               icon="i-lucide-plus"
               size="sm"
               :loading="addLoading"
-              :disabled="!addHost || !addEnv || !addValue"
+              :disabled="!canAdd"
               data-test="secret-add"
               @click="doAdd"
             />

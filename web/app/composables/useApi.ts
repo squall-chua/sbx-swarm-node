@@ -29,7 +29,16 @@ export function createApi(base: string, onAuthLost: () => void, fetchImpl: typeo
       onAuthLost()
       throw new Error('unauthorized')
     }
-    if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}`)
+    if (!res.ok) {
+      // Surface the server's error message (grpc-gateway returns {code,message});
+      // the daemon prefixes its real reason with "ERROR:". Fall back to the status.
+      let msg = `${method} ${path} -> ${res.status}`
+      try {
+        const m = (await res.json())?.message
+        if (m) msg = String(m).includes('ERROR:') ? String(m).split('ERROR:').pop()!.trim() : String(m)
+      } catch { /* non-JSON error body: keep the generic message */ }
+      throw new Error(msg)
+    }
     return res.status === 204 ? null : res.json()
   }
   return {
