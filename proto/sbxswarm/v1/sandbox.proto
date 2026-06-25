@@ -83,6 +83,7 @@ message Sandbox {
   map<string, string> labels = 5;
   string branch = 6;       // clone-mode recorded branch
   string last_publish = 7; // RFC3339; empty if never published
+  string agent = 8;        // the agent the sandbox runs (from its create spec)
 }
 
 message GetSandboxRequest { string id = 1; }

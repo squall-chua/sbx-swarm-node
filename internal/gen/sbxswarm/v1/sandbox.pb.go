@@ -223,6 +223,7 @@ type Sandbox struct {
 	Labels        map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Branch        string                 `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                              // clone-mode recorded branch
 	LastPublish   string                 `protobuf:"bytes,7,opt,name=last_publish,json=lastPublish,proto3" json:"last_publish,omitempty"` // RFC3339; empty if never published
+	Agent         string                 `protobuf:"bytes,8,opt,name=agent,proto3" json:"agent,omitempty"`                                // the agent the sandbox runs (from its create spec)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -302,6 +303,13 @@ func (x *Sandbox) GetBranch() string {
 func (x *Sandbox) GetLastPublish() string {
 	if x != nil {
 		return x.LastPublish
+	}
+	return ""
+}
+
+func (x *Sandbox) GetAgent() string {
+	if x != nil {
+		return x.Agent
 	}
 	return ""
 }
@@ -1410,7 +1418,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15NodeAntiAffinityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa9\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbf\x02\n" +
 	"\aSandbox\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1419,7 +1427,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x05ports\x18\x04 \x03(\v2\x11.sbxswarm.v1.PortR\x05ports\x128\n" +
 	"\x06labels\x18\x05 \x03(\v2 .sbxswarm.v1.Sandbox.LabelsEntryR\x06labels\x12\x16\n" +
 	"\x06branch\x18\x06 \x01(\tR\x06branch\x12!\n" +
-	"\flast_publish\x18\a \x01(\tR\vlastPublish\x1a9\n" +
+	"\flast_publish\x18\a \x01(\tR\vlastPublish\x12\x14\n" +
+	"\x05agent\x18\b \x01(\tR\x05agent\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"#\n" +

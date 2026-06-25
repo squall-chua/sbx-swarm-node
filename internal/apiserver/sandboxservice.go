@@ -159,7 +159,7 @@ func toProto(rec *sandbox.Record) *sbxv1.Sandbox {
 	}
 	return &sbxv1.Sandbox{
 		Id: rec.ID, OwnerNode: rec.OwnerNode, Status: rec.Status, Ports: ports, Labels: rec.Labels,
-		Branch: rec.Spec.Branch, LastPublish: lastPub,
+		Branch: rec.Spec.Branch, LastPublish: lastPub, Agent: rec.Spec.Agent,
 	}
 }
 

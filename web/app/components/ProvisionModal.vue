@@ -44,6 +44,13 @@ const strategyOptions = [
   { label: 'Least actual load', value: 'least-actual-load' },
 ]
 
+// Supported provision agents. No daemon endpoint exposes this list (the sbx CLI
+// hardcodes it), so it's maintained here — source: `sbx run --help` (sbx v0.33.0).
+const agentOptions = [
+  'claude', 'codex', 'copilot', 'cursor', 'docker-agent',
+  'droid', 'gemini', 'kiro', 'opencode', 'shell',
+]
+
 // ── Form state ───────────────────────────────────────────────────────────────
 
 const defaultForm = (): ProvisionForm => ({
@@ -199,10 +206,11 @@ function onClose() {
             <label class="block text-sm font-medium text-default mb-1" for="prov-agent">
               Agent <span class="text-error" aria-hidden="true">*</span>
             </label>
-            <UInput
+            <USelect
               id="prov-agent"
               v-model="form.agent"
-              placeholder="e.g. claude"
+              :items="agentOptions"
+              placeholder="Select an agent"
               aria-label="Agent name"
               class="w-full"
             />

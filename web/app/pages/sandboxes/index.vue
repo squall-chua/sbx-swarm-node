@@ -80,6 +80,10 @@ const columns: TableColumn<any>[] = [
     header: 'Status',
   },
   {
+    accessorKey: 'agent',
+    header: 'Agent',
+  },
+  {
     accessorKey: 'labels',
     header: 'Labels',
   },
@@ -187,6 +191,12 @@ function fmtDate(ts: string | null | undefined): string {
       <!-- Status -->
       <template #status-cell="{ row }">
         <StatusPill :status="row.original.status ?? 'unknown'" kind="sandbox" />
+      </template>
+
+      <!-- Agent -->
+      <template #agent-cell="{ row }">
+        <span v-if="row.original.agent" class="text-sm text-default">{{ row.original.agent }}</span>
+        <span v-else class="text-muted">—</span>
       </template>
 
       <!-- Labels: key=value badges -->
