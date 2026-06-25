@@ -82,7 +82,7 @@ const tabItems = computed<TabsItem[]>(() => {
     :open="open"
     :title="id ?? 'Sandbox'"
     :description="sandbox?.owner_node ? `Owner: ${sandbox.owner_node}` : undefined"
-    :ui="{ width: 'max-w-2xl' }"
+    :ui="{ content: 'max-w-4xl' }"
     @update:open="emit('update:open', $event)"
   >
     <!-- Rich header: id + status + owner + branch + copy -->
