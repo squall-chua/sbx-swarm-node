@@ -3,6 +3,7 @@ syntax = "proto3";
 package sbxswarm.v1;
 
 import "google/api/annotations.proto";
+import "sbxswarm/v1/policy.proto"; // for Empty
 
 option go_package = "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1";
 
@@ -37,6 +38,9 @@ service SandboxService {
   rpc ListPorts(IdRequest) returns (ListPortsResponse) {
     option (google.api.http) = {get: "/v1/sandboxes/{id}/ports"};
   }
+  rpc UnpublishPort(UnpublishPortRequest) returns (Empty) {
+    option (google.api.http) = {delete: "/v1/sandboxes/{id}/ports/{container_port}"};
+  }
   rpc GetStats(IdRequest) returns (Stats) {
     option (google.api.http) = {get: "/v1/sandboxes/{id}/stats"};
   }
@@ -45,6 +49,9 @@ service SandboxService {
   }
   rpc PublishSandbox(PublishSandboxRequest) returns (Operation) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish" body: "*"};
+  }
+  rpc ListBranches(IdRequest) returns (ListBranchesResponse) {
+    option (google.api.http) = {get: "/v1/sandboxes/{id}/git/branches"};
   }
   rpc KeepAlive(IdRequest) returns (Sandbox) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/keepalive"};
@@ -93,9 +100,11 @@ message GetSandboxRequest { string id = 1; }
 message IdRequest { string id = 1; }
 message DeleteSandboxRequest { string id = 1; }
 
+message ListBranchesResponse { repeated string branches = 1; }
 message PublishSandboxRequest {
   string id = 1;
-  string branch = 2; // optional: overrides the recorded branch
+  string branch = 2; // optional: overrides the recorded branch (single)
+  repeated string branches = 3; // optional: publish these specific branches (multi-select)
 }
 
 message ListSandboxesRequest {
@@ -125,6 +134,10 @@ message AgentRunRequest {
 }
 
 message PublishPortRequest {
+  string id = 1;
+  int32 container_port = 2;
+}
+message UnpublishPortRequest {
   string id = 1;
   int32 container_port = 2;
 }

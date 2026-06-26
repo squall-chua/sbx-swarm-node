@@ -29,9 +29,11 @@ const (
 	SandboxService_AgentRun_FullMethodName       = "/sbxswarm.v1.SandboxService/AgentRun"
 	SandboxService_PublishPort_FullMethodName    = "/sbxswarm.v1.SandboxService/PublishPort"
 	SandboxService_ListPorts_FullMethodName      = "/sbxswarm.v1.SandboxService/ListPorts"
+	SandboxService_UnpublishPort_FullMethodName  = "/sbxswarm.v1.SandboxService/UnpublishPort"
 	SandboxService_GetStats_FullMethodName       = "/sbxswarm.v1.SandboxService/GetStats"
 	SandboxService_ListBlocked_FullMethodName    = "/sbxswarm.v1.SandboxService/ListBlocked"
 	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
+	SandboxService_ListBranches_FullMethodName   = "/sbxswarm.v1.SandboxService/ListBranches"
 	SandboxService_KeepAlive_FullMethodName      = "/sbxswarm.v1.SandboxService/KeepAlive"
 	SandboxService_ListOperations_FullMethodName = "/sbxswarm.v1.SandboxService/ListOperations"
 )
@@ -50,9 +52,11 @@ type SandboxServiceClient interface {
 	AgentRun(ctx context.Context, in *AgentRunRequest, opts ...grpc.CallOption) (*Operation, error)
 	PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*Port, error)
 	ListPorts(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListPortsResponse, error)
+	UnpublishPort(ctx context.Context, in *UnpublishPortRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error)
 	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
 	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
+	ListBranches(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBranchesResponse, error)
 	KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
 	ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error)
 }
@@ -165,6 +169,16 @@ func (c *sandboxServiceClient) ListPorts(ctx context.Context, in *IdRequest, opt
 	return out, nil
 }
 
+func (c *sandboxServiceClient) UnpublishPort(ctx context.Context, in *UnpublishPortRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, SandboxService_UnpublishPort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sandboxServiceClient) GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Stats)
@@ -189,6 +203,16 @@ func (c *sandboxServiceClient) PublishSandbox(ctx context.Context, in *PublishSa
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Operation)
 	err := c.cc.Invoke(ctx, SandboxService_PublishSandbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxServiceClient) ListBranches(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBranchesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBranchesResponse)
+	err := c.cc.Invoke(ctx, SandboxService_ListBranches_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,9 +253,11 @@ type SandboxServiceServer interface {
 	AgentRun(context.Context, *AgentRunRequest) (*Operation, error)
 	PublishPort(context.Context, *PublishPortRequest) (*Port, error)
 	ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error)
+	UnpublishPort(context.Context, *UnpublishPortRequest) (*Empty, error)
 	GetStats(context.Context, *IdRequest) (*Stats, error)
 	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
 	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
+	ListBranches(context.Context, *IdRequest) (*ListBranchesResponse, error)
 	KeepAlive(context.Context, *IdRequest) (*Sandbox, error)
 	ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error)
 	mustEmbedUnimplementedSandboxServiceServer()
@@ -274,6 +300,9 @@ func (UnimplementedSandboxServiceServer) PublishPort(context.Context, *PublishPo
 func (UnimplementedSandboxServiceServer) ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPorts not implemented")
 }
+func (UnimplementedSandboxServiceServer) UnpublishPort(context.Context, *UnpublishPortRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnpublishPort not implemented")
+}
 func (UnimplementedSandboxServiceServer) GetStats(context.Context, *IdRequest) (*Stats, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStats not implemented")
 }
@@ -282,6 +311,9 @@ func (UnimplementedSandboxServiceServer) ListBlocked(context.Context, *IdRequest
 }
 func (UnimplementedSandboxServiceServer) PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishSandbox not implemented")
+}
+func (UnimplementedSandboxServiceServer) ListBranches(context.Context, *IdRequest) (*ListBranchesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBranches not implemented")
 }
 func (UnimplementedSandboxServiceServer) KeepAlive(context.Context, *IdRequest) (*Sandbox, error) {
 	return nil, status.Error(codes.Unimplemented, "method KeepAlive not implemented")
@@ -490,6 +522,24 @@ func _SandboxService_ListPorts_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_UnpublishPort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnpublishPortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).UnpublishPort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_UnpublishPort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).UnpublishPort(ctx, req.(*UnpublishPortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SandboxService_GetStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IdRequest)
 	if err := dec(in); err != nil {
@@ -540,6 +590,24 @@ func _SandboxService_PublishSandbox_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SandboxServiceServer).PublishSandbox(ctx, req.(*PublishSandboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxService_ListBranches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).ListBranches(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_ListBranches_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).ListBranches(ctx, req.(*IdRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -628,6 +696,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SandboxService_ListPorts_Handler,
 		},
 		{
+			MethodName: "UnpublishPort",
+			Handler:    _SandboxService_UnpublishPort_Handler,
+		},
+		{
 			MethodName: "GetStats",
 			Handler:    _SandboxService_GetStats_Handler,
 		},
@@ -638,6 +710,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PublishSandbox",
 			Handler:    _SandboxService_PublishSandbox_Handler,
+		},
+		{
+			MethodName: "ListBranches",
+			Handler:    _SandboxService_ListBranches_Handler,
 		},
 		{
 			MethodName: "KeepAlive",

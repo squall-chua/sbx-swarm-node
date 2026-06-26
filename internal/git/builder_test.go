@@ -27,6 +27,14 @@ func TestBuild_RejectsInjection(t *testing.T) {
 	require.Error(t, err) // ".." rejected
 }
 
+func TestBuild_AcceptsBundlePathSandboxRemote(t *testing.T) {
+	// doPublish stages the bundle at an absolute path and binds it to {sandbox_remote}.
+	steps := [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}}
+	argv, err := Build(steps, Vars{Branch: "agent/x", SandboxRemote: "/tmp/sbxpub-123.bundle"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"git", "fetch", "/tmp/sbxpub-123.bundle", "+refs/heads/agent/x:refs/heads/agent/x"}, argv[0])
+}
+
 func TestBuild_EmptyValueAllowed(t *testing.T) {
 	// An unset value is fine; a step simply may not reference it.
 	_, err := Build([][]string{{"git", "fetch", "{remote}"}}, Vars{Remote: "origin"})

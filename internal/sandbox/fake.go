@@ -18,6 +18,12 @@ type Fake struct {
 	rules     []PolicyRule
 	secrets   map[string][]CustomSecret
 	templates []string
+
+	// Optional test hooks. When non-nil they override the default Exec/PublishPort/
+	// CopyFrom behavior (used to drive git-publish tests against real git repos).
+	ExecFunc        func(name string, cmd []string) (ExecResult, error)
+	PublishPortFunc func(name string, cp int) (PublishedPort, error)
+	CopyFromFunc    func(name, remotePath, localPath string) error
 }
 
 // NewFake returns an empty fake backend.
@@ -81,9 +87,13 @@ func (f *Fake) Remove(_ context.Context, name string) error {
 	return nil
 }
 
-func (f *Fake) Exec(_ context.Context, name string, _ []string, _ ExecOpts) (ExecResult, error) {
+func (f *Fake) Exec(_ context.Context, name string, cmd []string, _ ExecOpts) (ExecResult, error) {
 	if _, err := f.Get(context.Background(), name); err != nil {
 		return ExecResult{}, err
+	}
+	_ = f.setStatus(name, "running") // the daemon auto-starts a stopped sandbox on exec
+	if f.ExecFunc != nil {
+		return f.ExecFunc(name, cmd)
 	}
 	return ExecResult{ExitCode: 0, Stdout: []byte("ok")}, nil
 }
@@ -117,6 +127,12 @@ func (f *Fake) PublishPort(_ context.Context, name string, cp int) (PublishedPor
 		return PublishedPort{}, ErrNotFound
 	}
 	p := PublishedPort{ContainerPort: cp, HostPort: 30000 + cp}
+	if f.PublishPortFunc != nil {
+		var err error
+		if p, err = f.PublishPortFunc(name, cp); err != nil {
+			return PublishedPort{}, err
+		}
+	}
 	f.ports[name] = append(f.ports[name], p)
 	return p, nil
 }
@@ -145,9 +161,14 @@ func (f *Fake) CopyTo(_ context.Context, name, _, _ string) error {
 	return err
 }
 
-func (f *Fake) CopyFrom(_ context.Context, name, _, _ string) error {
-	_, err := f.Get(context.Background(), name)
-	return err
+func (f *Fake) CopyFrom(_ context.Context, name, remotePath, localPath string) error {
+	if _, err := f.Get(context.Background(), name); err != nil {
+		return err
+	}
+	if f.CopyFromFunc != nil {
+		return f.CopyFromFunc(name, remotePath, localPath)
+	}
+	return nil
 }
 
 func (f *Fake) Stats(_ context.Context, name string) (Usage, error) {
@@ -171,7 +192,11 @@ func (f *Fake) Logs(ctx context.Context, name, _ string, out chan<- LogLine) err
 }
 
 // SetTemplates sets the advertised template refs (tests).
-func (f *Fake) SetTemplates(t []string) { f.mu.Lock(); f.templates = append([]string(nil), t...); f.mu.Unlock() }
+func (f *Fake) SetTemplates(t []string) {
+	f.mu.Lock()
+	f.templates = append([]string(nil), t...)
+	f.mu.Unlock()
+}
 
 // ListTemplates returns the configured template refs.
 func (f *Fake) ListTemplates(_ context.Context) ([]string, error) {

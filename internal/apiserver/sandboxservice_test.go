@@ -2,6 +2,8 @@ package apiserver
 
 import (
 	"context"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -157,7 +159,7 @@ func TestPublishSandbox_AllowPushGate(t *testing.T) {
 	svc := NewSandboxService(mgr, newTestOps(t))
 	svc.SetGit(map[string]*git.Workspace{"repo": ws})
 
-	err = svc.doPublish(context.Background(), rec.ID, "", "admin")
+	err = svc.doPublish(context.Background(), rec.ID, nil, "admin")
 	require.Equal(t, codes.FailedPrecondition, status.Code(err)) // allow_push=false
 }
 
@@ -169,9 +171,8 @@ func TestPublishSandbox_AuditRecordsActor(t *testing.T) {
 	base := filepath.Join(root, "base.git")
 	out, err := exec.Command("git", "init", "--bare", base).CombinedOutput()
 	require.NoError(t, err, string(out))
-	// AllowPush + a publish step targeting the (unregistered) sandbox remote, so
-	// Publish fails — but auditPublish runs before the error check, so the actor is
-	// still recorded.
+	// AllowPush + a fetch from the (default-fake, empty) bundle, so Publish fails —
+	// but auditPublish runs before the error check, so the actor is still recorded.
 	ws := git.New(git.Spec{
 		Name: "repo", Base: base, Remote: "origin", AllowPush: true,
 		PublishSteps: [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}},
@@ -192,9 +193,10 @@ func TestPublishSandbox_AuditRecordsActor(t *testing.T) {
 	svc := NewSandboxService(mgr, newTestOps(t))
 	svc.SetGit(map[string]*git.Workspace{"repo": ws})
 	svc.SetAudit(al)
+	svc.publishTimeout = time.Second
 
-	err = svc.doPublish(context.Background(), rec.ID, "", "admin")
-	require.Error(t, err) // publish fails: no sandbox-<name> remote
+	err = svc.doPublish(context.Background(), rec.ID, nil, "admin")
+	require.Error(t, err) // publish fails: empty bundle, fetch errors
 
 	entries, err := al.List()
 	require.NoError(t, err)
@@ -225,14 +227,30 @@ func TestSetIdleTimeout(t *testing.T) {
 	require.Equal(t, 15*time.Minute, svc.idleTimeout)
 }
 
-func TestReapIdle_PublishesThenStops(t *testing.T) {
+// upstreamHasBranch reports whether the upstream bare repo holds branch.
+func upstreamHasBranch(t *testing.T, upstream, branch string) bool {
+	t.Helper()
+	c := exec.Command("git", "branch", "--list", branch)
+	c.Dir = upstream
+	out, err := c.CombinedOutput()
+	require.NoError(t, err, string(out))
+	return len(out) > 0
+}
+
+// gitBundleFixture mirrors gitPublishFixture but drives the bundle transport: the
+// fake backend proxies the sandbox's git commands (rev-parse, for-each-ref, bundle
+// create) to the real agent clone, and CopyFrom hands the bundle file back to the
+// host — the way doPublish/ListBranches reach the clone. No git-daemon.
+func gitPublishFixture(t *testing.T) (*SandboxService, *sandbox.Record, string, *audit.Log) {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
 	root := t.TempDir()
 	upstream := filepath.Join(root, "up.git")
-	base := filepath.Join(root, "base.git")
-	sbx := filepath.Join(root, "sbx")
+	const name = "repo"
+	base := filepath.Join(root, "base", name)
+	sbx := filepath.Join(root, "srv", name) // the agent's clone
 	for _, c := range [][]string{
 		{"git", "init", "--bare", upstream},
 		{"git", "clone", upstream, sbx},
@@ -254,87 +272,31 @@ func TestReapIdle_PublishesThenStops(t *testing.T) {
 	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "work")
 
 	ws := git.New(git.Spec{
-		Name: "repo", Base: base, Remote: "origin", DefaultBranch: "main", AllowPush: true,
-		PreSteps:     [][]string{{"git", "fetch", "{remote}", "+refs/heads/*:refs/heads/*"}},
+		Name: name, Base: base, Remote: "origin", DefaultBranch: "main", AllowPush: true,
 		PublishSteps: [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}, {"git", "push", "{remote}", "{branch}"}},
 		Allowlist:    []string{"git"},
 	})
 
 	mgr := newTestManager(t)
+	fake := mgr.Backend().(*sandbox.Fake)
+	fake.ExecFunc = func(_ string, cmd []string) (sandbox.ExecResult, error) {
+		if len(cmd) == 0 || cmd[0] != "git" {
+			return sandbox.ExecResult{ExitCode: 0}, nil // e.g. `rm -f` cleanup
+		}
+		out, err := exec.Command("git", append([]string{"-C", sbx}, cmd[1:]...)...).Output()
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				return sandbox.ExecResult{ExitCode: ee.ExitCode(), Stderr: ee.Stderr}, nil
+			}
+			return sandbox.ExecResult{ExitCode: 1, Stderr: []byte(err.Error())}, nil
+		}
+		return sandbox.ExecResult{ExitCode: 0, Stdout: out}, nil
+	}
+	fake.CopyFromFunc = func(_, remote, local string) error { return copyFile(remote, local) }
 	rec, err := mgr.AdmitAndCreate(context.Background(), sandbox.CreateSpec{
-		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
+		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: name}},
 	})
 	require.NoError(t, err)
-	addRemote := exec.Command("git", "remote", "add", "sandbox-"+rec.BackendName, sbx)
-	addRemote.Dir = base
-	out, err = addRemote.CombinedOutput()
-	require.NoError(t, err, string(out))
-
-	svc := NewSandboxService(mgr, newTestOps(t))
-	svc.SetGit(map[string]*git.Workspace{"repo": ws})
-	svc.SetIdleTimeout(time.Hour)
-
-	// Not yet idle: now == create time, elapsed ~0 < 1h.
-	require.Equal(t, 0, svc.ReapIdle(context.Background(), time.Now()))
-	got, err := mgr.Get(context.Background(), rec.ID)
-	require.NoError(t, err)
-	require.Equal(t, "running", got.Status)
-
-	// Idle: now far past the timeout.
-	require.Equal(t, 1, svc.ReapIdle(context.Background(), time.Now().Add(2*time.Hour)))
-
-	bo, berr := func() ([]byte, error) { c := exec.Command("git", "branch", "--list", "agent/x"); c.Dir = upstream; return c.CombinedOutput() }()
-	require.NoError(t, berr)
-	require.Contains(t, string(bo), "agent/x", "publish ran before stop")
-	got, err = mgr.Get(context.Background(), rec.ID)
-	require.NoError(t, err)
-	require.Equal(t, "stopped", got.Status)
-}
-
-func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	root := t.TempDir()
-	upstream := filepath.Join(root, "up.git")
-	base := filepath.Join(root, "base.git")
-	sbx := filepath.Join(root, "sbx")
-	for _, c := range [][]string{
-		{"git", "init", "--bare", upstream},
-		{"git", "clone", upstream, sbx},
-	} {
-		out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
-		require.NoError(t, err, string(out))
-	}
-	run := func(dir string, a ...string) {
-		out, err := func() ([]byte, error) { c := exec.Command("git", a...); c.Dir = dir; return c.CombinedOutput() }()
-		require.NoError(t, err, string(out))
-	}
-	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
-	run(sbx, "push", "origin", "HEAD:main")
-	out, err := exec.Command("git", "clone", "--bare", upstream, base).CombinedOutput()
-	require.NoError(t, err, string(out))
-	run(sbx, "checkout", "-b", "agent/x")
-	run(sbx, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "work")
-
-	ws := git.New(git.Spec{
-		Name: "repo", Base: base, Remote: "origin", DefaultBranch: "main", AllowPush: true,
-		PreSteps:     [][]string{{"git", "fetch", "{remote}", "+refs/heads/*:refs/heads/*"}},
-		PublishSteps: [][]string{{"git", "fetch", "{sandbox_remote}", "+refs/heads/{branch}:refs/heads/{branch}"}, {"git", "push", "{remote}", "{branch}"}},
-		Allowlist:    []string{"git"},
-	})
-
-	mgr := newTestManager(t)
-	// The fake backend names the sandbox by spec.Name; force BackendName == "fake" so
-	// {sandbox_remote} == "sandbox-fake". (newTestManager uses the fake backend; the
-	// record's BackendName equals its swarm id. Override the remote name in the test
-	// by registering the base remote under "sandbox-<backendName>".)
-	rec, err := mgr.AdmitAndCreate(context.Background(), sandbox.CreateSpec{
-		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
-	})
-	require.NoError(t, err)
-	out, err = func() ([]byte, error) { c := exec.Command("git", "remote", "add", "sandbox-"+rec.BackendName, sbx); c.Dir = base; return c.CombinedOutput() }()
-	require.NoError(t, err, string(out))
 
 	ast, err := store.Open(filepath.Join(root, "audit.db"))
 	require.NoError(t, err)
@@ -342,16 +304,90 @@ func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	al := audit.New(ast, func() int64 { return 1 })
 
 	svc := NewSandboxService(mgr, newTestOps(t))
-	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+	svc.SetGit(map[string]*git.Workspace{name: ws})
 	svc.SetAudit(al)
+	svc.bundleDir = t.TempDir()
+	return svc, rec, upstream, al
+}
 
-	_, err = svc.StopSandbox(context.Background(), &sbxv1.IdRequest{Id: rec.ID})
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+// Publish transfers the agent's branch with a git bundle (exec + copy), no
+// git-daemon, landing it in upstream.
+func TestPublishSandbox_ViaBundle(t *testing.T) {
+	svc, rec, upstream, _ := gitPublishFixture(t)
+	svc.publishTimeout = 10 * time.Second
+	require.NoError(t, svc.doPublish(context.Background(), rec.ID, nil, "admin"))
+	require.True(t, upstreamHasBranch(t, upstream, "agent/x"), "bundle publish lands the branch upstream")
+}
+
+func TestListBranches_ReturnsAgentBranches(t *testing.T) {
+	svc, rec, _, _ := gitPublishFixture(t)
+	resp, err := svc.ListBranches(context.Background(), &sbxv1.IdRequest{Id: rec.ID})
+	require.NoError(t, err)
+	require.Contains(t, resp.Branches, "agent/x", "the agent's branch must be listed")
+}
+
+// The daemon idle-stops sandboxes on its own, so listing branches must work even
+// when the container is down: it reads on-disk refs via exec (which auto-starts
+// the sandbox), not the git-daemon (which only comes up on a full boot).
+func TestListBranches_AutoStartsStoppedSandbox(t *testing.T) {
+	svc, rec, _, _ := gitPublishFixture(t)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	fake.ExecFunc = func(_ string, _ []string) (sandbox.ExecResult, error) {
+		return sandbox.ExecResult{ExitCode: 0, Stdout: []byte("agent/x\nmain\n")}, nil
+	}
+	require.NoError(t, fake.Stop(context.Background(), rec.BackendName))
+
+	resp, err := svc.ListBranches(context.Background(), &sbxv1.IdRequest{Id: rec.ID})
+	require.NoError(t, err)
+	require.Equal(t, []string{"agent/x", "main"}, resp.Branches)
+
+	bs, err := fake.Get(context.Background(), rec.BackendName)
+	require.NoError(t, err)
+	require.Equal(t, "running", bs.Status, "exec must auto-start a stopped sandbox")
+}
+
+func TestReapIdle_PublishesThenStops(t *testing.T) {
+	svc, rec, upstream, _ := gitPublishFixture(t)
+	svc.SetIdleTimeout(time.Hour)
+
+	// Not yet idle: now == create time, elapsed ~0 < 1h.
+	require.Equal(t, 0, svc.ReapIdle(context.Background(), time.Now()))
+	got, err := svc.mgr.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, "running", got.Status)
+
+	// Idle: now far past the timeout → publish-then-stop.
+	require.Equal(t, 1, svc.ReapIdle(context.Background(), time.Now().Add(2*time.Hour)))
+	require.True(t, upstreamHasBranch(t, upstream, "agent/x"), "publish ran before stop")
+	got, err = svc.mgr.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, "stopped", got.Status)
+}
+
+func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
+	svc, rec, upstream, al := gitPublishFixture(t)
+
+	_, err := svc.StopSandbox(context.Background(), &sbxv1.IdRequest{Id: rec.ID})
 	require.NoError(t, err)
 
 	// upstream received agent/x (publish ran before stop), and the sandbox is stopped.
-	bo, _ := func() ([]byte, error) { c := exec.Command("git", "branch", "--list", "agent/x"); c.Dir = upstream; return c.CombinedOutput() }()
-	require.Contains(t, string(bo), "agent/x")
-	got, err := mgr.Get(context.Background(), rec.ID)
+	require.True(t, upstreamHasBranch(t, upstream, "agent/x"))
+	got, err := svc.mgr.Get(context.Background(), rec.ID)
 	require.NoError(t, err)
 	require.Equal(t, "stopped", got.Status)
 

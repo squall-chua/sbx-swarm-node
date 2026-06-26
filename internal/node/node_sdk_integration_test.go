@@ -28,7 +28,8 @@ import (
 // at least one workspace; the box must have a default network policy (it does:
 // `sbx policy ls` shows default-ai-services). Env-gated behind the `integration`
 // build tag — no sbx/docker in CI, so red-by-default there. Run:
-//   go test -tags integration ./internal/node/ -run TestNode_SDKBackend_CreateExecStop
+//
+//	go test -tags integration ./internal/node/ -run TestNode_SDKBackend_CreateExecStop
 func TestNode_SDKBackend_CreateExecStop(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
@@ -96,6 +97,28 @@ func TestNode_SDKBackend_CreateExecStop(t *testing.T) {
 	c.do(http.MethodPost, "/v1/sandboxes/"+id+"/exec", map[string]any{"cmd": []string{"echo", "smoke-ok"}}, &ex)
 	require.Equal(t, 0, ex.ExitCode)
 	require.Contains(t, string(ex.Stdout), "smoke-ok")
+
+	// Ports: publish then unpublish through the full REST chain (regression for the
+	// missing DELETE /ports/{container_port} route).
+	var pub struct {
+		ContainerPort int `json:"container_port"`
+		HostPort      int `json:"host_port"`
+	}
+	c.do(http.MethodPost, "/v1/sandboxes/"+id+"/ports", map[string]any{"container_port": 8080}, &pub)
+	require.Equal(t, 8080, pub.ContainerPort)
+	require.Greater(t, pub.HostPort, 0)
+
+	c.do(http.MethodDelete, "/v1/sandboxes/"+id+"/ports/8080", nil, nil)
+
+	var ports struct {
+		Ports []struct {
+			ContainerPort int `json:"container_port"`
+		} `json:"ports"`
+	}
+	c.do(http.MethodGet, "/v1/sandboxes/"+id+"/ports", nil, &ports)
+	for _, p := range ports.Ports {
+		require.NotEqualf(t, 8080, p.ContainerPort, "port 8080 should be unpublished")
+	}
 
 	// Stop.
 	var stopped struct {

@@ -48,6 +48,7 @@ function statusColor(status: string | undefined): string {
 const ports = ref<Array<{ container_port: number; host_port?: number; protocol?: string }>>(props.sandbox.ports ?? [])
 const publishPort = ref<number | null>(null)
 const publishLoading = ref(false)
+const unpublishing = ref<number | null>(null) // container port currently being unpublished
 
 async function fetchPorts() {
   try {
@@ -70,6 +71,19 @@ async function doPublishPort() {
     toast.add({ title: 'Failed to publish port', description: e?.message, color: 'error' })
   } finally {
     publishLoading.value = false
+  }
+}
+
+async function doUnpublishPort(containerPort: number) {
+  unpublishing.value = containerPort
+  try {
+    await api.del(`/v1/sandboxes/${props.sandbox.id}/ports/${containerPort}`)
+    await fetchPorts()
+    toast.add({ title: 'Port unpublished', color: 'success' })
+  } catch (e: any) {
+    toast.add({ title: 'Failed to unpublish port', description: e?.message, color: 'error' })
+  } finally {
+    unpublishing.value = null
   }
 }
 
@@ -286,6 +300,17 @@ onMounted(fetchPorts)
             color="neutral"
             variant="subtle"
             size="xs"
+          />
+          <UButton
+            v-if="session.isAdmin.value"
+            icon="i-lucide-x"
+            color="error"
+            variant="ghost"
+            size="xs"
+            class="ml-auto"
+            :loading="unpublishing === p.container_port"
+            :aria-label="`Unpublish port ${p.container_port}`"
+            @click="doUnpublishPort(p.container_port)"
           />
         </div>
       </div>

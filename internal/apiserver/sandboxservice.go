@@ -2,13 +2,16 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	"github.com/squall-chua/sbx-swarm-node/internal/events"
+	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/squall-chua/sbx-swarm-node/internal/ops"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
@@ -36,6 +39,8 @@ type SandboxService struct {
 	audit            *audit.Log
 	events           events.Publisher
 	idleTimeout      time.Duration
+	publishTimeout   time.Duration // 0 → defaultPublishTimeout; bounds the bundle publish
+	bundleDir        string        // "" → "/tmp"; where the publish bundle is staged (host + container side)
 }
 
 // SetGit wires git-backed workspaces (by name) for the publish path.
@@ -323,7 +328,7 @@ func (s *SandboxService) maybeAutoPublish(ctx context.Context, id string) {
 	if actor == "" {
 		actor = "system"
 	}
-	if perr := s.doPublish(ctx, id, "", actor); perr != nil {
+	if perr := s.doPublish(ctx, id, nil, actor); perr != nil {
 		slog.Warn("auto-publish failed", "sandbox", id, "err", perr)
 	}
 }
@@ -422,6 +427,17 @@ func (s *SandboxService) PublishPort(ctx context.Context, r *sbxv1.PublishPortRe
 	return &sbxv1.Port{ContainerPort: int32(p.ContainerPort), HostPort: int32(p.HostPort)}, nil
 }
 
+func (s *SandboxService) UnpublishPort(ctx context.Context, r *sbxv1.UnpublishPortRequest) (*sbxv1.Empty, error) {
+	name, err := s.mgr.Resolve(ctx, r.Id)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if err := s.mgr.Backend().UnpublishPort(ctx, name, int(r.ContainerPort)); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &sbxv1.Empty{}, nil
+}
+
 func (s *SandboxService) ListPorts(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.ListPortsResponse, error) {
 	name, err := s.mgr.Resolve(ctx, r.Id)
 	if err != nil {
@@ -438,46 +454,171 @@ func (s *SandboxService) ListPorts(ctx context.Context, r *sbxv1.IdRequest) (*sb
 	return out, nil
 }
 
-// doPublish runs the publish pipeline for a sandbox's git-backed workspace and
-// audits/emits the outcome.
-func (s *SandboxService) doPublish(ctx context.Context, sandboxID, reqBranch, actor string) error {
+// defaultPublishTimeout bounds the publish (bundle create + copy-out + fetch) so a
+// wedged sandbox cannot block the RPC forever.
+const defaultPublishTimeout = 2 * time.Minute
+
+// agentHeadBranch returns the branch the agent's clone is currently on (its HEAD),
+// execed inside the sandbox (exec defaults its cwd to the workspace).
+func (s *SandboxService) agentHeadBranch(ctx context.Context, backendName string) (string, error) {
+	res, err := s.mgr.Backend().Exec(ctx, backendName, []string{"git", "rev-parse", "--abbrev-ref", "HEAD"}, sandbox.ExecOpts{})
+	if err != nil {
+		return "", err
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf("git rev-parse: %s", strings.TrimSpace(string(res.Stderr)))
+	}
+	b := strings.TrimSpace(string(res.Stdout))
+	if b == "" || b == "HEAD" {
+		return "", fmt.Errorf("sandbox is in detached HEAD; specify a branch to publish")
+	}
+	return b, nil
+}
+
+// gitTarget resolves a clone-mode, git-backed sandbox to its record + workspace.
+// It does NOT gate on status (the record can lag the daemon's own idle-stop).
+func (s *SandboxService) gitTarget(ctx context.Context, sandboxID string) (*sandbox.Record, *git.Workspace, error) {
 	rec, err := s.mgr.Get(ctx, sandboxID)
 	if err == sandbox.ErrNotFound {
-		return status.Error(codes.NotFound, "sandbox not found")
+		return nil, nil, status.Error(codes.NotFound, "sandbox not found")
 	}
 	if err != nil {
-		return status.Error(codes.Internal, err.Error())
+		return nil, nil, status.Error(codes.Internal, err.Error())
 	}
 	if len(rec.Spec.Workspaces) != 1 {
-		return status.Error(codes.FailedPrecondition, "sandbox is not clone-mode")
+		return nil, nil, status.Error(codes.FailedPrecondition, "sandbox is not clone-mode")
 	}
 	ws := s.gitWS[rec.Spec.Workspaces[0].Name]
 	if ws == nil {
-		return status.Error(codes.FailedPrecondition, "workspace is not git-backed")
+		return nil, nil, status.Error(codes.FailedPrecondition, "workspace is not git-backed")
+	}
+	return rec, ws, nil
+}
+
+// bundleBranches packs the given branches from the agent's clone into a git bundle
+// and copies it to a host file, returning the host path + a cleanup. This replaces
+// the in-container git-daemon: it needs only exec + file copy, so it works on any
+// running sandbox regardless of whether the git-daemon process is alive (it only
+// comes back on a full boot, not the exec-restart the daemon-API path does). The
+// bundle is a valid git remote, so the configured publish steps fetch from it
+// unchanged ({sandbox_remote} = the bundle path).
+func (s *SandboxService) bundleBranches(ctx context.Context, backendName string, branches []string) (string, func(), error) {
+	dir := s.bundleDir
+	if dir == "" {
+		dir = "/tmp"
+	}
+	hostf, err := os.CreateTemp(dir, "sbxpub-*.bundle")
+	if err != nil {
+		return "", nil, status.Errorf(codes.Internal, "bundle: stage file: %v", err)
+	}
+	_ = hostf.Close()
+	hostPath := hostf.Name()
+	// Distinct from hostPath so the cross-namespace CopyFrom is never a self-copy.
+	containerPath := filepath.Join(dir, "in-"+filepath.Base(hostPath))
+	cleanup := func() {
+		_ = os.Remove(hostPath)
+		_, _ = s.mgr.Backend().Exec(context.WithoutCancel(ctx), backendName, []string{"rm", "-f", containerPath}, sandbox.ExecOpts{})
+	}
+
+	create := append([]string{"git", "bundle", "create", containerPath}, branches...)
+	res, err := s.mgr.Backend().Exec(ctx, backendName, create, sandbox.ExecOpts{})
+	if err != nil {
+		cleanup()
+		return "", nil, status.Errorf(codes.Internal, "bundle: %v", err)
+	}
+	if res.ExitCode != 0 {
+		cleanup()
+		return "", nil, status.Errorf(codes.Internal, "bundle: git exit %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	if err := s.mgr.Backend().CopyFrom(ctx, backendName, containerPath, hostPath); err != nil {
+		cleanup()
+		return "", nil, status.Errorf(codes.Internal, "bundle: copy out: %v", err)
+	}
+	return hostPath, cleanup, nil
+}
+
+func (s *SandboxService) doPublish(ctx context.Context, sandboxID string, reqBranches []string, actor string) error {
+	rec, ws, err := s.gitTarget(ctx, sandboxID)
+	if err != nil {
+		return err
 	}
 	if !ws.AllowPush() {
 		return status.Error(codes.FailedPrecondition, "workspace does not allow push")
 	}
-	branch := reqBranch
-	if branch == "" {
-		branch = rec.Spec.Branch
+
+	to := s.publishTimeout
+	if to <= 0 {
+		to = defaultPublishTimeout
 	}
-	if branch == "" {
-		return status.Error(codes.FailedPrecondition, "no branch to publish")
-	}
-	if rec.Status != "running" {
-		return status.Error(codes.FailedPrecondition, "sandbox not running; cannot reach sandbox-"+rec.BackendName)
+	pubCtx, cancel := context.WithTimeout(ctx, to)
+	defer cancel()
+
+	// No explicit selection → the branch the agent actually worked on (clone HEAD),
+	// not the stale provision-time metadata.
+	branches := reqBranches
+	if len(branches) == 0 {
+		b, err := s.agentHeadBranch(pubCtx, rec.BackendName)
+		if err != nil {
+			return status.Errorf(codes.FailedPrecondition, "determine branch: %v", err)
+		}
+		branches = []string{b}
 	}
 
-	perr := ws.Publish(ctx, branch, "sandbox-"+rec.BackendName)
-	s.auditPublish(ws.Name(), branch, actor, perr)
-	if perr != nil {
-		s.emit("sandbox.publish_failed", sandboxID, map[string]string{"branch": branch})
-		return status.Errorf(codes.Internal, "publish: %v", perr)
+	bundlePath, cleanup, err := s.bundleBranches(pubCtx, rec.BackendName, branches)
+	if err != nil {
+		s.auditPublish(ws.Name(), branches[0], actor, err)
+		s.emit("sandbox.publish_failed", sandboxID, map[string]string{"branch": branches[0]})
+		return status.Errorf(codes.Internal, "publish: %v", err)
 	}
-	s.emit("sandbox.published", sandboxID, map[string]string{"branch": branch})
-	_ = s.mgr.SetLastPublish(ctx, sandboxID, time.Now())
+	defer cleanup()
+
+	// Run the configured publish pipeline once per selected branch.
+	var firstErr error
+	for _, branch := range branches {
+		perr := ws.Publish(pubCtx, branch, bundlePath)
+		s.auditPublish(ws.Name(), branch, actor, perr)
+		if perr != nil {
+			s.emit("sandbox.publish_failed", sandboxID, map[string]string{"branch": branch})
+			if firstErr == nil {
+				firstErr = perr
+			}
+			continue
+		}
+		s.emit("sandbox.published", sandboxID, map[string]string{"branch": branch})
+	}
+	if firstErr != nil {
+		return status.Errorf(codes.Internal, "publish: %v", firstErr)
+	}
+	_ = s.mgr.SetLastPublish(pubCtx, sandboxID, time.Now())
 	return nil
+}
+
+// ListBranches lists the agent's branches for the publish-selection UI, read
+// straight from the clone with `git for-each-ref`. The exec auto-starts an
+// idle-stopped sandbox; reading on-disk refs needs no in-container git-daemon
+// (which, unlike publish, only comes up on a full boot — not an exec-restart).
+func (s *SandboxService) ListBranches(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.ListBranchesResponse, error) {
+	rec, _, err := s.gitTarget(ctx, r.Id)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	res, err := s.mgr.Backend().Exec(ctx, rec.BackendName,
+		[]string{"git", "for-each-ref", "--format=%(refname:short)", "refs/heads/"}, sandbox.ExecOpts{})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list branches: %v", err)
+	}
+	if res.ExitCode != 0 {
+		return nil, status.Errorf(codes.Internal, "list branches: git exit %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	var branches []string
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		if b := strings.TrimSpace(line); b != "" {
+			branches = append(branches, b)
+		}
+	}
+	return &sbxv1.ListBranchesResponse{Branches: branches}, nil
 }
 
 func (s *SandboxService) auditPublish(workspace, branch, actor string, err error) {
@@ -520,8 +661,12 @@ func (s *SandboxService) PublishSandbox(ctx context.Context, r *sbxv1.PublishSan
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	id, branch := r.Id, r.Branch
+	id := r.Id
+	branches := r.Branches // multi-select; falls back to single Branch, then agent HEAD
+	if len(branches) == 0 && r.Branch != "" {
+		branches = []string{r.Branch}
+	}
 	act := principalFromContext(ctx).userRole // capture before going async (background ctx has no principal)
-	s.ops.Run(op.ID, func() (string, error) { return id, s.doPublish(context.Background(), id, branch, act) })
+	s.ops.Run(op.ID, func() (string, error) { return id, s.doPublish(context.Background(), id, branches, act) })
 	return opProto(op), nil
 }

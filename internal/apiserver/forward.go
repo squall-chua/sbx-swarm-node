@@ -142,6 +142,8 @@ func newReplyFor(fullMethod string) any {
 		return new(sbxv1.Operation)
 	case "/sbxswarm.v1.SandboxService/PublishPort":
 		return new(sbxv1.Port)
+	case "/sbxswarm.v1.SandboxService/UnpublishPort":
+		return new(sbxv1.Empty)
 	case "/sbxswarm.v1.SandboxService/ListPorts":
 		return new(sbxv1.ListPortsResponse)
 	case "/sbxswarm.v1.SandboxService/GetStats":
@@ -150,6 +152,8 @@ func newReplyFor(fullMethod string) any {
 		return new(sbxv1.ListBlockedResponse)
 	case "/sbxswarm.v1.SandboxService/PublishSandbox":
 		return new(sbxv1.Operation)
+	case "/sbxswarm.v1.SandboxService/ListBranches":
+		return new(sbxv1.ListBranchesResponse)
 	case "/sbxswarm.v1.SandboxService/KeepAlive":
 		return new(sbxv1.Sandbox)
 	case "/sbxswarm.v1.NodeService/Cordon",

@@ -21,6 +21,9 @@ type Vars struct {
 // refOK: no leading '-', no control chars/spaces, no '..' (checked separately).
 var refOK = regexp.MustCompile(`^[A-Za-z0-9._/\-]+$`)
 
+// validateRef guards a request-/runtime-supplied value bound into a step. It also
+// admits {sandbox_remote}, doPublish's staged bundle path (e.g. /tmp/x.bundle):
+// such paths contain only refOK characters, so no special case is needed.
 func validateRef(name, val string) error {
 	if val == "" {
 		return nil // unset: a step may simply not reference it
@@ -36,8 +39,7 @@ func validateRef(name, val string) error {
 // shell-interpreted).
 func Build(steps [][]string, v Vars) ([][]string, error) {
 	for _, f := range []struct{ name, val string }{
-		{"branch", v.Branch}, {"base_ref", v.BaseRef},
-		{"remote", v.Remote}, {"sandbox_remote", v.SandboxRemote},
+		{"branch", v.Branch}, {"base_ref", v.BaseRef}, {"remote", v.Remote}, {"sandbox_remote", v.SandboxRemote},
 	} {
 		if err := validateRef(f.name, f.val); err != nil {
 			return nil, err
