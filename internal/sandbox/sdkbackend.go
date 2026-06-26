@@ -56,6 +56,19 @@ func (b *SDKBackend) handle(ctx context.Context, name string) (*sdksandbox.Sandb
 	return sb, nil
 }
 
+// primaryWorkspaceDir is the in-container path of the sandbox's primary (first)
+// workspace — sbx's own default working dir for `sbx exec`. The raw exec/attach
+// endpoint instead lands in a generic dir (/home/agent/workspace), so terminal
+// and default-workdir exec callers default `-w` to this. Best-effort: "" on
+// inspect failure or when no workspace is mounted, leaving the daemon default.
+func (b *SDKBackend) primaryWorkspaceDir(ctx context.Context, sb *sdksandbox.Sandbox) string {
+	info, err := sb.Inspect(ctx)
+	if err != nil {
+		return ""
+	}
+	return info.Workspace
+}
+
 // workspaceArg builds the sbx workspace argument for one mount, applying sbx's
 // rule that the PRIMARY (first) workspace must be read/write. In --clone mode sbx
 // clones the primary and mounts that clone read-only itself, so we just drop the
@@ -165,8 +178,12 @@ func (b *SDKBackend) Exec(ctx context.Context, name string, cmd []string, opts E
 		sdkexec.WithAutoStart(),
 		sdkexec.WithMultiplexed(&stdout, &stderr),
 	}
-	if opts.Workdir != "" {
-		popts = append(popts, sdkexec.WithWorkdir(opts.Workdir))
+	wd := opts.Workdir
+	if wd == "" {
+		wd = b.primaryWorkspaceDir(ctx, sb)
+	}
+	if wd != "" {
+		popts = append(popts, sdkexec.WithWorkdir(wd))
 	}
 	if len(opts.Env) > 0 {
 		popts = append(popts, sdkexec.WithEnv(opts.Env))
@@ -184,8 +201,12 @@ func (b *SDKBackend) ExecDetached(ctx context.Context, name string, cmd []string
 		return "", err
 	}
 	popts := []sdkexec.ProcessOption{sdkexec.WithAutoStart()}
-	if opts.Workdir != "" {
-		popts = append(popts, sdkexec.WithWorkdir(opts.Workdir))
+	wd := opts.Workdir
+	if wd == "" {
+		wd = b.primaryWorkspaceDir(ctx, sb)
+	}
+	if wd != "" {
+		popts = append(popts, sdkexec.WithWorkdir(wd))
 	}
 	if len(opts.Env) > 0 {
 		popts = append(popts, sdkexec.WithEnv(opts.Env))
@@ -534,6 +555,11 @@ func (b *SDKBackend) ExecInteractive(ctx context.Context, name string, cmd []str
 		return nil, err
 	}
 	popts := []sdkexec.ProcessOption{sdkexec.WithAutoStart()}
+	if wd := b.primaryWorkspaceDir(ctx, sb); wd != "" {
+		// Start the terminal in the primary workspace (like `sbx exec`) instead of
+		// the raw attach default (/home/agent/workspace).
+		popts = append(popts, sdkexec.WithWorkdir(wd))
+	}
 	if tty {
 		// Advertise a terminal type so pagers/editors (e.g. `git branch` -> less)
 		// don't warn "terminal is not fully functional"; xterm.js speaks xterm-256color.
