@@ -13,6 +13,34 @@ const emit = defineEmits<{
 const api = useApi()
 const toast = useToast()
 
+// ── Tab state ────────────────────────────────────────────────────────────────
+// The Terminal tab is mounted lazily on first visit, then kept alive (v-show, not
+// unmounted) for the rest of the drawer's life so switching tabs never drops the
+// session. Other tabs keep the default unmount-on-hide so their SSE/polls don't run
+// in the background.
+const activeTab = ref('info')
+const terminalMounted = ref(false)
+watch(activeTab, (t) => { if (t === 'terminal') terminalMounted.value = true })
+
+// ── Close confirmation ───────────────────────────────────────────────────────
+// A live terminal WebSocket dies when the drawer unmounts; warn before dismissing
+// so an accidental backdrop/Escape/X doesn't drop the session.
+const terminalActive = ref(false)
+const confirmCloseOpen = ref(false)
+
+function requestClose(value: boolean) {
+  if (!value && terminalActive.value) {
+    confirmCloseOpen.value = true // intercept: keep the drawer open, ask first
+    return
+  }
+  emit('update:open', value)
+}
+
+function confirmClose() {
+  confirmCloseOpen.value = false
+  emit('update:open', false)
+}
+
 async function copyId() {
   if (!props.id) return
   try {
@@ -46,6 +74,12 @@ watch(
       fetchSandbox()
     } else {
       sandbox.value = null
+      terminalActive.value = false
+      confirmCloseOpen.value = false
+      terminalMounted.value = false
+      activeTab.value = 'info'
+      terminalMounted.value = false
+      activeTab.value = 'info'
     }
   },
   { immediate: true },
@@ -62,17 +96,17 @@ watch(
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 const tabItems = computed<TabsItem[]>(() => {
   const items: TabsItem[] = [
-    { label: 'Info',     slot: 'info',     icon: 'i-lucide-info' },
-    { label: 'Terminal', slot: 'terminal', icon: 'i-lucide-terminal' },
-    { label: 'Stats',    slot: 'stats',    icon: 'i-lucide-bar-chart-2' },
-    { label: 'Logs',     slot: 'logs',     icon: 'i-lucide-scroll-text' },
-    { label: 'Network',  slot: 'network',  icon: 'i-lucide-network' },
-    { label: 'Secrets',  slot: 'secrets',  icon: 'i-lucide-lock' },
+    { label: 'Info',     slot: 'info',     value: 'info',     icon: 'i-lucide-info' },
+    { label: 'Terminal', slot: 'terminal', value: 'terminal', icon: 'i-lucide-terminal' },
+    { label: 'Stats',    slot: 'stats',    value: 'stats',    icon: 'i-lucide-bar-chart-2' },
+    { label: 'Logs',     slot: 'logs',     value: 'logs',     icon: 'i-lucide-scroll-text' },
+    { label: 'Network',  slot: 'network',  value: 'network',  icon: 'i-lucide-network' },
+    { label: 'Secrets',  slot: 'secrets',  value: 'secrets',  icon: 'i-lucide-lock' },
   ]
   if (sandbox.value?.branch) {
-    items.push({ label: 'Git', slot: 'git', icon: 'i-lucide-git-branch' })
+    items.push({ label: 'Git', slot: 'git', value: 'git', icon: 'i-lucide-git-branch' })
   }
-  items.push({ label: 'Files', slot: 'files', icon: 'i-lucide-folder' })
+  items.push({ label: 'Files', slot: 'files', value: 'files', icon: 'i-lucide-folder' })
   return items
 })
 </script>
@@ -83,7 +117,7 @@ const tabItems = computed<TabsItem[]>(() => {
     :title="id ?? 'Sandbox'"
     :description="sandbox?.owner_node ? `Owner: ${sandbox.owner_node}` : undefined"
     :ui="{ content: 'max-w-4xl' }"
-    @update:open="emit('update:open', $event)"
+    @update:open="requestClose"
   >
     <!-- Rich header: id + status + owner + branch + copy -->
     <template #header="{ close }">
@@ -136,7 +170,7 @@ const tabItems = computed<TabsItem[]>(() => {
 
       <!-- Tab contents — only mounted while the drawer is open -->
       <div v-else-if="open" class="p-4">
-        <UTabs :items="tabItems" class="w-full">
+        <UTabs v-model="activeTab" :items="tabItems" class="w-full">
           <!-- Info tab: real implementation -->
           <template #info>
             <div class="pt-4">
@@ -150,10 +184,8 @@ const tabItems = computed<TabsItem[]>(() => {
             </div>
           </template>
 
-          <!-- Terminal tab -->
-          <template #terminal>
-            <DrawerTerminalTab v-if="id" :id="id" />
-          </template>
+          <!-- Terminal tab: panel left empty on purpose — the terminal is rendered
+               once below and kept alive via v-show so it survives tab switches. -->
 
           <!-- Stats tab -->
           <template #stats>
@@ -185,7 +217,26 @@ const tabItems = computed<TabsItem[]>(() => {
             <DrawerFilesTab />
           </template>
         </UTabs>
+
+        <!-- Persistent terminal: mounted on first visit, then kept alive across tab
+             switches via v-show (the Terminal tab's own panel above is left empty). -->
+        <div v-if="terminalMounted && id" v-show="activeTab === 'terminal'">
+          <DrawerTerminalTab :id="id" @active="terminalActive = $event" />
+        </div>
       </div>
     </template>
   </USlideover>
+
+  <!-- Confirm before dismissing while a terminal session is live -->
+  <UModal
+    v-model:open="confirmCloseOpen"
+    title="End terminal session?"
+    description="The terminal is still connected to this sandbox. Closing the drawer will end the session."
+    :ui="{ footer: 'justify-end' }"
+  >
+    <template #footer="{ close }">
+      <UButton label="Keep open" color="neutral" variant="outline" @click="close" />
+      <UButton label="Close & end session" color="error" @click="confirmClose" />
+    </template>
+  </UModal>
 </template>

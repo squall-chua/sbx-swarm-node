@@ -4,12 +4,16 @@ import { createTerminal } from '~/composables/useTerminal'
 
 const props = defineProps<{ id: string }>()
 
+// Tells the drawer a live session exists so it can confirm before dismissing.
+const emit = defineEmits<{ active: [boolean] }>()
+
 const api = useApi()
 const termEl = ref<HTMLDivElement | null>(null)
 
 // Held so we can call close()/dispose() on unmount
 let termClose: (() => void) | null = null
 let termDispose: (() => void) | null = null
+let alive = true // false once unmounted; guards the async setup below
 
 onMounted(async () => {
   if (!termEl.value) return
@@ -17,6 +21,8 @@ onMounted(async () => {
   // Dynamic import keeps xterm out of SSR/prerender (it accesses document at module load)
   const { Terminal } = await import('@xterm/xterm')
   const { FitAddon } = await import('@xterm/addon-fit')
+
+  if (!alive) return // unmounted while the dynamic imports were in flight — don't open an orphan WS
 
   const term = new Terminal({ convertEol: true })
   const fit = new FitAddon()
@@ -51,11 +57,14 @@ onMounted(async () => {
     close()
   }
   termDispose = () => term.dispose()
+  emit('active', true)
 })
 
 onBeforeUnmount(() => {
+  alive = false
   termClose?.()
   termDispose?.()
+  emit('active', false)
 })
 </script>
 
