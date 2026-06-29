@@ -73,6 +73,12 @@ it is an ephemeral live stream, like the event firehose. Does not violate Provis
 command inside an already-Provisioned Sandbox.
 _Avoid_: console, shell, ssh, session (bare)
 
+**File transfer**:
+A synchronous copy of a single file between an operator and a Sandbox — **upload**
+(operator → sandbox) or **download** (sandbox → operator). Admin-only. Like a Terminal
+session it is **not** an Operation: no operation id, no tracked async progress.
+_Avoid_: file API, sync, transfer job, cp (bare)
+
 **Unreachable** (sandbox state):
 The sandbox's owner node is suspect or dead per gossip, so its true state is unknown — it may still be
 alive behind a partition. A peer's non-destructive guess; only the owner ever moves it off this state.
@@ -95,14 +101,14 @@ _Avoid_: post, push (bare)
 
 **Activity** (sandbox):
 What resets a sandbox's idle clock for Idle-stop. Two kinds count: a **control-plane** interaction —
-Provision (create), Start, Exec, Agent run, or an explicit KeepAlive ping — and observed **work**, i.e.
+Provision (create), Start, Exec, Agent run, File transfer upload, or an explicit KeepAlive ping — and observed **work**, i.e.
 CPU utilization at or above a small threshold seen by the node's periodic stats poll. Either kind resets the clock, so a sandbox doing
 autonomous work (a long build, a server) is not idle-stopped even with no API calls, and a long-running
 Agent run waiting near-zero CPU on the network is kept alive while it is in flight. Reads
-(Get/List/ListPorts) and explicit Publish do not count. The two residual blind spots — a process blocked
-at ~0% CPU, and traffic to a published port (not observable from the SDK) — are covered by the
-`idle-stop: off` exemption label, not by a signal. The owner records the time of the last Activity per
-sandbox.
+(Get/List/ListPorts), File transfer download, and explicit Publish do not count. The two residual blind
+spots — a process blocked at ~0% CPU, and traffic to a published port (not observable from the SDK) — are
+covered by the `idle-stop: off` exemption label, not by a signal. The owner records the time of the last
+Activity per sandbox.
 _Avoid_: usage, heartbeat, touch
 
 **Idle-stop**:
