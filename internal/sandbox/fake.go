@@ -24,6 +24,7 @@ type Fake struct {
 	ExecFunc        func(name string, cmd []string) (ExecResult, error)
 	PublishPortFunc func(name string, cp int) (PublishedPort, error)
 	CopyFromFunc    func(name, remotePath, localPath string) error
+	CopyToFunc      func(name, localPath, remotePath string) error
 }
 
 // NewFake returns an empty fake backend.
@@ -156,9 +157,14 @@ func (f *Fake) UnpublishPort(_ context.Context, name string, cp int) error {
 	return nil
 }
 
-func (f *Fake) CopyTo(_ context.Context, name, _, _ string) error {
-	_, err := f.Get(context.Background(), name)
-	return err
+func (f *Fake) CopyTo(_ context.Context, name, localPath, remotePath string) error {
+	if _, err := f.Get(context.Background(), name); err != nil {
+		return err
+	}
+	if f.CopyToFunc != nil {
+		return f.CopyToFunc(name, localPath, remotePath)
+	}
+	return nil
 }
 
 func (f *Fake) CopyFrom(_ context.Context, name, remotePath, localPath string) error {

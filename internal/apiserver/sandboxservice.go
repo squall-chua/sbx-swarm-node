@@ -41,6 +41,7 @@ type SandboxService struct {
 	idleTimeout      time.Duration
 	publishTimeout   time.Duration // 0 → defaultPublishTimeout; bounds the bundle publish
 	bundleDir        string        // "" → "/tmp"; where the publish bundle is staged (host + container side)
+	maxUploadBytes   int64         // 0 → defaultMaxUploadBytes; per-request upload ceiling
 }
 
 // SetGit wires git-backed workspaces (by name) for the publish path.
@@ -55,6 +56,9 @@ func (s *SandboxService) SetEvents(p events.Publisher) { s.events = p }
 // SetIdleTimeout configures the idle-stop threshold. 0 disables both the reaper
 // sweep and the agent-run keepalive throttle.
 func (s *SandboxService) SetIdleTimeout(d time.Duration) { s.idleTimeout = d }
+
+// SetMaxUploadBytes sets the per-request file-upload ceiling (0 → default).
+func (s *SandboxService) SetMaxUploadBytes(n int64) { s.maxUploadBytes = n }
 
 // WithPlacement wires placement (coordinator) + sizing defaults.
 func (s *SandboxService) WithPlacement(place PlaceFunc, defaultStrategy string, defaults sandbox.Resources) {
