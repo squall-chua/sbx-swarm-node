@@ -191,6 +191,13 @@ func TestValidate_ClusterFields(t *testing.T) {
 	}
 }
 
+func TestConfig_MaxUploadBytes(t *testing.T) {
+	var c Config
+	require.Equal(t, int64(0), c.MaxUploadBytes) // unset → 0 (handler defaults to 100 MiB)
+	c.MaxUploadBytes = 5 << 20
+	require.Equal(t, int64(5<<20), c.MaxUploadBytes)
+}
+
 func TestGitConfig_WithDefaults(t *testing.T) {
 	g := GitConfig{}.WithDefaults()
 	require.Equal(t, "origin", g.Remote)

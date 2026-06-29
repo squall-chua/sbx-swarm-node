@@ -105,6 +105,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	sandboxes.SetAudit(auditLog)
 	sandboxes.SetEvents(bus)
 	sandboxes.SetIdleTimeout(cfg.IdleTimeoutDuration())
+	sandboxes.SetMaxUploadBytes(cfg.MaxUploadBytes)
 	policySvc := apiserver.NewPolicyService(mgr, auditLog)
 
 	// Background observability collectors.

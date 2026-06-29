@@ -119,7 +119,7 @@ func Build(opts Options) (http.Handler, http.Handler, *grpc.Server, error) {
 		v1 = observeStreamMux(opts.Sandboxes.obs, gw)
 	}
 	if opts.Sandboxes != nil {
-		v1 = terminalMux(opts.Sandboxes.TerminalHandler(), v1)
+		v1 = terminalMux(mw.RequireRole("admin", opts.Sandboxes.TerminalHandler()), v1)
 		v1 = filesMux(mw.RequireRole("admin", opts.Sandboxes.FilesHandler()), v1)
 	}
 	// In cluster mode, reverse-proxy REST/SSE requests for remote sandboxes to

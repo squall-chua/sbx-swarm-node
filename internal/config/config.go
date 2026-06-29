@@ -39,8 +39,9 @@ type Config struct {
 	Workspaces              []WorkspaceConfig `yaml:"workspaces"`
 	DefaultStrategy         string            `yaml:"default_strategy"`
 	DefaultSandboxResources SandboxResources  `yaml:"default_sandbox_resources"`
-	Backend                 string            `yaml:"backend"`      // "fake" (default) | "sdk"
-	IdleTimeout             string            `yaml:"idle_timeout"` // Go duration, e.g. "30m"; "" or <=0 disables idle-stop
+	Backend                 string            `yaml:"backend"`          // "fake" (default) | "sdk"
+	IdleTimeout             string            `yaml:"idle_timeout"`     // Go duration, e.g. "30m"; "" or <=0 disables idle-stop
+	MaxUploadBytes          int64             `yaml:"max_upload_bytes"` // 0 → 100 MiB; per-request file-upload ceiling
 }
 
 // ProvisionLimits caps how much CPU/memory/disk this node offers to the swarm.

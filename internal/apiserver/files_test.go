@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -166,4 +167,18 @@ func TestDownload_ReadOnlyForbidden(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestTerminal_ReadOnlyForbidden(t *testing.T) {
+	addr, cleanup := startRoleGateServer(t)
+	defer cleanup()
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	// RequireRole runs before the sandbox is resolved, so any id works; a read-only
+	// key must be rejected with 403 before the WebSocket upgrade is attempted.
+	req, _ := http.NewRequest(http.MethodGet, "https://"+addr+"/v1/sandboxes/n1.x/terminal", nil)
+	req.Header.Set("Authorization", "Bearer ro")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode, "read-only must not open a terminal")
 }
