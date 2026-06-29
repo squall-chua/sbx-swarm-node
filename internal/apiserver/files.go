@@ -158,7 +158,12 @@ func (s *SandboxService) handleDownload(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	defer f.Close()
-	if fi, err := f.Stat(); err == nil && !fi.Mode().IsRegular() {
+	fi, err := f.Stat()
+	if err != nil {
+		http.Error(w, "stat staged file", http.StatusInternalServerError)
+		return
+	}
+	if !fi.Mode().IsRegular() {
 		http.Error(w, "not a regular file", http.StatusBadRequest)
 		return
 	}
