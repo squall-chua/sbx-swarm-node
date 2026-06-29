@@ -68,6 +68,28 @@ type fakeContainerFS struct {
 	truncateN     int // the first N CopyTo calls drop a byte (simulate truncation)
 	copyFromCalls int
 	truncateFromN int // the first N CopyFrom calls stage a short host file
+	execCmds      [][]string
+}
+
+// ranExec reports whether the given argv was executed in the sandbox.
+func (fs *fakeContainerFS) ranExec(want ...string) bool {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	for _, c := range fs.execCmds {
+		if len(c) == len(want) {
+			match := true
+			for i := range c {
+				if c[i] != want[i] {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func newFakeContainerFS() *fakeContainerFS { return &fakeContainerFS{files: map[string][]byte{}} }
@@ -112,6 +134,7 @@ func (fs *fakeContainerFS) wire(f *sandbox.Fake) {
 	f.ExecFunc = func(_ string, cmd []string) (sandbox.ExecResult, error) {
 		fs.mu.Lock()
 		defer fs.mu.Unlock()
+		fs.execCmds = append(fs.execCmds, cmd)
 		switch cmd[0] {
 		case "stat": // stat -c %s <path>
 			b, ok := fs.files[cmd[len(cmd)-1]]
@@ -188,6 +211,24 @@ func TestCopyFileToSandbox_RetriesUntilVerified(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "important-bytes", string(got))
 	require.False(t, fs.anyTemp(), "all attempt temps cleaned up, none left behind")
+}
+
+func TestCopyFileToSandbox_CreatesDestinationDir(t *testing.T) {
+	svc := newSandboxSvc(t)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	fs := newFakeContainerFS()
+	fs.wire(fake)
+	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
+	require.NoError(t, err)
+	name, err := svc.mgr.Resolve(context.Background(), rec.ID)
+	require.NoError(t, err)
+	local := filepath.Join(t.TempDir(), "src")
+	require.NoError(t, os.WriteFile(local, []byte("data"), 0o600))
+
+	err = copyFileToSandbox(context.Background(), fake, name, local, "/home/agent/uploads/deep/report.pdf")
+	require.NoError(t, err)
+	require.True(t, fs.ranExec("mkdir", "-p", "/home/agent/uploads/deep"),
+		"destination folder is created before copy (cp into a missing dir fails)")
 }
 
 func TestCopyFileToSandbox_FailsAfterMaxTries(t *testing.T) {

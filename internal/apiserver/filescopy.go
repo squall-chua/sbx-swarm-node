@@ -35,6 +35,12 @@ func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, 
 	// a root-owned partial that the daemon cannot overwrite, so reusing one path
 	// would poison every retry. We clean up all attempt temps at the end.
 	dir := path.Dir(remotePath)
+	// Create the destination directory up front: the console's "destination folder"
+	// upload invites paths whose folder does not exist yet, and a cp into a missing
+	// dir fails ("tar: Cannot open: No such file or directory") on every retry.
+	if _, err := execChecked(ctx, b, name, "mkdir", "-p", dir); err != nil {
+		return fmt.Errorf("create destination dir %s: %w", dir, err)
+	}
 	base := ".sbxup-" + filepath.Base(localPath)
 	var temps []string
 	defer func() {
