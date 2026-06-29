@@ -65,11 +65,12 @@ function doDownload() {
           v-model="files"
           multiple
           variant="area"
+          layout="list"
           icon="i-lucide-upload"
           label="Drop files here or click to browse"
           description="Each file is uploaded into the destination folder"
           :file-image="false"
-          :ui="{ base: 'min-h-28' }"
+          :ui="{ base: 'min-h-28', fileLeadingAvatar: 'size-5' }"
         />
         <UInput
           v-model="destDir"
