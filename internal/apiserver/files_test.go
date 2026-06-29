@@ -3,7 +3,7 @@ package apiserver
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -58,17 +58,18 @@ func filesTestServer(t *testing.T) (http.Handler, *sandbox.Fake, *SandboxService
 	return h, fake, svc, rec.ID
 }
 
-// fakeContainerFS simulates the sandbox filesystem for the verify-and-retry
-// upload path: CopyTo records bytes (optionally arriving short, to exercise the
-// retry), and Exec answers the stat/mv/rm the copy helper issues.
+// fakeContainerFS simulates the sandbox filesystem for the exec-based transfer:
+// it interprets the mkdir / truncate / base64-append / dd-read / stat / mv / rm
+// commands the copy helpers issue, so tests assert real byte round-trips. Fail
+// injection (failAppends / shortReads) exercises the retry paths.
 type fakeContainerFS struct {
-	mu            sync.Mutex
-	files         map[string][]byte
-	copyCalls     int
-	truncateN     int // the first N CopyTo calls drop a byte (simulate truncation)
-	copyFromCalls int
-	truncateFromN int // the first N CopyFrom calls stage a short host file
-	execCmds      [][]string
+	mu          sync.Mutex
+	files       map[string][]byte
+	execCmds    [][]string
+	appendCalls int
+	failAppends int // the first N base64-append execs return a non-zero exit
+	readCalls   int
+	shortReads  int // the first N dd-read execs return a byte-short result
 }
 
 // ranExec reports whether the given argv was executed in the sandbox.
@@ -103,51 +104,61 @@ func (fs *fakeContainerFS) put(p string, b []byte) {
 }
 
 func (fs *fakeContainerFS) wire(f *sandbox.Fake) {
-	f.CopyToFunc = func(_, localPath, remotePath string) error {
-		b, err := os.ReadFile(localPath)
-		if err != nil {
-			return err
-		}
-		fs.mu.Lock()
-		defer fs.mu.Unlock()
-		fs.copyCalls++
-		if fs.copyCalls <= fs.truncateN && len(b) > 0 {
-			b = b[:len(b)-1] // arrive short, like a truncated daemon transfer
-		}
-		fs.files[remotePath] = append([]byte(nil), b...)
-		return nil
-	}
-	f.CopyFromFunc = func(_, remotePath, localPath string) error {
-		fs.mu.Lock()
-		b, ok := fs.files[remotePath]
-		fs.copyFromCalls++
-		short := fs.copyFromCalls <= fs.truncateFromN && len(b) > 0
-		fs.mu.Unlock()
-		if !ok {
-			return fmt.Errorf("no such file: %s", remotePath)
-		}
-		if short {
-			b = b[:len(b)-1] // host file arrives short, like a truncated transfer
-		}
-		return os.WriteFile(localPath, b, 0o600)
-	}
 	f.ExecFunc = func(_ string, cmd []string) (sandbox.ExecResult, error) {
 		fs.mu.Lock()
 		defer fs.mu.Unlock()
 		fs.execCmds = append(fs.execCmds, cmd)
-		switch cmd[0] {
-		case "stat": // stat -c %s <path>
+		switch {
+		case cmd[0] == "mkdir":
+			return sandbox.ExecResult{}, nil
+		case cmd[0] == "stat": // stat -c %s <path>
 			b, ok := fs.files[cmd[len(cmd)-1]]
 			if !ok {
 				return sandbox.ExecResult{ExitCode: 1, Stderr: []byte("stat: No such file")}, nil
 			}
 			return sandbox.ExecResult{Stdout: []byte(strconv.Itoa(len(b)) + "\n")}, nil
-		case "mv": // mv -f <src> <dst>
+		case cmd[0] == "mv": // mv -f <src> <dst>
 			src, dst := cmd[len(cmd)-2], cmd[len(cmd)-1]
 			fs.files[dst] = fs.files[src]
 			delete(fs.files, src)
-		case "rm": // rm -f <path>
+			return sandbox.ExecResult{}, nil
+		case cmd[0] == "rm": // rm -f <path>
 			delete(fs.files, cmd[len(cmd)-1])
+			return sandbox.ExecResult{}, nil
+		case cmd[0] == "sh" && strings.HasPrefix(cmd[2], ": >"): // truncate: $0=cmd[3]
+			fs.files[cmd[3]] = []byte{}
+			return sandbox.ExecResult{}, nil
+		case cmd[0] == "sh" && strings.Contains(cmd[2], "base64 -d"): // append: $0=dest, $1..=b64
+			fs.appendCalls++
+			if fs.appendCalls <= fs.failAppends {
+				return sandbox.ExecResult{ExitCode: 1, Stderr: []byte("injected append failure")}, nil
+			}
+			dest := cmd[3]
+			for _, a := range cmd[4:] {
+				dec, err := base64.StdEncoding.DecodeString(a)
+				if err != nil {
+					return sandbox.ExecResult{ExitCode: 1, Stderr: []byte("base64: invalid input")}, nil
+				}
+				fs.files[dest] = append(fs.files[dest], dec...)
+			}
+			return sandbox.ExecResult{}, nil
+		case cmd[0] == "sh" && strings.HasPrefix(cmd[2], "dd "): // read block: $0=path, $1=block
+			fs.readCalls++
+			data := fs.files[cmd[3]]
+			block, _ := strconv.Atoi(cmd[4])
+			start := block * execChunkRaw
+			if start >= len(data) {
+				return sandbox.ExecResult{}, nil // past EOF → empty stdout
+			}
+			end := start + execChunkRaw
+			if end > len(data) {
+				end = len(data)
+			}
+			chunk := data[start:end]
+			if fs.readCalls <= fs.shortReads && len(chunk) > 0 {
+				chunk = chunk[:len(chunk)-1] // exec-stdout truncated
+			}
+			return sandbox.ExecResult{Stdout: []byte(base64.StdEncoding.EncodeToString(chunk))}, nil
 		}
 		return sandbox.ExecResult{}, nil
 	}
@@ -195,7 +206,7 @@ func TestCopyFileToSandbox_RetriesUntilVerified(t *testing.T) {
 	svc := newSandboxSvc(t)
 	fake := svc.mgr.Backend().(*sandbox.Fake)
 	fs := newFakeContainerFS()
-	fs.truncateN = 2 // first two transfers arrive short; the third is whole
+	fs.failAppends = 2 // first two append attempts fail; the third whole stream is whole
 	fs.wire(fake)
 	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
 	require.NoError(t, err)
@@ -206,11 +217,11 @@ func TestCopyFileToSandbox_RetriesUntilVerified(t *testing.T) {
 
 	err = copyFileToSandbox(context.Background(), fake, name, local, "/home/agent/doc.pdf")
 	require.NoError(t, err)
-	require.Equal(t, 3, fs.copyCalls, "retried past the truncated transfers")
+	require.Equal(t, 3, fs.appendCalls, "retried the whole stream past the failed appends")
 	got, ok := fs.get("/home/agent/doc.pdf")
 	require.True(t, ok)
-	require.Equal(t, "important-bytes", string(got))
-	require.False(t, fs.anyTemp(), "all attempt temps cleaned up, none left behind")
+	require.Equal(t, "important-bytes", string(got), "re-truncate means no double-append")
+	require.False(t, fs.anyTemp(), "the temp is renamed into place, not left behind")
 }
 
 func TestCopyFileToSandbox_CreatesDestinationDir(t *testing.T) {
@@ -235,7 +246,7 @@ func TestCopyFileToSandbox_FailsAfterMaxTries(t *testing.T) {
 	svc := newSandboxSvc(t)
 	fake := svc.mgr.Backend().(*sandbox.Fake)
 	fs := newFakeContainerFS()
-	fs.truncateN = 1000 // every transfer arrives short
+	fs.failAppends = 1000 // every append attempt fails
 	fs.wire(fake)
 	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
 	require.NoError(t, err)
@@ -246,7 +257,7 @@ func TestCopyFileToSandbox_FailsAfterMaxTries(t *testing.T) {
 
 	err = copyFileToSandbox(context.Background(), fake, name, local, "/home/agent/doc.pdf")
 	require.Error(t, err)
-	require.Equal(t, uploadCopyTries, fs.copyCalls)
+	require.Equal(t, transferTries, fs.appendCalls)
 	_, ok := fs.get("/home/agent/doc.pdf")
 	require.False(t, ok, "destination is never written on persistent failure")
 }
@@ -328,7 +339,7 @@ func TestCopyFileFromSandbox_RetriesUntilVerified(t *testing.T) {
 	fake := svc.mgr.Backend().(*sandbox.Fake)
 	fs := newFakeContainerFS()
 	fs.put("/home/agent/out.bin", []byte("important-bytes"))
-	fs.truncateFromN = 2 // first two transfers arrive short; the third is whole
+	fs.shortReads = 2 // first two reads of the block arrive short; the third is whole
 	fs.wire(fake)
 	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
 	require.NoError(t, err)
@@ -338,7 +349,7 @@ func TestCopyFileFromSandbox_RetriesUntilVerified(t *testing.T) {
 
 	err = copyFileFromSandbox(context.Background(), fake, name, "/home/agent/out.bin", local)
 	require.NoError(t, err)
-	require.Equal(t, 3, fs.copyFromCalls, "retried past the truncated transfers")
+	require.Equal(t, 3, fs.readCalls, "retried past the short reads")
 	got, err := os.ReadFile(local)
 	require.NoError(t, err)
 	require.Equal(t, "important-bytes", string(got))
@@ -349,7 +360,7 @@ func TestCopyFileFromSandbox_FailsAfterMaxTries(t *testing.T) {
 	fake := svc.mgr.Backend().(*sandbox.Fake)
 	fs := newFakeContainerFS()
 	fs.put("/home/agent/out.bin", []byte("data"))
-	fs.truncateFromN = 1000 // every transfer arrives short
+	fs.shortReads = 1000 // every read arrives short
 	fs.wire(fake)
 	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
 	require.NoError(t, err)
@@ -359,7 +370,7 @@ func TestCopyFileFromSandbox_FailsAfterMaxTries(t *testing.T) {
 
 	err = copyFileFromSandbox(context.Background(), fake, name, "/home/agent/out.bin", local)
 	require.Error(t, err)
-	require.Equal(t, uploadCopyTries, fs.copyFromCalls)
+	require.Equal(t, transferTries, fs.readCalls)
 }
 
 func TestDownload_RelativePath400(t *testing.T) {

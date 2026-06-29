@@ -2,7 +2,9 @@ package apiserver
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -12,48 +14,59 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 )
 
-// uploadCopyTries bounds the retry loop in copyFileToSandbox. The sbx daemon's
-// file transport intermittently truncates a transfer ("tar: Unexpected EOF");
-// the failure is not size-correlated and clears on a retry, so a small bound is
-// enough (live runs converged in 1–2 attempts).
-const uploadCopyTries = 8
+// The sbx daemon's file transport (sbx cp and exec stdin/stdout streaming)
+// intermittently truncates transfers larger than ~128 KiB ("tar: Unexpected
+// EOF"); the failure rate is high and not size-correlated, so retrying a whole
+// large transfer does not converge. Instead we move the bytes over the daemon's
+// *request* path, which is reliable: upload base64-encodes the file into exec
+// argv chunks that the sandbox decodes and appends; download reads it back in
+// small exec-stdout slices. Each chunk is small enough to be reliable, and is
+// size-verified with a bounded retry.
+const (
+	transferTries  = 8
+	execChunkRaw   = 90000 // raw bytes per chunk: a multiple of 3 (clean base64) whose
+	execChunkBatch = 8     // base64 (120000 chars) is < MAX_ARG_STRLEN; 8 args/exec < ARG_MAX
+)
 
-// copyFileToSandbox copies localPath into the sandbox at remotePath, defending
-// against the daemon's intermittently-truncating transfer (see uploadCopyTries).
-// It copies to a fresh temp path beside the destination, verifies the landed
-// byte count, retries on a short transfer, then atomically renames the verified
-// file into place. A copy that never verifies is an error and the partial is
-// removed — a half-written file is never published to the destination.
+// appendChunksScript decodes each base64 argv element ($1..$n) and appends the
+// bytes to the file named by $0. Paths ride argv so the shell never parses them.
+const appendChunksScript = `for a in "$@"; do printf %s "$a" | base64 -d; done >> "$0"`
+
+// readChunkScript emits block $1 (of execChunkRaw bytes) of file $0 as base64.
+var readChunkScript = fmt.Sprintf(`dd if="$0" bs=%d skip="$1" count=1 2>/dev/null | base64 -w0`, execChunkRaw)
+
+// copyFileToSandbox writes localPath into the sandbox at remotePath over the
+// daemon's reliable request path (see the package note above). It streams to a
+// temp beside the destination, verifies the byte count, retries the whole stream
+// on a short result (re-truncating, so retries never double-append), then
+// atomically renames into place. A half-written file is never published.
 func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, remotePath string) error {
-	fi, err := os.Stat(localPath)
+	f, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
 	if err != nil {
 		return err
 	}
 	want := fi.Size()
-	// Temps live in the destination directory so the final mv is a same-filesystem
-	// rename (atomic). Each attempt uses a FRESH path: a truncated transfer leaves
-	// a root-owned partial that the daemon cannot overwrite, so reusing one path
-	// would poison every retry. We clean up all attempt temps at the end.
+
 	dir := path.Dir(remotePath)
-	// Create the destination directory up front: the console's "destination folder"
-	// upload invites paths whose folder does not exist yet, and a cp into a missing
-	// dir fails ("tar: Cannot open: No such file or directory") on every retry.
+	// The console's "destination folder" upload invites paths whose folder does
+	// not exist yet; create it so the write does not fail.
 	if _, err := execChecked(ctx, b, name, "mkdir", "-p", dir); err != nil {
 		return fmt.Errorf("create destination dir %s: %w", dir, err)
 	}
-	base := ".sbxup-" + filepath.Base(localPath)
-	var temps []string
-	defer func() {
-		for _, tp := range temps {
-			_, _ = b.Exec(ctx, name, []string{"rm", "-f", tp}, sandbox.ExecOpts{})
-		}
-	}()
+	tmp := path.Join(dir, ".sbxup-"+filepath.Base(localPath)+".part")
+	defer func() { _, _ = b.Exec(ctx, name, []string{"rm", "-f", tmp}, sandbox.ExecOpts{}) }()
 
 	var lastErr error
-	for try := 0; try < uploadCopyTries; try++ {
-		tmp := path.Join(dir, fmt.Sprintf("%s.%d.part", base, try))
-		temps = append(temps, tmp)
-		if err := b.CopyTo(ctx, name, localPath, tmp); err != nil {
+	for try := 0; try < transferTries; try++ {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		if err := streamToSandbox(ctx, b, name, f, tmp); err != nil {
 			lastErr = err
 			continue
 		}
@@ -68,38 +81,106 @@ func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, 
 			}
 			return nil
 		}
-		lastErr = fmt.Errorf("transfer truncated: %d of %d bytes", got, want)
+		lastErr = fmt.Errorf("verification failed: wrote %d of %d bytes", got, want)
 	}
-	return fmt.Errorf("transfer to %s failed after %d attempts: %w", remotePath, uploadCopyTries, lastErr)
+	return fmt.Errorf("transfer to %s failed after %d attempts: %w", remotePath, transferTries, lastErr)
 }
 
-// copyFileFromSandbox copies remotePath out of the sandbox to localPath, defending
-// against the daemon's intermittently-truncating transfer (see uploadCopyTries).
-// It reads the source size from inside the sandbox, then CopyFrom's to localPath
-// and confirms the staged byte count matches, retrying a short transfer. localPath
-// is a host temp we own, so each attempt simply overwrites it.
+// streamToSandbox truncates tmp, then appends f's contents as base64 exec-argv
+// chunks (execChunkBatch per exec). A failed append aborts the attempt; the
+// caller re-truncates and retries.
+func streamToSandbox(ctx context.Context, b sandbox.Backend, name string, f *os.File, tmp string) error {
+	if _, err := execChecked(ctx, b, name, "sh", "-c", `: > "$0"`, tmp); err != nil {
+		return err
+	}
+	buf := make([]byte, execChunkRaw)
+	batch := make([]string, 0, execChunkBatch)
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		args := append([]string{"sh", "-c", appendChunksScript, tmp}, batch...)
+		_, err := execChecked(ctx, b, name, args...)
+		batch = batch[:0]
+		return err
+	}
+	for {
+		n, rerr := io.ReadFull(f, buf)
+		if n > 0 {
+			batch = append(batch, base64.StdEncoding.EncodeToString(buf[:n]))
+			if len(batch) == execChunkBatch {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
+		}
+		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
+			break
+		}
+		if rerr != nil {
+			return rerr
+		}
+	}
+	return flush()
+}
+
+// copyFileFromSandbox reads remotePath out of the sandbox into localPath over the
+// reliable request path: it reads the source in execChunkRaw-byte blocks via
+// exec stdout (base64), verifying each block's length and retrying a short read.
 func copyFileFromSandbox(ctx context.Context, b sandbox.Backend, name, remotePath, localPath string) error {
 	want, err := remoteSize(ctx, b, name, remotePath)
 	if err != nil {
 		return err
 	}
-	var lastErr error
-	for try := 0; try < uploadCopyTries; try++ {
-		if err := b.CopyFrom(ctx, name, remotePath, localPath); err != nil {
-			lastErr = err
-			continue
+	out, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	var written int64
+	for block := 0; written < want; block++ {
+		exp := int64(execChunkRaw)
+		if rem := want - written; rem < exp {
+			exp = rem
 		}
-		fi, err := os.Stat(localPath)
+		raw, err := readChunkVerified(ctx, b, name, remotePath, block, int(exp))
+		if err != nil {
+			return fmt.Errorf("transfer from %s failed: %w", remotePath, err)
+		}
+		if _, err := out.Write(raw); err != nil {
+			return err
+		}
+		written += int64(len(raw))
+	}
+	if written != want {
+		return fmt.Errorf("download verification failed: got %d of %d bytes", written, want)
+	}
+	return nil
+}
+
+// readChunkVerified returns block (execChunkRaw bytes) of the sandbox file,
+// retrying until the decoded length matches want (a short read means the
+// exec-stdout transfer truncated).
+func readChunkVerified(ctx context.Context, b sandbox.Backend, name, remotePath string, block, want int) ([]byte, error) {
+	var lastErr error
+	for try := 0; try < transferTries; try++ {
+		res, err := execChecked(ctx, b, name, "sh", "-c", readChunkScript, remotePath, strconv.Itoa(block))
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if fi.Size() == want {
-			return nil
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(res.Stdout)))
+		if err != nil {
+			lastErr = err
+			continue
 		}
-		lastErr = fmt.Errorf("transfer truncated: %d of %d bytes", fi.Size(), want)
+		if len(raw) == want {
+			return raw, nil
+		}
+		lastErr = fmt.Errorf("short read: %d of %d bytes", len(raw), want)
 	}
-	return fmt.Errorf("transfer from %s failed after %d attempts: %w", remotePath, uploadCopyTries, lastErr)
+	return nil, lastErr
 }
 
 // remoteSize returns the byte size of a file inside the sandbox via `stat`.
