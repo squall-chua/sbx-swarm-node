@@ -76,6 +76,8 @@ func (s *SandboxService) FilesHandler() http.Handler {
 		switch r.Method {
 		case http.MethodPut:
 			s.handleUpload(w, r, id)
+		case http.MethodGet:
+			s.handleDownload(w, r, id)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -122,6 +124,47 @@ func (s *SandboxService) handleUpload(w http.ResponseWriter, r *http.Request, id
 	}
 	_ = s.mgr.BumpActivity(r.Context(), id) // upload is Activity
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *SandboxService) handleDownload(w http.ResponseWriter, r *http.Request, id string) {
+	p := strings.TrimSpace(r.URL.Query().Get("path"))
+	if !path.IsAbs(p) {
+		http.Error(w, "path must be an absolute container path", http.StatusBadRequest)
+		return
+	}
+	name, err := s.mgr.Resolve(r.Context(), id)
+	if err != nil {
+		http.Error(w, "sandbox not found", http.StatusNotFound)
+		return
+	}
+	tmp, err := os.CreateTemp("", "sbxdl-*")
+	if err != nil {
+		http.Error(w, "stage temp file", http.StatusInternalServerError)
+		return
+	}
+	tmpName := tmp.Name()
+	_ = tmp.Close()
+	defer os.Remove(tmpName)
+
+	err = s.mgr.Backend().CopyFrom(r.Context(), name, p, tmpName)
+	s.auditFile("file.download", p, r, err)
+	if err != nil {
+		http.Error(w, "copy failed: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	f, err := os.Open(tmpName)
+	if err != nil {
+		http.Error(w, "open staged file", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err == nil && !fi.Mode().IsRegular() {
+		http.Error(w, "not a regular file", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+path.Base(p)+`"`)
+	_, _ = io.Copy(w, f)
 }
 
 // auditFile records a file transfer; actor is the authenticated role.

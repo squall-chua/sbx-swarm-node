@@ -129,3 +129,41 @@ func TestUpload_AuditsActor(t *testing.T) {
 	require.Equal(t, "admin", entries[0].Actor)
 	require.Equal(t, "/home/agent/a.txt", entries[0].Target)
 }
+
+func TestDownload_AdminStreamsFileNoActivity(t *testing.T) {
+	h, fake, svc, id := filesTestServer(t)
+	fake.CopyFromFunc = func(_, remotePath, localPath string) error {
+		require.Equal(t, "/home/agent/out.txt", remotePath)
+		return os.WriteFile(localPath, []byte("payload"), 0o600) // simulate sbx cp
+	}
+	before, _ := svc.mgr.Get(context.Background(), id)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/"+id+"/files?path=/home/agent/out.txt", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "payload", rec.Body.String())
+	require.Contains(t, rec.Header().Get("Content-Disposition"), `filename="out.txt"`)
+	after, _ := svc.mgr.Get(context.Background(), id)
+	require.Equal(t, before.LastActivity, after.LastActivity, "download does NOT bump Activity")
+}
+
+func TestDownload_RelativePath400(t *testing.T) {
+	h, _, _, id := filesTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/"+id+"/files?path=out.txt", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDownload_ReadOnlyForbidden(t *testing.T) {
+	h, _, _, id := filesTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/"+id+"/files?path=/x", nil)
+	req.Header.Set("Authorization", "Bearer ro")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
