@@ -37,8 +37,9 @@ func terminalSandboxID(p string) (string, bool) {
 }
 
 // TerminalHandler upgrades to a WebSocket and bridges it to a Terminal session.
-// Auth is enforced upstream by the cookie/bearer middleware; websocket.Accept
-// enforces the same-origin Origin check by default (ADR-0017).
+// Auth is enforced upstream: the cookie/bearer middleware authenticates and the
+// route is wrapped in RequireRole("admin", …) in server.go (a terminal is a root
+// shell). websocket.Accept enforces the same-origin Origin check by default (ADR-0017).
 func (s *SandboxService) TerminalHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := terminalSandboxID(r.URL.Path)
