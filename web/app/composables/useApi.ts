@@ -13,6 +13,8 @@ export type Api = {
   post: (path: string, body?: unknown, headers?: Record<string, string>) => Promise<any>
   put: (path: string, body?: unknown) => Promise<any>
   del: (path: string) => Promise<any>
+  upload: (path: string, body: Blob) => Promise<void>
+  downloadUrl: (path: string) => string
 }
 
 export function createApi(base: string, onAuthLost: () => void, fetchImpl: typeof fetch = fetch): Api {
@@ -41,11 +43,27 @@ export function createApi(base: string, onAuthLost: () => void, fetchImpl: typeo
     }
     return res.status === 204 ? null : res.json()
   }
+  const root = base.replace(/\/$/, '')
   return {
     get: (p) => req('GET', p),
     post: (p, b, h) => req('POST', p, b, h),
     put: (p, b) => req('PUT', p, b),
     del: (p) => req('DELETE', p),
+    downloadUrl: (p) => root + p,
+    upload: async (p, body) => {
+      const res = await fetchImpl(root + p, {
+        method: 'PUT',
+        headers: { 'X-CSRF-Token': readCookie('sbx_csrf') }, // raw body: no Content-Type
+        credentials: 'include',
+        body,
+      })
+      if (res.status === 401) { onAuthLost(); throw new Error('unauthorized') }
+      if (!res.ok) {
+        let msg = `PUT ${p} -> ${res.status}`
+        try { const m = (await res.json())?.message; if (m) msg = String(m) } catch { /* keep generic */ }
+        throw new Error(msg)
+      }
+    },
   }
 }
 
