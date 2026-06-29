@@ -13,8 +13,8 @@ export type Api = {
   post: (path: string, body?: unknown, headers?: Record<string, string>) => Promise<any>
   put: (path: string, body?: unknown) => Promise<any>
   del: (path: string) => Promise<any>
-  upload: (path: string, body: Blob) => Promise<void>
-  downloadUrl: (path: string) => string
+  upload: (path: string, body: Blob, onProgress?: (loaded: number, total: number) => void) => Promise<void>
+  download: (path: string, onProgress?: (loaded: number, total: number) => void) => Promise<Blob>
 }
 
 export function createApi(base: string, onAuthLost: () => void, fetchImpl: typeof fetch = fetch): Api {
@@ -49,20 +49,47 @@ export function createApi(base: string, onAuthLost: () => void, fetchImpl: typeo
     post: (p, b, h) => req('POST', p, b, h),
     put: (p, b) => req('PUT', p, b),
     del: (p) => req('DELETE', p),
-    downloadUrl: (p) => root + p,
-    upload: async (p, body) => {
-      const res = await fetchImpl(root + p, {
-        method: 'PUT',
-        headers: { 'X-CSRF-Token': readCookie('sbx_csrf') }, // raw body: no Content-Type
-        credentials: 'include',
-        body,
-      })
+    // XMLHttpRequest (not fetch) so we can report upload byte-progress via
+    // xhr.upload.onprogress. Raw body, no Content-Type; CSRF + cookie like req.
+    upload: (p, body, onProgress) => new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', root + p)
+      xhr.withCredentials = true
+      xhr.setRequestHeader('X-CSRF-Token', readCookie('sbx_csrf'))
+      if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded, e.total) }
+      xhr.onload = () => {
+        if (xhr.status === 401) { onAuthLost(); reject(new Error('unauthorized')); return }
+        if (xhr.status >= 200 && xhr.status < 300) { resolve(); return }
+        let msg = `PUT ${p} -> ${xhr.status}`
+        try { const m = JSON.parse(xhr.responseText)?.message; if (m) msg = String(m) } catch { /* keep generic */ }
+        reject(new Error(msg))
+      }
+      xhr.onerror = () => reject(new Error('network error'))
+      xhr.send(body)
+    }),
+    // Stream the response so we can report download byte-progress, then hand back
+    // a Blob for the caller to save.
+    download: async (p, onProgress) => {
+      const res = await fetchImpl(root + p, { credentials: 'include' })
       if (res.status === 401) { onAuthLost(); throw new Error('unauthorized') }
       if (!res.ok) {
-        let msg = `PUT ${p} -> ${res.status}`
-        try { const m = (await res.json())?.message; if (m) msg = String(m) } catch { /* keep generic */ }
-        throw new Error(msg)
+        const err = new Error(res.status === 404 ? 'not found' : `GET ${p} -> ${res.status}`) as Error & { status?: number }
+        err.status = res.status
+        throw err
       }
+      const total = Number(res.headers.get('Content-Length')) || 0
+      if (!res.body?.getReader) return res.blob()
+      const reader = res.body.getReader()
+      const chunks: BlobPart[] = []
+      let loaded = 0
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+        loaded += value.byteLength
+        if (onProgress) onProgress(loaded, total)
+      }
+      return new Blob(chunks)
     },
   }
 }
