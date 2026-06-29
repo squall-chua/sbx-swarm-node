@@ -26,6 +26,7 @@ const navItems = computed<NavigationMenuItem[]>(() => [
   { label: 'Sandboxes', icon: 'i-lucide-box', to: '/sandboxes' },
   { label: 'Nodes', icon: 'i-lucide-server', to: '/nodes' },
   { label: 'Templates', icon: 'i-lucide-file-code', to: '/templates' },
+  { label: 'Workspaces', icon: 'i-lucide-folder-git-2', to: '/workspaces' },
   { label: 'Network', icon: 'i-lucide-network', to: '/network' },
   { label: 'Operations', icon: 'i-lucide-activity', to: '/operations' },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
