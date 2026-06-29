@@ -116,7 +116,7 @@ func (s *SandboxService) handleUpload(w http.ResponseWriter, r *http.Request, id
 		http.Error(w, "read body", http.StatusInternalServerError)
 		return
 	}
-	err = s.mgr.Backend().CopyTo(r.Context(), name, tmp.Name(), dest)
+	err = copyFileToSandbox(r.Context(), s.mgr.Backend(), name, tmp.Name(), dest)
 	s.auditFile("file.upload", dest, r, err)
 	if err != nil {
 		http.Error(w, "copy failed: "+err.Error(), http.StatusInternalServerError)

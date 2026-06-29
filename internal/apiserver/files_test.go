@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
@@ -55,15 +57,77 @@ func filesTestServer(t *testing.T) (http.Handler, *sandbox.Fake, *SandboxService
 	return h, fake, svc, rec.ID
 }
 
-func TestUpload_AdminWritesFileAndBumpsActivity(t *testing.T) {
-	h, fake, svc, id := filesTestServer(t)
-	var gotLocal, gotRemote string
-	fake.CopyToFunc = func(_, localPath, remotePath string) error {
-		b, _ := os.ReadFile(localPath)
-		require.Equal(t, "hello", string(b)) // body was staged to the temp file
-		gotLocal, gotRemote = localPath, remotePath
+// fakeContainerFS simulates the sandbox filesystem for the verify-and-retry
+// upload path: CopyTo records bytes (optionally arriving short, to exercise the
+// retry), and Exec answers the stat/mv/rm the copy helper issues.
+type fakeContainerFS struct {
+	mu        sync.Mutex
+	files     map[string][]byte
+	copyCalls int
+	truncateN int // the first N CopyTo calls drop a byte (simulate truncation)
+}
+
+func newFakeContainerFS() *fakeContainerFS { return &fakeContainerFS{files: map[string][]byte{}} }
+
+func (fs *fakeContainerFS) wire(f *sandbox.Fake) {
+	f.CopyToFunc = func(_, localPath, remotePath string) error {
+		b, err := os.ReadFile(localPath)
+		if err != nil {
+			return err
+		}
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		fs.copyCalls++
+		if fs.copyCalls <= fs.truncateN && len(b) > 0 {
+			b = b[:len(b)-1] // arrive short, like a truncated daemon transfer
+		}
+		fs.files[remotePath] = append([]byte(nil), b...)
 		return nil
 	}
+	f.ExecFunc = func(_ string, cmd []string) (sandbox.ExecResult, error) {
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		switch cmd[0] {
+		case "stat": // stat -c %s <path>
+			b, ok := fs.files[cmd[len(cmd)-1]]
+			if !ok {
+				return sandbox.ExecResult{ExitCode: 1, Stderr: []byte("stat: No such file")}, nil
+			}
+			return sandbox.ExecResult{Stdout: []byte(strconv.Itoa(len(b)) + "\n")}, nil
+		case "mv": // mv -f <src> <dst>
+			src, dst := cmd[len(cmd)-2], cmd[len(cmd)-1]
+			fs.files[dst] = fs.files[src]
+			delete(fs.files, src)
+		case "rm": // rm -f <path>
+			delete(fs.files, cmd[len(cmd)-1])
+		}
+		return sandbox.ExecResult{}, nil
+	}
+}
+
+func (fs *fakeContainerFS) get(p string) ([]byte, bool) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	b, ok := fs.files[p]
+	return b, ok
+}
+
+// anyTemp reports whether any staged ".part" temp survived the copy.
+func (fs *fakeContainerFS) anyTemp() bool {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	for k := range fs.files {
+		if strings.Contains(k, ".part") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestUpload_AdminWritesFileAndBumpsActivity(t *testing.T) {
+	h, fake, svc, id := filesTestServer(t)
+	fs := newFakeContainerFS()
+	fs.wire(fake)
 	before, _ := svc.mgr.Get(context.Background(), id)
 
 	req := httptest.NewRequest(http.MethodPut, "/v1/sandboxes/"+id+"/files?path=report.txt", strings.NewReader("hello"))
@@ -72,10 +136,53 @@ func TestUpload_AdminWritesFileAndBumpsActivity(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	require.Equal(t, "/home/agent/report.txt", gotRemote)
-	require.NotEmpty(t, gotLocal)
+	got, ok := fs.get("/home/agent/report.txt")
+	require.True(t, ok, "file landed at the destination")
+	require.Equal(t, "hello", string(got))
 	after, _ := svc.mgr.Get(context.Background(), id)
 	require.True(t, after.LastActivity.After(before.LastActivity), "upload bumps Activity")
+}
+
+func TestCopyFileToSandbox_RetriesUntilVerified(t *testing.T) {
+	svc := newSandboxSvc(t)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	fs := newFakeContainerFS()
+	fs.truncateN = 2 // first two transfers arrive short; the third is whole
+	fs.wire(fake)
+	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
+	require.NoError(t, err)
+	name, err := svc.mgr.Resolve(context.Background(), rec.ID)
+	require.NoError(t, err)
+	local := filepath.Join(t.TempDir(), "src")
+	require.NoError(t, os.WriteFile(local, []byte("important-bytes"), 0o600))
+
+	err = copyFileToSandbox(context.Background(), fake, name, local, "/home/agent/doc.pdf")
+	require.NoError(t, err)
+	require.Equal(t, 3, fs.copyCalls, "retried past the truncated transfers")
+	got, ok := fs.get("/home/agent/doc.pdf")
+	require.True(t, ok)
+	require.Equal(t, "important-bytes", string(got))
+	require.False(t, fs.anyTemp(), "all attempt temps cleaned up, none left behind")
+}
+
+func TestCopyFileToSandbox_FailsAfterMaxTries(t *testing.T) {
+	svc := newSandboxSvc(t)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	fs := newFakeContainerFS()
+	fs.truncateN = 1000 // every transfer arrives short
+	fs.wire(fake)
+	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
+	require.NoError(t, err)
+	name, err := svc.mgr.Resolve(context.Background(), rec.ID)
+	require.NoError(t, err)
+	local := filepath.Join(t.TempDir(), "src")
+	require.NoError(t, os.WriteFile(local, []byte("data"), 0o600))
+
+	err = copyFileToSandbox(context.Background(), fake, name, local, "/home/agent/doc.pdf")
+	require.Error(t, err)
+	require.Equal(t, uploadCopyTries, fs.copyCalls)
+	_, ok := fs.get("/home/agent/doc.pdf")
+	require.False(t, ok, "destination is never written on persistent failure")
 }
 
 func TestUpload_ReadOnlyForbidden(t *testing.T) {
@@ -113,7 +220,7 @@ func TestUpload_AuditsActor(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	svc.SetAudit(audit.New(st, func() int64 { return 1 }))
 	fake := svc.mgr.Backend().(*sandbox.Fake)
-	fake.CopyToFunc = func(_, _, _ string) error { return nil }
+	newFakeContainerFS().wire(fake)
 	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
 	require.NoError(t, err)
 	mw := auth.New(keyMap{"adm": "admin"}, testSigner())
