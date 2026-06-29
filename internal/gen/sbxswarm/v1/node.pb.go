@@ -608,6 +608,7 @@ type NodeSummary struct {
 	AllocDiskGb   float64                `protobuf:"fixed64,14,opt,name=alloc_disk_gb,json=allocDiskGb,proto3" json:"alloc_disk_gb,omitempty"`
 	ActualCpu     float64                `protobuf:"fixed64,15,opt,name=actual_cpu,json=actualCpu,proto3" json:"actual_cpu,omitempty"`
 	ActualMem     float64                `protobuf:"fixed64,16,opt,name=actual_mem,json=actualMem,proto3" json:"actual_mem,omitempty"`
+	GitWorkspaces []string               `protobuf:"bytes,17,rep,name=git_workspaces,json=gitWorkspaces,proto3" json:"git_workspaces,omitempty"` // subset of `workspaces` whose node config is git-backed
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -754,6 +755,13 @@ func (x *NodeSummary) GetActualMem() float64 {
 	return 0
 }
 
+func (x *NodeSummary) GetGitWorkspaces() []string {
+	if x != nil {
+		return x.GitWorkspaces
+	}
+	return nil
+}
+
 var File_sbxswarm_v1_node_proto protoreflect.FileDescriptor
 
 const file_sbxswarm_v1_node_proto_rawDesc = "" +
@@ -790,7 +798,7 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\x02id\x18\x03 \x01(\tR\x02id\x12\x14\n" +
 	"\x05agent\x18\x04 \x01(\tR\x05agent\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\xda\x04\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\x81\x05\n" +
 	"\vNodeSummary\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x1a\n" +
@@ -814,7 +822,8 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"actual_cpu\x18\x0f \x01(\x01R\tactualCpu\x12\x1d\n" +
 	"\n" +
-	"actual_mem\x18\x10 \x01(\x01R\tactualMem\x1a9\n" +
+	"actual_mem\x18\x10 \x01(\x01R\tactualMem\x12%\n" +
+	"\x0egit_workspaces\x18\x11 \x03(\tR\rgitWorkspaces\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xff\x05\n" +

@@ -125,3 +125,17 @@ func TestNodeService_ListNodes(t *testing.T) {
 	require.True(t, resp.Nodes[1].Cordoned)
 	require.Equal(t, "b", resp.Nodes[1].Labels["zone"])
 }
+
+func TestNodeService_ListNodes_GitWorkspaces(t *testing.T) {
+	svc := NewNodeService("n1", "node-one", "test")
+	svc.SetNodeLister(func() []NodeRow {
+		return []NodeRow{
+			{NodeID: "n1", Workspaces: []string{"repo", "plain"}, GitWorkspaces: []string{"repo"}},
+		}
+	})
+	resp, err := svc.ListNodes(context.Background(), &sbxv1.ListNodesRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Nodes, 1)
+	require.Equal(t, []string{"repo", "plain"}, resp.Nodes[0].Workspaces)
+	require.Equal(t, []string{"repo"}, resp.Nodes[0].GitWorkspaces)
+}

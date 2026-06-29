@@ -23,6 +23,7 @@ type NodeState struct {
 	AllocCPU        float64           `json:"alloc_cpu,omitempty"`
 	AllocMemKB      float64           `json:"alloc_mem_kb,omitempty"`
 	Workspaces      []string          `json:"workspaces,omitempty"`
+	GitWorkspaces   []string          `json:"git_ws,omitempty"`
 	Templates       []string          `json:"templates,omitempty"`
 	LimitDiskGB     float64           `json:"limit_disk_gb,omitempty"`
 	AllocDiskGB     float64           `json:"alloc_disk_gb,omitempty"`

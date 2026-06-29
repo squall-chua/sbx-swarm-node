@@ -183,3 +183,13 @@ func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
 	kB := auth.DeriveSessionKey("shared-secret", ed25519.NewKeyFromSeed(seedB).Seed())
 	require.Equal(t, kA, kB)
 }
+
+func TestGitWorkspaceNames(t *testing.T) {
+	ws := []config.WorkspaceConfig{
+		{Name: "repo", Git: &config.GitConfig{}},
+		{Name: "plain"},
+		{Name: "repo2", Git: &config.GitConfig{Remote: "git@x:y.git"}},
+	}
+	require.Equal(t, []string{"repo", "repo2"}, gitWorkspaceNames(ws))
+	require.Empty(t, gitWorkspaceNames([]config.WorkspaceConfig{{Name: "plain"}}))
+}

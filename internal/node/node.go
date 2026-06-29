@@ -204,6 +204,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		AllocMemKB:      am,
 		AllocDiskGB:     ad,
 		Workspaces:      workspaceNames(cfg.Workspaces),
+		GitWorkspaces:   gitWorkspaceNames(cfg.Workspaces),
 		Templates:       tmpls,
 		PubKey:          id.PublicKey,
 	}
@@ -242,12 +243,13 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		tmpls, _ := mgr.Backend().ListTemplates(context.Background())
 		self := apiserver.NodeRow{
 			NodeID: id.NodeID, NodeName: cfg.NodeName, Draining: nodeSvc.Draining(),
-			Cordoned:     clusterInstance != nil && clusterInstance.LocalNodeState().Cordoned,
-			Labels:       cfg.Labels,
-			Capabilities: []string{"clone", "stats", "exec"},
-			Workspaces:   workspaceNames(cfg.Workspaces),
-			Templates:    tmpls,
-			LimitCPU:     lc, LimitMemKB: lm, LimitDiskGB: ld,
+			Cordoned:      clusterInstance != nil && clusterInstance.LocalNodeState().Cordoned,
+			Labels:        cfg.Labels,
+			Capabilities:  []string{"clone", "stats", "exec"},
+			Workspaces:    workspaceNames(cfg.Workspaces),
+			GitWorkspaces: gitWorkspaceNames(cfg.Workspaces),
+			Templates:     tmpls,
+			LimitCPU:      lc, LimitMemKB: lm, LimitDiskGB: ld,
 			AllocCPU: ac, AllocMemKB: am, AllocDiskGB: ad,
 		}
 		if clusterInstance != nil { // self actual util (gossiped), same source as buildCandidates
@@ -603,6 +605,18 @@ func workspaceNames(ws []config.WorkspaceConfig) []string {
 	return out
 }
 
+// gitWorkspaceNames returns the names of the git-backed workspaces (those whose
+// config has a git block, ADR-0015). Subset of workspaceNames.
+func gitWorkspaceNames(ws []config.WorkspaceConfig) []string {
+	out := make([]string, 0, len(ws))
+	for _, w := range ws {
+		if w.Git != nil {
+			out = append(out, w.Name)
+		}
+	}
+	return out
+}
+
 func nameSet(ss []string) map[string]bool {
 	m := make(map[string]bool, len(ss))
 	for _, s := range ss {
@@ -615,7 +629,7 @@ func nameSet(ss []string) map[string]bool {
 func rowFromState(ns membership.NodeState) apiserver.NodeRow {
 	return apiserver.NodeRow{
 		NodeID: ns.NodeID, Cordoned: ns.Cordoned, Labels: ns.Labels,
-		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, Templates: ns.Templates,
+		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, GitWorkspaces: ns.GitWorkspaces, Templates: ns.Templates,
 		LimitCPU: ns.LimitCPU, LimitMemKB: ns.LimitMemKB, LimitDiskGB: ns.LimitDiskGB,
 		AllocCPU: ns.AllocCPU, AllocMemKB: ns.AllocMemKB, AllocDiskGB: ns.AllocDiskGB,
 		ActualCPU: ns.ActualCPU, ActualMem: ns.ActualMem,
