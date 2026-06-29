@@ -214,7 +214,7 @@ const tabItems = computed<TabsItem[]>(() => {
 
           <!-- Files tab -->
           <template #files>
-            <DrawerFilesTab />
+            <DrawerFilesTab v-if="id" :id="id" />
           </template>
         </UTabs>
 

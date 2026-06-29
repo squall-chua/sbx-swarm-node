@@ -22,7 +22,7 @@ async function pick(w: any, files: File[]) {
 describe('FilesTab', () => {
   it('uploads each chosen file into the default /home/agent folder', async () => {
     upload.mockClear()
-    const w = await mountSuspended(FilesTab, { props: { sandbox: { id: 'n1.s1' } } })
+    const w = await mountSuspended(FilesTab, { props: { id: 'n1.s1' } })
     const a = new File(['a'], 'a.txt', { type: 'text/plain' })
     const b = new File(['b'], 'b.txt', { type: 'text/plain' })
     await pick(w, [a, b])
@@ -35,7 +35,7 @@ describe('FilesTab', () => {
 
   it('uploads into the typed destination folder, joining each filename', async () => {
     upload.mockClear()
-    const w = await mountSuspended(FilesTab, { props: { sandbox: { id: 'n1.s1' } } })
+    const w = await mountSuspended(FilesTab, { props: { id: 'n1.s1' } })
     await w.find('[data-test="dest-dir"]').setValue('/srv/data/')
     const f = new File(['x'], 'x.txt', { type: 'text/plain' })
     await pick(w, [f])
@@ -45,7 +45,7 @@ describe('FilesTab', () => {
   })
 
   it('download builds the file URL from the path field', async () => {
-    const w = await mountSuspended(FilesTab, { props: { sandbox: { id: 'n1.s1' } } })
+    const w = await mountSuspended(FilesTab, { props: { id: 'n1.s1' } })
     await w.find('[data-test="dl-path"]').setValue('/home/agent/out.txt')
     await w.find('[data-test="download"]').trigger('click')
     expect(downloadUrl).toHaveBeenCalledWith('/v1/sandboxes/n1.s1/files?path=%2Fhome%2Fagent%2Fout.txt')

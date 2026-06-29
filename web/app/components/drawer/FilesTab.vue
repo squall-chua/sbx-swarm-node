@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ sandbox: { id: string } }>()
+const props = defineProps<{ id: string }>()
 
 const api = useApi()
 const session = useSession()
@@ -11,7 +11,7 @@ const uploading = ref(false)
 const dlPath = ref('/home/agent/')
 
 function filesUrl(p: string): string {
-  return `/v1/sandboxes/${props.sandbox.id}/files?path=${encodeURIComponent(p)}`
+  return `/v1/sandboxes/${props.id}/files?path=${encodeURIComponent(p)}`
 }
 // Per-file destination is <folder>/<original name>. The folder defaults to
 // /home/agent; a relative folder is taken under /home/agent.
