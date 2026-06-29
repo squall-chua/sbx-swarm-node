@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -61,13 +62,23 @@ func filesTestServer(t *testing.T) (http.Handler, *sandbox.Fake, *SandboxService
 // upload path: CopyTo records bytes (optionally arriving short, to exercise the
 // retry), and Exec answers the stat/mv/rm the copy helper issues.
 type fakeContainerFS struct {
-	mu        sync.Mutex
-	files     map[string][]byte
-	copyCalls int
-	truncateN int // the first N CopyTo calls drop a byte (simulate truncation)
+	mu            sync.Mutex
+	files         map[string][]byte
+	copyCalls     int
+	truncateN     int // the first N CopyTo calls drop a byte (simulate truncation)
+	copyFromCalls int
+	truncateFromN int // the first N CopyFrom calls stage a short host file
 }
 
 func newFakeContainerFS() *fakeContainerFS { return &fakeContainerFS{files: map[string][]byte{}} }
+
+// put pre-seeds a container file (used by download tests; the in-container source
+// is always whole — only the transfer to the host can arrive short).
+func (fs *fakeContainerFS) put(p string, b []byte) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	fs.files[p] = append([]byte(nil), b...)
+}
 
 func (fs *fakeContainerFS) wire(f *sandbox.Fake) {
 	f.CopyToFunc = func(_, localPath, remotePath string) error {
@@ -83,6 +94,20 @@ func (fs *fakeContainerFS) wire(f *sandbox.Fake) {
 		}
 		fs.files[remotePath] = append([]byte(nil), b...)
 		return nil
+	}
+	f.CopyFromFunc = func(_, remotePath, localPath string) error {
+		fs.mu.Lock()
+		b, ok := fs.files[remotePath]
+		fs.copyFromCalls++
+		short := fs.copyFromCalls <= fs.truncateFromN && len(b) > 0
+		fs.mu.Unlock()
+		if !ok {
+			return fmt.Errorf("no such file: %s", remotePath)
+		}
+		if short {
+			b = b[:len(b)-1] // host file arrives short, like a truncated transfer
+		}
+		return os.WriteFile(localPath, b, 0o600)
 	}
 	f.ExecFunc = func(_ string, cmd []string) (sandbox.ExecResult, error) {
 		fs.mu.Lock()
@@ -240,10 +265,9 @@ func TestUpload_AuditsActor(t *testing.T) {
 
 func TestDownload_AdminStreamsFileNoActivity(t *testing.T) {
 	h, fake, svc, id := filesTestServer(t)
-	fake.CopyFromFunc = func(_, remotePath, localPath string) error {
-		require.Equal(t, "/home/agent/out.txt", remotePath)
-		return os.WriteFile(localPath, []byte("payload"), 0o600) // simulate sbx cp
-	}
+	fs := newFakeContainerFS()
+	fs.put("/home/agent/out.txt", []byte("payload"))
+	fs.wire(fake)
 	before, _ := svc.mgr.Get(context.Background(), id)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/"+id+"/files?path=/home/agent/out.txt", nil)
@@ -256,6 +280,45 @@ func TestDownload_AdminStreamsFileNoActivity(t *testing.T) {
 	require.Contains(t, rec.Header().Get("Content-Disposition"), `filename="out.txt"`)
 	after, _ := svc.mgr.Get(context.Background(), id)
 	require.Equal(t, before.LastActivity, after.LastActivity, "download does NOT bump Activity")
+}
+
+func TestCopyFileFromSandbox_RetriesUntilVerified(t *testing.T) {
+	svc := newSandboxSvc(t)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	fs := newFakeContainerFS()
+	fs.put("/home/agent/out.bin", []byte("important-bytes"))
+	fs.truncateFromN = 2 // first two transfers arrive short; the third is whole
+	fs.wire(fake)
+	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
+	require.NoError(t, err)
+	name, err := svc.mgr.Resolve(context.Background(), rec.ID)
+	require.NoError(t, err)
+	local := filepath.Join(t.TempDir(), "dl")
+
+	err = copyFileFromSandbox(context.Background(), fake, name, "/home/agent/out.bin", local)
+	require.NoError(t, err)
+	require.Equal(t, 3, fs.copyFromCalls, "retried past the truncated transfers")
+	got, err := os.ReadFile(local)
+	require.NoError(t, err)
+	require.Equal(t, "important-bytes", string(got))
+}
+
+func TestCopyFileFromSandbox_FailsAfterMaxTries(t *testing.T) {
+	svc := newSandboxSvc(t)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	fs := newFakeContainerFS()
+	fs.put("/home/agent/out.bin", []byte("data"))
+	fs.truncateFromN = 1000 // every transfer arrives short
+	fs.wire(fake)
+	rec, err := svc.mgr.Create(context.Background(), sandbox.CreateSpec{})
+	require.NoError(t, err)
+	name, err := svc.mgr.Resolve(context.Background(), rec.ID)
+	require.NoError(t, err)
+	local := filepath.Join(t.TempDir(), "dl")
+
+	err = copyFileFromSandbox(context.Background(), fake, name, "/home/agent/out.bin", local)
+	require.Error(t, err)
+	require.Equal(t, uploadCopyTries, fs.copyFromCalls)
 }
 
 func TestDownload_RelativePath400(t *testing.T) {

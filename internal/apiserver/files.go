@@ -146,7 +146,7 @@ func (s *SandboxService) handleDownload(w http.ResponseWriter, r *http.Request, 
 	_ = tmp.Close()
 	defer os.Remove(tmpName)
 
-	err = s.mgr.Backend().CopyFrom(r.Context(), name, p, tmpName)
+	err = copyFileFromSandbox(r.Context(), s.mgr.Backend(), name, p, tmpName)
 	s.auditFile("file.download", p, r, err)
 	if err != nil {
 		http.Error(w, "copy failed: "+err.Error(), http.StatusNotFound)

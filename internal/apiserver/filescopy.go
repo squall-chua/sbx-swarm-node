@@ -67,6 +67,35 @@ func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, 
 	return fmt.Errorf("transfer to %s failed after %d attempts: %w", remotePath, uploadCopyTries, lastErr)
 }
 
+// copyFileFromSandbox copies remotePath out of the sandbox to localPath, defending
+// against the daemon's intermittently-truncating transfer (see uploadCopyTries).
+// It reads the source size from inside the sandbox, then CopyFrom's to localPath
+// and confirms the staged byte count matches, retrying a short transfer. localPath
+// is a host temp we own, so each attempt simply overwrites it.
+func copyFileFromSandbox(ctx context.Context, b sandbox.Backend, name, remotePath, localPath string) error {
+	want, err := remoteSize(ctx, b, name, remotePath)
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	for try := 0; try < uploadCopyTries; try++ {
+		if err := b.CopyFrom(ctx, name, remotePath, localPath); err != nil {
+			lastErr = err
+			continue
+		}
+		fi, err := os.Stat(localPath)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if fi.Size() == want {
+			return nil
+		}
+		lastErr = fmt.Errorf("transfer truncated: %d of %d bytes", fi.Size(), want)
+	}
+	return fmt.Errorf("transfer from %s failed after %d attempts: %w", remotePath, uploadCopyTries, lastErr)
+}
+
 // remoteSize returns the byte size of a file inside the sandbox via `stat`.
 func remoteSize(ctx context.Context, b sandbox.Backend, name, p string) (int64, error) {
 	res, err := execChecked(ctx, b, name, "stat", "-c", "%s", p)
