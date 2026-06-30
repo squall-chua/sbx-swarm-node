@@ -26,7 +26,7 @@ const latest = computed(() =>
       <span class="text-xs text-muted font-medium uppercase tracking-wide">{{ label }}</span>
       <span class="text-sm font-mono tabular-nums text-highlighted font-semibold">{{ latest }}{{ unit }}</span>
     </div>
-    <div class="flex items-stretch gap-2">
+    <div class="flex items-stretch gap-2 pr-3">
       <!-- y-axis scale -->
       <div class="flex flex-col justify-between text-[10px] leading-none text-muted tabular-nums">
         <span>{{ Math.round(ceiling) }}{{ unit }}</span>

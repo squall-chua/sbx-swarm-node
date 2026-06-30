@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,20 @@ import (
 
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 )
+
+// liveOrCachedUsage returns a fresh probe of the sandbox when a backend is wired,
+// falling back to the collector's last cached sample on probe error or no backend.
+func liveOrCachedUsage(ctx context.Context, o ObserveDeps, name string) (sandbox.Usage, bool) {
+	if o.Backend != nil {
+		if u, err := o.Backend.Stats(ctx, name); err == nil {
+			return u, true
+		}
+	}
+	if o.Stats != nil {
+		return o.Stats.Latest(name)
+	}
+	return sandbox.Usage{}, false
+}
 
 // pathID extracts the {id} segment from /v1/sandboxes/{id}/<suffix>, returning
 // false if the path doesn't match that shape.
@@ -101,19 +116,24 @@ func StatsSSEHandler(o ObserveDeps) http.Handler {
 		w.WriteHeader(http.StatusOK)
 
 		ctx := r.Context()
+		// Live probe per emit so the graph tracks real usage at the stream cadence,
+		// not the 10s collector poll. Fall back to the cache if no live backend.
+		// ponytail: one exec probe per tick per open Stats tab; fine at 2s, revisit
+		// if many concurrent drawers make it costly.
 		emit := func() {
-			u, ok := o.Stats.Latest(name)
+			u, ok := liveOrCachedUsage(ctx, o, name)
 			if !ok {
 				return
 			}
 			b, _ := json.Marshal(map[string]any{
 				"cores": u.Cores, "cpu_percent": u.CPUPercent,
 				"mem_total_kb": u.MemTotalKB, "mem_used_kb": u.MemUsedKB,
+				"disk_total_gb": u.DiskTotalGB, "disk_used_gb": u.DiskUsedGB,
 			})
 			fmt.Fprintf(w, "event: stats\ndata: %s\n\n", b)
 			flusher.Flush()
 		}
-		emit() // immediate first frame from cache
+		emit() // immediate first frame
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		for {

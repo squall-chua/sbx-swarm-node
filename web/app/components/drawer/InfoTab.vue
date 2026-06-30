@@ -7,7 +7,10 @@ const props = defineProps<{
     status?: string
     agent?: string
     branch?: string
+    created_at?: string
     last_publish?: string
+    cpus?: number
+    memory_bytes?: number
     labels?: Record<string, string>
     workspaces?: Array<{ name: string; read_only?: boolean }>
     ports?: Array<{ container_port: number; host_port?: number; protocol?: string }>
@@ -142,6 +145,30 @@ function fmtDate(ts: string | null | undefined): string {
   try { return new Date(ts).toLocaleString() } catch { return ts }
 }
 
+// fmtBytes renders provisioned memory as GiB/MiB.
+function fmtBytes(b: number | undefined): string {
+  if (!b || b <= 0) return '—'
+  const gib = b / (1024 ** 3)
+  if (gib >= 1) return `${Number.isInteger(gib) ? gib : gib.toFixed(1)} GiB`
+  return `${Math.round(b / (1024 ** 2))} MiB`
+}
+
+// Running duration since creation; "—" when not running. Provision-time based
+// (see sandboxes/index.vue fmtUptime).
+function fmtUptime(): string {
+  if (props.sandbox.status !== 'running' || !props.sandbox.created_at) return '—'
+  const start = new Date(props.sandbox.created_at).getTime()
+  if (isNaN(start)) return '—'
+  let s = Math.max(0, Math.floor((Date.now() - start) / 1000))
+  const d = Math.floor(s / 86400); s -= d * 86400
+  const h = Math.floor(s / 3600); s -= h * 3600
+  const m = Math.floor(s / 60); s -= m * 60
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m`
+  return `${s}s`
+}
+
 onMounted(fetchPorts)
 </script>
 
@@ -171,10 +198,27 @@ onMounted(fetchPorts)
           class="justify-self-start"
         />
 
+        <template v-if="sandbox.status === 'running' && sandbox.created_at">
+          <span class="text-muted font-medium">Uptime</span>
+          <span class="text-sm text-default tabular-nums" :title="fmtDate(sandbox.created_at)">{{ fmtUptime() }}</span>
+        </template>
+
         <template v-if="sandbox.agent">
           <span class="text-muted font-medium">Agent</span>
           <span class="text-sm text-default">{{ sandbox.agent }}</span>
         </template>
+
+        <template v-if="sandbox.cpus">
+          <span class="text-muted font-medium">vCPUs</span>
+          <span class="text-sm text-default tabular-nums">{{ sandbox.cpus }}</span>
+        </template>
+
+        <template v-if="sandbox.memory_bytes">
+          <span class="text-muted font-medium">Memory</span>
+          <span class="text-sm text-default tabular-nums">{{ fmtBytes(sandbox.memory_bytes) }}</span>
+        </template>
+        <!-- Disk intentionally omitted: spec.disk_gb is a scheduling-only reservation
+             (never applied to the sandbox); the real disk is in the Stats tab. -->
 
         <template v-if="sandbox.branch">
           <span class="text-muted font-medium">Branch</span>

@@ -172,10 +172,15 @@ func toProto(rec *sandbox.Record) *sbxv1.Sandbox {
 	if !rec.LastPublish.IsZero() {
 		lastPub = rec.LastPublish.UTC().Format(time.RFC3339)
 	}
+	var createdAt string
+	if !rec.CreatedAt.IsZero() {
+		createdAt = rec.CreatedAt.UTC().Format(time.RFC3339)
+	}
 	return &sbxv1.Sandbox{
 		Id: rec.ID, OwnerNode: rec.OwnerNode, Status: rec.Status, Ports: ports, Labels: rec.Labels,
 		Branch: rec.Spec.Branch, LastPublish: lastPub, Agent: rec.Spec.Agent,
-		Name: displayName(rec), Workspaces: ws,
+		Name: displayName(rec), Workspaces: ws, CreatedAt: createdAt,
+		Cpus: int32(rec.Spec.CPUs), MemoryBytes: rec.Spec.MemoryBytes, DiskGb: rec.Spec.DiskGB,
 	}
 }
 

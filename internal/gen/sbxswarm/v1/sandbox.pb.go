@@ -229,11 +229,15 @@ type Sandbox struct {
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	Ports         []*Port                `protobuf:"bytes,4,rep,name=ports,proto3" json:"ports,omitempty"`
 	Labels        map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Branch        string                 `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                              // clone-mode recorded branch
-	LastPublish   string                 `protobuf:"bytes,7,opt,name=last_publish,json=lastPublish,proto3" json:"last_publish,omitempty"` // RFC3339; empty if never published
-	Agent         string                 `protobuf:"bytes,8,opt,name=agent,proto3" json:"agent,omitempty"`                                // the agent the sandbox runs (from its create spec)
-	Name          string                 `protobuf:"bytes,9,opt,name=name,proto3" json:"name,omitempty"`                                  // human-readable display name (custom or auto-derived); NOT the routing id
-	Workspaces    []*WorkspaceMount      `protobuf:"bytes,10,rep,name=workspaces,proto3" json:"workspaces,omitempty"`                     // workspaces mounted into the sandbox
+	Branch        string                 `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                                // clone-mode recorded branch
+	LastPublish   string                 `protobuf:"bytes,7,opt,name=last_publish,json=lastPublish,proto3" json:"last_publish,omitempty"`   // RFC3339; empty if never published
+	Agent         string                 `protobuf:"bytes,8,opt,name=agent,proto3" json:"agent,omitempty"`                                  // the agent the sandbox runs (from its create spec)
+	Name          string                 `protobuf:"bytes,9,opt,name=name,proto3" json:"name,omitempty"`                                    // human-readable display name (custom or auto-derived); NOT the routing id
+	Workspaces    []*WorkspaceMount      `protobuf:"bytes,10,rep,name=workspaces,proto3" json:"workspaces,omitempty"`                       // workspaces mounted into the sandbox
+	CreatedAt     string                 `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`        // RFC3339 sandbox creation (provision) time
+	Cpus          int32                  `protobuf:"varint,12,opt,name=cpus,proto3" json:"cpus,omitempty"`                                  // provisioned vCPUs (from create spec)
+	MemoryBytes   int64                  `protobuf:"varint,13,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"` // provisioned memory (bytes)
+	DiskGb        float64                `protobuf:"fixed64,14,opt,name=disk_gb,json=diskGb,proto3" json:"disk_gb,omitempty"`               // provisioned/requested disk (GB)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -336,6 +340,34 @@ func (x *Sandbox) GetWorkspaces() []*WorkspaceMount {
 		return x.Workspaces
 	}
 	return nil
+}
+
+func (x *Sandbox) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *Sandbox) GetCpus() int32 {
+	if x != nil {
+		return x.Cpus
+	}
+	return 0
+}
+
+func (x *Sandbox) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *Sandbox) GetDiskGb() float64 {
+	if x != nil {
+		return x.DiskGb
+	}
+	return 0
 }
 
 type GetSandboxRequest struct {
@@ -1223,6 +1255,7 @@ type Blocked struct {
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
 	FirstSeen     string                 `protobuf:"bytes,2,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
 	LastSeen      string                 `protobuf:"bytes,3,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`
+	Count         int32                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"` // proxy hit count
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1278,12 +1311,21 @@ func (x *Blocked) GetLastSeen() string {
 	return ""
 }
 
+func (x *Blocked) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
 type ListBlockedResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Blocked       []*Blocked             `protobuf:"bytes,1,rep,name=blocked,proto3" json:"blocked,omitempty"`
-	DistinctCount int32                  `protobuf:"varint,2,opt,name=distinct_count,json=distinctCount,proto3" json:"distinct_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Blocked              []*Blocked             `protobuf:"bytes,1,rep,name=blocked,proto3" json:"blocked,omitempty"`
+	DistinctCount        int32                  `protobuf:"varint,2,opt,name=distinct_count,json=distinctCount,proto3" json:"distinct_count,omitempty"`
+	Allowed              []*Blocked             `protobuf:"bytes,3,rep,name=allowed,proto3" json:"allowed,omitempty"` // allowed egress (host, first/last seen)
+	AllowedDistinctCount int32                  `protobuf:"varint,4,opt,name=allowed_distinct_count,json=allowedDistinctCount,proto3" json:"allowed_distinct_count,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ListBlockedResponse) Reset() {
@@ -1326,6 +1368,20 @@ func (x *ListBlockedResponse) GetBlocked() []*Blocked {
 func (x *ListBlockedResponse) GetDistinctCount() int32 {
 	if x != nil {
 		return x.DistinctCount
+	}
+	return 0
+}
+
+func (x *ListBlockedResponse) GetAllowed() []*Blocked {
+	if x != nil {
+		return x.Allowed
+	}
+	return nil
+}
+
+func (x *ListBlockedResponse) GetAllowedDistinctCount() int32 {
+	if x != nil {
+		return x.AllowedDistinctCount
 	}
 	return 0
 }
@@ -1547,7 +1603,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15NodeAntiAffinityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xff\x03\n" +
 	"\aSandbox\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1562,7 +1618,12 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\n" +
 	"workspaces\x18\n" +
 	" \x03(\v2\x1b.sbxswarm.v1.WorkspaceMountR\n" +
-	"workspaces\x1a9\n" +
+	"workspaces\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\v \x01(\tR\tcreatedAt\x12\x12\n" +
+	"\x04cpus\x18\f \x01(\x05R\x04cpus\x12!\n" +
+	"\fmemory_bytes\x18\r \x01(\x03R\vmemoryBytes\x12\x17\n" +
+	"\adisk_gb\x18\x0e \x01(\x01R\x06diskGb\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"#\n" +
@@ -1628,15 +1689,18 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"cpuPercent\x12 \n" +
 	"\fmem_total_kb\x18\x03 \x01(\x03R\n" +
 	"memTotalKb\x12\x1e\n" +
-	"\vmem_used_kb\x18\x04 \x01(\x03R\tmemUsedKb\"Y\n" +
+	"\vmem_used_kb\x18\x04 \x01(\x03R\tmemUsedKb\"o\n" +
 	"\aBlocked\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1d\n" +
 	"\n" +
 	"first_seen\x18\x02 \x01(\tR\tfirstSeen\x12\x1b\n" +
-	"\tlast_seen\x18\x03 \x01(\tR\blastSeen\"l\n" +
+	"\tlast_seen\x18\x03 \x01(\tR\blastSeen\x12\x14\n" +
+	"\x05count\x18\x04 \x01(\x05R\x05count\"\xd2\x01\n" +
 	"\x13ListBlockedResponse\x12.\n" +
 	"\ablocked\x18\x01 \x03(\v2\x14.sbxswarm.v1.BlockedR\ablocked\x12%\n" +
-	"\x0edistinct_count\x18\x02 \x01(\x05R\rdistinctCount\"\xbf\x01\n" +
+	"\x0edistinct_count\x18\x02 \x01(\x05R\rdistinctCount\x12.\n" +
+	"\aallowed\x18\x03 \x03(\v2\x14.sbxswarm.v1.BlockedR\aallowed\x124\n" +
+	"\x16allowed_distinct_count\x18\x04 \x01(\x05R\x14allowedDistinctCount\"\xbf\x01\n" +
 	"\x10OperationSummary\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
@@ -1736,46 +1800,47 @@ var file_sbxswarm_v1_sandbox_proto_depIdxs = []int32{
 	30, // 10: sbxswarm.v1.AgentRunRequest.env:type_name -> sbxswarm.v1.AgentRunRequest.EnvEntry
 	15, // 11: sbxswarm.v1.ListPortsResponse.ports:type_name -> sbxswarm.v1.Port
 	19, // 12: sbxswarm.v1.ListBlockedResponse.blocked:type_name -> sbxswarm.v1.Blocked
-	21, // 13: sbxswarm.v1.ListOperationsResponse.operations:type_name -> sbxswarm.v1.OperationSummary
-	1,  // 14: sbxswarm.v1.SandboxService.CreateSandbox:input_type -> sbxswarm.v1.CreateSandboxRequest
-	3,  // 15: sbxswarm.v1.SandboxService.GetSandbox:input_type -> sbxswarm.v1.GetSandboxRequest
-	8,  // 16: sbxswarm.v1.SandboxService.ListSandboxes:input_type -> sbxswarm.v1.ListSandboxesRequest
-	5,  // 17: sbxswarm.v1.SandboxService.DeleteSandbox:input_type -> sbxswarm.v1.DeleteSandboxRequest
-	4,  // 18: sbxswarm.v1.SandboxService.StartSandbox:input_type -> sbxswarm.v1.IdRequest
-	4,  // 19: sbxswarm.v1.SandboxService.StopSandbox:input_type -> sbxswarm.v1.IdRequest
-	10, // 20: sbxswarm.v1.SandboxService.Exec:input_type -> sbxswarm.v1.ExecRequest
-	12, // 21: sbxswarm.v1.SandboxService.AgentRun:input_type -> sbxswarm.v1.AgentRunRequest
-	13, // 22: sbxswarm.v1.SandboxService.PublishPort:input_type -> sbxswarm.v1.PublishPortRequest
-	4,  // 23: sbxswarm.v1.SandboxService.ListPorts:input_type -> sbxswarm.v1.IdRequest
-	14, // 24: sbxswarm.v1.SandboxService.UnpublishPort:input_type -> sbxswarm.v1.UnpublishPortRequest
-	4,  // 25: sbxswarm.v1.SandboxService.GetStats:input_type -> sbxswarm.v1.IdRequest
-	4,  // 26: sbxswarm.v1.SandboxService.ListBlocked:input_type -> sbxswarm.v1.IdRequest
-	7,  // 27: sbxswarm.v1.SandboxService.PublishSandbox:input_type -> sbxswarm.v1.PublishSandboxRequest
-	4,  // 28: sbxswarm.v1.SandboxService.ListBranches:input_type -> sbxswarm.v1.IdRequest
-	4,  // 29: sbxswarm.v1.SandboxService.KeepAlive:input_type -> sbxswarm.v1.IdRequest
-	22, // 30: sbxswarm.v1.SandboxService.ListOperations:input_type -> sbxswarm.v1.ListOperationsRequest
-	17, // 31: sbxswarm.v1.SandboxService.CreateSandbox:output_type -> sbxswarm.v1.Operation
-	2,  // 32: sbxswarm.v1.SandboxService.GetSandbox:output_type -> sbxswarm.v1.Sandbox
-	9,  // 33: sbxswarm.v1.SandboxService.ListSandboxes:output_type -> sbxswarm.v1.ListSandboxesResponse
-	17, // 34: sbxswarm.v1.SandboxService.DeleteSandbox:output_type -> sbxswarm.v1.Operation
-	2,  // 35: sbxswarm.v1.SandboxService.StartSandbox:output_type -> sbxswarm.v1.Sandbox
-	2,  // 36: sbxswarm.v1.SandboxService.StopSandbox:output_type -> sbxswarm.v1.Sandbox
-	11, // 37: sbxswarm.v1.SandboxService.Exec:output_type -> sbxswarm.v1.ExecResponse
-	17, // 38: sbxswarm.v1.SandboxService.AgentRun:output_type -> sbxswarm.v1.Operation
-	15, // 39: sbxswarm.v1.SandboxService.PublishPort:output_type -> sbxswarm.v1.Port
-	16, // 40: sbxswarm.v1.SandboxService.ListPorts:output_type -> sbxswarm.v1.ListPortsResponse
-	31, // 41: sbxswarm.v1.SandboxService.UnpublishPort:output_type -> sbxswarm.v1.Empty
-	18, // 42: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
-	20, // 43: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
-	17, // 44: sbxswarm.v1.SandboxService.PublishSandbox:output_type -> sbxswarm.v1.Operation
-	6,  // 45: sbxswarm.v1.SandboxService.ListBranches:output_type -> sbxswarm.v1.ListBranchesResponse
-	2,  // 46: sbxswarm.v1.SandboxService.KeepAlive:output_type -> sbxswarm.v1.Sandbox
-	23, // 47: sbxswarm.v1.SandboxService.ListOperations:output_type -> sbxswarm.v1.ListOperationsResponse
-	31, // [31:48] is the sub-list for method output_type
-	14, // [14:31] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	19, // 13: sbxswarm.v1.ListBlockedResponse.allowed:type_name -> sbxswarm.v1.Blocked
+	21, // 14: sbxswarm.v1.ListOperationsResponse.operations:type_name -> sbxswarm.v1.OperationSummary
+	1,  // 15: sbxswarm.v1.SandboxService.CreateSandbox:input_type -> sbxswarm.v1.CreateSandboxRequest
+	3,  // 16: sbxswarm.v1.SandboxService.GetSandbox:input_type -> sbxswarm.v1.GetSandboxRequest
+	8,  // 17: sbxswarm.v1.SandboxService.ListSandboxes:input_type -> sbxswarm.v1.ListSandboxesRequest
+	5,  // 18: sbxswarm.v1.SandboxService.DeleteSandbox:input_type -> sbxswarm.v1.DeleteSandboxRequest
+	4,  // 19: sbxswarm.v1.SandboxService.StartSandbox:input_type -> sbxswarm.v1.IdRequest
+	4,  // 20: sbxswarm.v1.SandboxService.StopSandbox:input_type -> sbxswarm.v1.IdRequest
+	10, // 21: sbxswarm.v1.SandboxService.Exec:input_type -> sbxswarm.v1.ExecRequest
+	12, // 22: sbxswarm.v1.SandboxService.AgentRun:input_type -> sbxswarm.v1.AgentRunRequest
+	13, // 23: sbxswarm.v1.SandboxService.PublishPort:input_type -> sbxswarm.v1.PublishPortRequest
+	4,  // 24: sbxswarm.v1.SandboxService.ListPorts:input_type -> sbxswarm.v1.IdRequest
+	14, // 25: sbxswarm.v1.SandboxService.UnpublishPort:input_type -> sbxswarm.v1.UnpublishPortRequest
+	4,  // 26: sbxswarm.v1.SandboxService.GetStats:input_type -> sbxswarm.v1.IdRequest
+	4,  // 27: sbxswarm.v1.SandboxService.ListBlocked:input_type -> sbxswarm.v1.IdRequest
+	7,  // 28: sbxswarm.v1.SandboxService.PublishSandbox:input_type -> sbxswarm.v1.PublishSandboxRequest
+	4,  // 29: sbxswarm.v1.SandboxService.ListBranches:input_type -> sbxswarm.v1.IdRequest
+	4,  // 30: sbxswarm.v1.SandboxService.KeepAlive:input_type -> sbxswarm.v1.IdRequest
+	22, // 31: sbxswarm.v1.SandboxService.ListOperations:input_type -> sbxswarm.v1.ListOperationsRequest
+	17, // 32: sbxswarm.v1.SandboxService.CreateSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 33: sbxswarm.v1.SandboxService.GetSandbox:output_type -> sbxswarm.v1.Sandbox
+	9,  // 34: sbxswarm.v1.SandboxService.ListSandboxes:output_type -> sbxswarm.v1.ListSandboxesResponse
+	17, // 35: sbxswarm.v1.SandboxService.DeleteSandbox:output_type -> sbxswarm.v1.Operation
+	2,  // 36: sbxswarm.v1.SandboxService.StartSandbox:output_type -> sbxswarm.v1.Sandbox
+	2,  // 37: sbxswarm.v1.SandboxService.StopSandbox:output_type -> sbxswarm.v1.Sandbox
+	11, // 38: sbxswarm.v1.SandboxService.Exec:output_type -> sbxswarm.v1.ExecResponse
+	17, // 39: sbxswarm.v1.SandboxService.AgentRun:output_type -> sbxswarm.v1.Operation
+	15, // 40: sbxswarm.v1.SandboxService.PublishPort:output_type -> sbxswarm.v1.Port
+	16, // 41: sbxswarm.v1.SandboxService.ListPorts:output_type -> sbxswarm.v1.ListPortsResponse
+	31, // 42: sbxswarm.v1.SandboxService.UnpublishPort:output_type -> sbxswarm.v1.Empty
+	18, // 43: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
+	20, // 44: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
+	17, // 45: sbxswarm.v1.SandboxService.PublishSandbox:output_type -> sbxswarm.v1.Operation
+	6,  // 46: sbxswarm.v1.SandboxService.ListBranches:output_type -> sbxswarm.v1.ListBranchesResponse
+	2,  // 47: sbxswarm.v1.SandboxService.KeepAlive:output_type -> sbxswarm.v1.Sandbox
+	23, // 48: sbxswarm.v1.SandboxService.ListOperations:output_type -> sbxswarm.v1.ListOperationsResponse
+	32, // [32:49] is the sub-list for method output_type
+	15, // [15:32] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_sbxswarm_v1_sandbox_proto_init() }

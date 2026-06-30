@@ -87,6 +87,7 @@ type Usage struct {
 type BlockedHost struct {
 	Host   string
 	VMName string
+	Count  int // hits observed by the proxy (count_since)
 }
 
 // LogLine is one streamed log line.
@@ -173,6 +174,8 @@ type Backend interface {
 	Logs(ctx context.Context, name, path string, out chan<- LogLine) error
 	// BlockedEgress returns the daemon-wide set of blocked (host, vm) pairs.
 	BlockedEgress(ctx context.Context) ([]BlockedHost, error)
+	// AllowedEgress returns the daemon-wide set of allowed (host, vm) pairs.
+	AllowedEgress(ctx context.Context) ([]BlockedHost, error)
 
 	// Policy management (egress rules).
 	PolicyAllow(ctx context.Context, scope, host string) error

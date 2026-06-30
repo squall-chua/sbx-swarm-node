@@ -54,13 +54,24 @@ func (s *SandboxService) ListBlocked(_ context.Context, r *sbxv1.IdRequest) (*sb
 	if s.obs.NetLog == nil {
 		return nil, status.Error(codes.Unimplemented, "observe not configured")
 	}
-	pairs := s.obs.NetLog.ForSandbox(r.Id)
-	out := &sbxv1.ListBlockedResponse{DistinctCount: int32(s.obs.NetLog.DistinctCount())}
-	for _, p := range pairs {
+	out := &sbxv1.ListBlockedResponse{
+		DistinctCount:        int32(s.obs.NetLog.DistinctCount()),
+		AllowedDistinctCount: int32(s.obs.NetLog.AllowedDistinctCount()),
+	}
+	for _, p := range s.obs.NetLog.ForSandbox(r.Id) {
 		out.Blocked = append(out.Blocked, &sbxv1.Blocked{
 			Host:      p.Host,
 			FirstSeen: p.FirstSeen.Format("2006-01-02T15:04:05Z07:00"),
 			LastSeen:  p.LastSeen.Format("2006-01-02T15:04:05Z07:00"),
+			Count:     int32(p.Count),
+		})
+	}
+	for _, p := range s.obs.NetLog.AllowedForSandbox(r.Id) {
+		out.Allowed = append(out.Allowed, &sbxv1.Blocked{
+			Host:      p.Host,
+			FirstSeen: p.FirstSeen.Format("2006-01-02T15:04:05Z07:00"),
+			LastSeen:  p.LastSeen.Format("2006-01-02T15:04:05Z07:00"),
+			Count:     int32(p.Count),
 		})
 	}
 	return out, nil

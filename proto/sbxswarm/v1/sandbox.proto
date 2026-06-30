@@ -94,6 +94,10 @@ message Sandbox {
   string agent = 8;        // the agent the sandbox runs (from its create spec)
   string name = 9;         // human-readable display name (custom or auto-derived); NOT the routing id
   repeated WorkspaceMount workspaces = 10; // workspaces mounted into the sandbox
+  string created_at = 11;  // RFC3339 sandbox creation (provision) time
+  int32 cpus = 12;         // provisioned vCPUs (from create spec)
+  int64 memory_bytes = 13; // provisioned memory (bytes)
+  double disk_gb = 14;     // provisioned/requested disk (GB)
 }
 
 message GetSandboxRequest { string id = 1; }
@@ -166,11 +170,14 @@ message Blocked {
   string host = 1;
   string first_seen = 2;
   string last_seen = 3;
+  int32 count = 4; // proxy hit count
 }
 
 message ListBlockedResponse {
   repeated Blocked blocked = 1;
   int32 distinct_count = 2;
+  repeated Blocked allowed = 3;        // allowed egress (host, first/last seen)
+  int32 allowed_distinct_count = 4;
 }
 
 message OperationSummary {

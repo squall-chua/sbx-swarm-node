@@ -21,7 +21,24 @@ const totalSandboxes = computed(() =>
 const runningSandboxes = computed(() => sandboxesByStatus.value['running'] ?? 0)
 
 // Operations carry a `state` field (see operations.vue) — not `status`.
+// The API returns operations newest-first, so the first 6 are the most recent.
 const recentOps = computed(() => (swarm?.operations.value ?? []).slice(0, 6))
+
+function fmtFull(ts: string | null | undefined): string {
+  if (!ts) return ''
+  try { return new Date(ts).toLocaleString() } catch { return ts ?? '' }
+}
+// fmtAgo renders a compact relative time (e.g. "5m ago"); full timestamp on hover.
+function fmtAgo(ts: string | null | undefined): string {
+  if (!ts) return ''
+  const t = new Date(ts).getTime()
+  if (isNaN(t)) return ''
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000))
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
 
 async function refresh() {
   await swarm?.refreshAll()
@@ -155,7 +172,10 @@ async function refresh() {
               <span class="font-mono text-xs text-muted">{{ op.type }}</span>
               <span class="font-mono text-xs text-default truncate">{{ op.id }}</span>
             </div>
-            <StatusPill :status="op.state" kind="operation" size="xs" />
+            <div class="flex items-center gap-3 shrink-0">
+              <span class="tabular-nums text-xs text-muted" :title="fmtFull(op.created_at)">{{ fmtAgo(op.created_at) }}</span>
+              <StatusPill :status="op.state" kind="operation" size="xs" />
+            </div>
           </div>
         </div>
         <p v-else class="text-sm text-muted italic">No recent operations.</p>

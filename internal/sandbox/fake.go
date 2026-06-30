@@ -15,6 +15,7 @@ type Fake struct {
 	detached  map[string]bool // detachedID -> done
 	seq       int
 	blocked   []BlockedHost
+	allowed   []BlockedHost
 	rules     []PolicyRule
 	secrets   map[string][]CustomSecret
 	templates []string
@@ -219,10 +220,19 @@ func (b *Fake) ListTemplateInfo(_ context.Context) ([]TemplateInfo, error) {
 // SetBlocked sets the fake's blocked-egress list (test helper).
 func (f *Fake) SetBlocked(b []BlockedHost) { f.mu.Lock(); f.blocked = b; f.mu.Unlock() }
 
+// SetAllowed sets the fake's allowed-egress list (test helper).
+func (f *Fake) SetAllowed(a []BlockedHost) { f.mu.Lock(); f.allowed = a; f.mu.Unlock() }
+
 func (f *Fake) BlockedEgress(_ context.Context) ([]BlockedHost, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]BlockedHost(nil), f.blocked...), nil
+}
+
+func (f *Fake) AllowedEgress(_ context.Context) ([]BlockedHost, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]BlockedHost(nil), f.allowed...), nil
 }
 
 // Policy methods.

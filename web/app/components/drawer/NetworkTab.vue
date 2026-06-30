@@ -5,42 +5,77 @@ const api = useApi()
 const session = useSession()
 const toast = useToast()
 
-// ── Blocked egress ───────────────────────────────────────────────────────────
-interface BlockedEntry { host: string; first_seen: string; last_seen: string }
-interface BlockedResponse { distinct_count?: number; entries?: BlockedEntry[] }
+// ── Egress log (blocked + allowed) ───────────────────────────────────────────
+interface EgressEntry { host: string; first_seen: string; last_seen: string; count?: number }
+interface EgressResponse {
+  blocked?: EgressEntry[]
+  distinct_count?: number
+  allowed?: EgressEntry[]
+  allowed_distinct_count?: number
+}
 
-const blocked = ref<BlockedResponse>({ distinct_count: 0, entries: [] })
-const blockedLoading = ref(false)
+const egress = ref<EgressResponse>({ blocked: [], distinct_count: 0, allowed: [], allowed_distinct_count: 0 })
+const egressLoading = ref(false)
 
-async function fetchBlocked() {
-  blockedLoading.value = true
+async function fetchEgress() {
+  egressLoading.value = true
   try {
-    blocked.value = await api.get(`/v1/sandboxes/${props.id}/network/blocked`)
+    egress.value = await api.get(`/v1/sandboxes/${props.id}/network/blocked`)
   } catch (e: any) {
-    toast.add({ title: 'Failed to load blocked egress', description: e?.message, color: 'error' })
+    toast.add({ title: 'Failed to load egress log', description: e?.message, color: 'error' })
   } finally {
-    blockedLoading.value = false
+    egressLoading.value = false
   }
 }
 
-const blockedColumns = [
-  { accessorKey: 'host',       header: 'Host' },
-  { accessorKey: 'first_seen', header: 'First Seen' },
-  { accessorKey: 'last_seen',  header: 'Last Seen' },
-]
+// Fully fixed column widths (shared by both egress tables) + table-fixed layout so
+// the Blocked and Allowed columns line up exactly, regardless of content or whether
+// a table is empty. No percentage column (it resolves non-deterministically here).
+// The trailing action column (unblock/block) is admin-only.
+const egressColumns = computed(() => {
+  const cols: any[] = [
+    { accessorKey: 'host',       header: 'Host',       meta: { class: { td: 'w-64', th: 'w-64' } } },
+    { accessorKey: 'first_seen', header: 'First Seen', meta: { class: { td: 'w-48', th: 'w-48' } } },
+    { accessorKey: 'last_seen',  header: 'Last Seen',  meta: { class: { td: 'w-48', th: 'w-48' } } },
+    { accessorKey: 'hits',       header: 'Hits',       meta: { class: { td: 'w-16 text-right', th: 'w-16 text-right' } } },
+  ]
+  if (session.isAdmin.value) {
+    cols.push({ id: 'action', header: '', meta: { class: { td: 'w-28 text-right', th: 'w-28' } } })
+  }
+  return cols
+})
 
 function fmtDate(ts: string | null | undefined): string {
   if (!ts) return '—'
   try { return new Date(ts).toLocaleString() } catch { return ts }
 }
 
-const blockedRows = computed(() =>
-  (blocked.value.entries ?? []).map((e) => ({
+function toRows(entries: EgressEntry[] | undefined) {
+  return (entries ?? []).map((e) => ({
     host: e.host,
     first_seen: fmtDate(e.first_seen),
     last_seen: fmtDate(e.last_seen),
-  })),
-)
+    hits: e.count ?? 0,
+  }))
+}
+const blockedRows = computed(() => toRows(egress.value.blocked))
+const allowedRows = computed(() => toRows(egress.value.allowed))
+
+// Unblock (allow) or block (deny) a host straight from the egress log. Egress hosts
+// are host:port, the same format policy rules use, so they pass through verbatim.
+const policyBusy = ref<string | null>(null)
+async function setPolicy(host: string, decision: 'allow' | 'deny') {
+  policyBusy.value = `${decision}:${host}`
+  try {
+    await api.put(`/v1/sandboxes/${props.id}/policy`, { scope: props.id, decision, host })
+    toast.add({ title: decision === 'allow' ? `Unblocked ${host}` : `Blocked ${host}`, color: 'success' })
+    await Promise.all([fetchPolicy(), fetchEgress()])
+  } catch (e: any) {
+    toast.add({ title: 'Failed to update policy', description: e?.message, color: 'error' })
+  } finally {
+    policyBusy.value = null
+  }
+}
 
 // ── Policy ───────────────────────────────────────────────────────────────────
 // ListPolicy returns richer rows than the add form sends: the hosts come back in
@@ -131,7 +166,7 @@ async function doRemoveRule(rule: PolicyRule) {
 }
 
 onMounted(() => {
-  fetchBlocked()
+  fetchEgress()
   fetchPolicy()
 })
 </script>
@@ -146,15 +181,15 @@ onMounted(() => {
           Blocked Egress
         </p>
         <UBadge
-          v-if="blocked.distinct_count != null"
-          :label="`${blocked.distinct_count} distinct hosts`"
+          v-if="egress.distinct_count != null"
+          :label="`${egress.distinct_count} distinct hosts`"
           color="neutral"
           variant="subtle"
           size="xs"
         />
       </div>
 
-      <div v-if="blockedLoading" class="flex flex-col gap-2">
+      <div v-if="egressLoading" class="flex flex-col gap-2">
         <USkeleton class="h-4 w-full" />
         <USkeleton class="h-4 w-3/4" />
       </div>
@@ -162,11 +197,12 @@ onMounted(() => {
       <UTable
         v-else
         :data="blockedRows"
-        :columns="blockedColumns"
+        :columns="egressColumns"
+        :ui="{ base: 'table-fixed' }"
         class="text-sm"
       >
         <template #host-cell="{ row }">
-          <span class="font-mono text-default">{{ row.original.host }}</span>
+          <span class="font-mono text-default block truncate" :title="row.original.host">{{ row.original.host }}</span>
         </template>
         <template #first_seen-cell="{ row }">
           <span class="tabular-nums text-muted">{{ row.original.first_seen }}</span>
@@ -174,10 +210,85 @@ onMounted(() => {
         <template #last_seen-cell="{ row }">
           <span class="tabular-nums text-muted">{{ row.original.last_seen }}</span>
         </template>
+        <template #hits-cell="{ row }">
+          <span class="tabular-nums text-default">{{ row.original.hits }}</span>
+        </template>
+        <template #action-cell="{ row }">
+          <UButton
+            label="Unblock"
+            icon="i-lucide-shield-off"
+            color="success"
+            variant="subtle"
+            size="xs"
+            :loading="policyBusy === `allow:${row.original.host}`"
+            @click="setPolicy(row.original.host, 'allow')"
+          />
+        </template>
         <template #empty>
           <div class="flex flex-col items-center justify-center gap-2 py-8 text-center">
             <UIcon name="i-lucide-shield-check" class="size-6 text-muted" aria-hidden="true" />
             <p class="text-sm text-muted">No blocked egress recorded.</p>
+          </div>
+        </template>
+      </UTable>
+    </div>
+
+    <USeparator />
+
+    <!-- ── Allowed Egress ───────────────────────────────────────────────── -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-muted uppercase tracking-wide">
+          Allowed Egress
+        </p>
+        <UBadge
+          v-if="egress.allowed_distinct_count != null"
+          :label="`${egress.allowed_distinct_count} distinct hosts`"
+          color="neutral"
+          variant="subtle"
+          size="xs"
+        />
+      </div>
+
+      <div v-if="egressLoading" class="flex flex-col gap-2">
+        <USkeleton class="h-4 w-full" />
+        <USkeleton class="h-4 w-3/4" />
+      </div>
+
+      <UTable
+        v-else
+        :data="allowedRows"
+        :columns="egressColumns"
+        :ui="{ base: 'table-fixed' }"
+        class="text-sm"
+      >
+        <template #host-cell="{ row }">
+          <span class="font-mono text-default block truncate" :title="row.original.host">{{ row.original.host }}</span>
+        </template>
+        <template #first_seen-cell="{ row }">
+          <span class="tabular-nums text-muted">{{ row.original.first_seen }}</span>
+        </template>
+        <template #last_seen-cell="{ row }">
+          <span class="tabular-nums text-muted">{{ row.original.last_seen }}</span>
+        </template>
+        <template #hits-cell="{ row }">
+          <span class="tabular-nums text-default">{{ row.original.hits }}</span>
+        </template>
+        <template #action-cell="{ row }">
+          <UButton
+            label="Block"
+            icon="i-lucide-ban"
+            color="error"
+            variant="subtle"
+            size="xs"
+            :loading="policyBusy === `deny:${row.original.host}`"
+            @click="setPolicy(row.original.host, 'deny')"
+          />
+        </template>
+        <template #empty>
+          <div class="flex flex-col items-center justify-center gap-2 py-8 text-center">
+            <UIcon name="i-lucide-globe" class="size-6 text-muted" aria-hidden="true" />
+            <p class="text-sm text-muted">No allowed egress recorded.</p>
           </div>
         </template>
       </UTable>

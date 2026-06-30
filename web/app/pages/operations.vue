@@ -23,6 +23,13 @@ function fmtDate(ts: string | null | undefined): string {
   try { return new Date(ts).toLocaleString() } catch { return ts }
 }
 
+// shortId drops the redundant "<node-id>." prefix shared by every row, keeping
+// just the ULID. Full id stays available on hover (title).
+function shortId(id: string): string {
+  const i = id.lastIndexOf('.')
+  return i >= 0 ? id.slice(i + 1) : id
+}
+
 const columns: TableColumn<Operation>[] = [
   { accessorKey: 'id', header: 'ID' },
   { accessorKey: 'type', header: 'Type' },
@@ -30,6 +37,7 @@ const columns: TableColumn<Operation>[] = [
   { accessorKey: 'sandbox_id', header: 'Sandbox' },
   { accessorKey: 'error', header: 'Error' },
   { accessorKey: 'created_at', header: 'Created' },
+  { accessorKey: 'updated_at', header: 'Updated' },
 ]
 </script>
 
@@ -49,14 +57,15 @@ const columns: TableColumn<Operation>[] = [
       />
     </div>
 
-    <!-- Operations table -->
+    <!-- Operations table (shrinks to content so columns don't spread across the full width) -->
+    <div class="max-w-full self-start overflow-x-auto">
     <UTable
       :data="operations"
       :columns="columns"
-      class="w-full"
+      :ui="{ base: 'min-w-0', td: 'px-3 py-2', th: 'px-3 py-2' }"
     >
       <template #id-cell="{ row }">
-        <span class="font-mono text-sm text-default">{{ row.original.id }}</span>
+        <span class="font-mono text-sm text-default" :title="row.original.id">{{ shortId(row.original.id) }}</span>
       </template>
       <template #type-cell="{ row }">
         <span class="text-sm text-default">{{ row.original.type }}</span>
@@ -65,14 +74,17 @@ const columns: TableColumn<Operation>[] = [
         <StatusPill :status="row.original.state" kind="operation" />
       </template>
       <template #sandbox_id-cell="{ row }">
-        <span class="font-mono text-sm text-muted">{{ row.original.sandbox_id }}</span>
+        <span class="font-mono text-sm text-muted" :title="row.original.sandbox_id">{{ shortId(row.original.sandbox_id) }}</span>
       </template>
       <template #error-cell="{ row }">
-        <span v-if="row.original.error" class="text-error text-sm">{{ row.original.error }}</span>
+        <span v-if="row.original.error" class="block max-w-md whitespace-normal break-words text-error text-sm">{{ row.original.error }}</span>
         <span v-else class="text-muted">—</span>
       </template>
       <template #created_at-cell="{ row }">
         <span class="tabular-nums text-muted text-sm">{{ fmtDate(row.original.created_at) }}</span>
+      </template>
+      <template #updated_at-cell="{ row }">
+        <span class="tabular-nums text-muted text-sm">{{ fmtDate(row.original.updated_at) }}</span>
       </template>
       <template #empty>
         <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
@@ -81,6 +93,7 @@ const columns: TableColumn<Operation>[] = [
         </div>
       </template>
     </UTable>
+    </div>
 
   </div>
 </template>

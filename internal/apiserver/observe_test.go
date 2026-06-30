@@ -80,6 +80,7 @@ func TestListBlocked_ReturnsDistinctPairs(t *testing.T) {
 
 	rec, _ := mgr.Create(ctx, sandbox.CreateSpec{Name: "s1"})
 	f.SetBlocked([]sandbox.BlockedHost{{Host: "evil.com", VMName: rec.BackendName}})
+	f.SetAllowed([]sandbox.BlockedHost{{Host: "api.github.com:443", VMName: rec.BackendName}})
 
 	// Wire a fresh NetLogCollector that resolves VM name → sandbox ID.
 	netC2 := obsd.NewNetLogCollector(f, func(vm string) (string, bool) {
@@ -97,4 +98,7 @@ func TestListBlocked_ReturnsDistinctPairs(t *testing.T) {
 	require.Len(t, resp.Blocked, 1)
 	require.Equal(t, "evil.com", resp.Blocked[0].Host)
 	require.Equal(t, int32(1), resp.DistinctCount)
+	require.Len(t, resp.Allowed, 1)
+	require.Equal(t, "api.github.com:443", resp.Allowed[0].Host)
+	require.Equal(t, int32(1), resp.AllowedDistinctCount)
 }

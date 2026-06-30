@@ -403,7 +403,21 @@ func (b *SDKBackend) BlockedEgress(ctx context.Context) ([]BlockedHost, error) {
 	}
 	out := make([]BlockedHost, 0, len(pl.BlockedHosts))
 	for _, e := range pl.BlockedHosts {
-		out = append(out, BlockedHost{Host: e.Host, VMName: e.VMName})
+		out = append(out, BlockedHost{Host: e.Host, VMName: e.VMName, Count: e.CountSince})
+	}
+	return out, nil
+}
+
+// AllowedEgress returns the daemon-wide set of allowed (host, vm) pairs.
+// Same policy.Log source as BlockedEgress, reading the allowed list.
+func (b *SDKBackend) AllowedEgress(ctx context.Context) ([]BlockedHost, error) {
+	pl, err := sdkpolicy.Log(ctx, b.cl)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlockedHost, 0, len(pl.AllowedHosts))
+	for _, e := range pl.AllowedHosts {
+		out = append(out, BlockedHost{Host: e.Host, VMName: e.VMName, Count: e.CountSince})
 	}
 	return out, nil
 }

@@ -137,6 +137,16 @@ func TestToProto_GitFields(t *testing.T) {
 
 	rec.LastPublish = time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC)
 	require.Equal(t, "2026-06-18T09:00:00Z", toProto(rec).LastPublish)
+
+	require.Empty(t, toProto(rec).CreatedAt)
+	rec.CreatedAt = time.Date(2026, 6, 18, 8, 0, 0, 0, time.UTC)
+	require.Equal(t, "2026-06-18T08:00:00Z", toProto(rec).CreatedAt)
+
+	rec.Spec.CPUs, rec.Spec.MemoryBytes, rec.Spec.DiskGB = 2, 1<<30, 10
+	p2 := toProto(rec)
+	require.Equal(t, int32(2), p2.Cpus)
+	require.Equal(t, int64(1<<30), p2.MemoryBytes)
+	require.Equal(t, 10.0, p2.DiskGb)
 }
 
 func TestPublishSandbox_AllowPushGate(t *testing.T) {

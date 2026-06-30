@@ -81,6 +81,10 @@ const columns: TableColumn<any>[] = [
     header: 'Status',
   },
   {
+    accessorKey: 'created_at',
+    header: 'Uptime',
+  },
+  {
     accessorKey: 'agent',
     header: 'Agent',
   },
@@ -113,6 +117,25 @@ function fmtDate(ts: string | null | undefined): string {
   } catch {
     return ts
   }
+}
+
+// fmtUptime shows how long a running sandbox has been alive (created_at → now),
+// as a compact duration. Non-running sandboxes show "—".
+// ponytail: based on created_at (provision time); equals real uptime unless a
+// sandbox was stopped then restarted — surface the collector's /proc uptime if
+// that distinction ever matters.
+function fmtUptime(sb: any): string {
+  if (sb.status !== 'running' || !sb.created_at) return '—'
+  const start = new Date(sb.created_at).getTime()
+  if (isNaN(start)) return '—'
+  let s = Math.max(0, Math.floor((Date.now() - start) / 1000))
+  const d = Math.floor(s / 86400); s -= d * 86400
+  const h = Math.floor(s / 3600); s -= h * 3600
+  const m = Math.floor(s / 60); s -= m * 60
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m`
+  return `${s}s`
 }
 </script>
 
@@ -202,6 +225,11 @@ function fmtDate(ts: string | null | undefined): string {
       <!-- Status -->
       <template #status-cell="{ row }">
         <StatusPill :status="row.original.status ?? 'unknown'" kind="sandbox" />
+      </template>
+
+      <!-- Uptime: running duration since creation; full timestamp on hover -->
+      <template #created_at-cell="{ row }">
+        <span class="text-xs text-muted tabular-nums" :title="fmtDate(row.original.created_at)">{{ fmtUptime(row.original) }}</span>
       </template>
 
       <!-- Agent -->
