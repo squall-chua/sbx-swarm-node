@@ -25,6 +25,7 @@ type Config struct {
 	// ListenAddr keeps its pinned Ed25519 identity cert (ADR-0004), which
 	// browsers reject. Empty disables the console listener.
 	ConsoleAddr        string   `yaml:"console_addr"`
+	ConsoleTLS         bool     `yaml:"console_tls"`           // default true; false serves the console over plain HTTP (cleartext — front with a TLS proxy or keep on a trusted network)
 	ConsoleTLSCertFile string   `yaml:"console_tls_cert_file"` // optional; empty → self-signed ECDSA
 	ConsoleTLSKeyFile  string   `yaml:"console_tls_key_file"`
 	APIKeys            []APIKey `yaml:"api_keys"`
@@ -117,6 +118,7 @@ func Default() *Config {
 		LogLevel:   "info",
 		GossipAddr: ":7946",
 		Backend:    "fake",
+		ConsoleTLS: true,
 	}
 }
 

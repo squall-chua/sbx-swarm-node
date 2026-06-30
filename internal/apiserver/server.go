@@ -194,10 +194,11 @@ func sessionHandler(keys auth.KeyStore, signer *auth.Signer) http.Handler {
 			http.Error(w, "invalid key", http.StatusUnauthorized)
 			return
 		}
+		secure := r.TLS != nil // false when the console is served over plain HTTP; browsers drop Secure cookies on cleartext non-localhost
 		tok := signer.Mint(role, time.Now().Add(12*time.Hour))
-		http.SetCookie(w, &http.Cookie{Name: auth.SessionCookie, Value: tok, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: auth.SessionCookie, Value: tok, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
 		csrf := signer.Mint("csrf", time.Now().Add(12*time.Hour)) // opaque random-ish value
-		http.SetCookie(w, &http.Cookie{Name: auth.CSRFCookie, Value: csrf, Path: "/", Secure: true, SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: auth.CSRFCookie, Value: csrf, Path: "/", Secure: secure, SameSite: http.SameSiteStrictMode})
 		w.WriteHeader(http.StatusNoContent)
 	})
 }

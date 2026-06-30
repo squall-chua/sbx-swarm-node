@@ -255,6 +255,9 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		if clusterInstance != nil { // self actual util (gossiped), same source as buildCandidates
 			ls := clusterInstance.LocalNodeState()
 			self.ActualCPU, self.ActualMem = ls.ActualCPU, ls.ActualMem
+		} else { // standalone (no gossip): read util straight from the collector
+			au := statsC.ActualUtil()
+			self.ActualCPU, self.ActualMem = au.CPU, au.Mem
 		}
 		rows := []apiserver.NodeRow{self}
 		if clusterInstance != nil {
@@ -353,19 +356,21 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	// self-signed ECDSA P-256 cert persisted under DataDir/console). The main
 	// ListenAddr keeps its pinned Ed25519 identity cert (browsers reject it).
 	if cfg.ConsoleAddr != "" {
-		consoleCert, cerr := tlsutil.LoadOrGenerate(cfg.ConsoleTLSCertFile, cfg.ConsoleTLSKeyFile, filepath.Join(cfg.DataDir, "console"))
-		if cerr != nil {
-			cancel()
-			_ = st.Close()
-			pool.Close()
-			if clusterInstance != nil {
-				_ = clusterInstance.Shutdown()
+		nodeInst.consoleSrv = &http.Server{Handler: consoleHandler}
+		if cfg.ConsoleTLS {
+			consoleCert, cerr := tlsutil.LoadOrGenerate(cfg.ConsoleTLSCertFile, cfg.ConsoleTLSKeyFile, filepath.Join(cfg.DataDir, "console"))
+			if cerr != nil {
+				cancel()
+				_ = st.Close()
+				pool.Close()
+				if clusterInstance != nil {
+					_ = clusterInstance.Shutdown()
+				}
+				return nil, fmt.Errorf("console tls: %w", cerr)
 			}
-			return nil, fmt.Errorf("console tls: %w", cerr)
-		}
-		nodeInst.consoleSrv = &http.Server{
-			Handler:   consoleHandler,
-			TLSConfig: &tls.Config{Certificates: []tls.Certificate{consoleCert}, NextProtos: []string{"h2", "http/1.1"}},
+			nodeInst.consoleSrv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{consoleCert}, NextProtos: []string{"h2", "http/1.1"}}
+		} else {
+			log.Warn("console serving over plain HTTP (cleartext) — front with a TLS proxy or keep on a trusted network", "addr", cfg.ConsoleAddr)
 		}
 	}
 
@@ -416,7 +421,13 @@ func (n *Node) Start() error {
 		}
 		n.consoleLn = cln
 		go func() {
-			if err := n.consoleSrv.ServeTLS(cln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			var err error
+			if n.consoleSrv.TLSConfig != nil {
+				err = n.consoleSrv.ServeTLS(cln, "", "")
+			} else {
+				err = n.consoleSrv.Serve(cln)
+			}
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				n.log.Error("console server stopped", "err", err)
 			}
 		}()

@@ -61,3 +61,41 @@ func TestNode_ConsoleListener_BrowserCompatCert(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 }
+
+// With console_tls=false the console listener speaks plain HTTP (front it with a
+// TLS proxy or keep it on a trusted network). The login cookie also drops its
+// Secure flag so browsers will store it over cleartext.
+func TestNode_ConsoleListener_PlainHTTP(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = "127.0.0.1:0"
+	cfg.ConsoleAddr = "127.0.0.1:0"
+	cfg.ConsoleTLS = false
+	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}}
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	require.NoError(t, n.Start())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	// The SPA is served over plain HTTP — no TLS handshake.
+	resp, err := http.Get("http://" + n.ConsoleAddr() + "/")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	// Login over HTTP mints cookies without the Secure flag (else browsers drop them).
+	req, _ := http.NewRequest(http.MethodPost, "http://"+n.ConsoleAddr()+"/v1/auth/session", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	for _, c := range resp.Cookies() {
+		require.False(t, c.Secure, "cookie %q must not be Secure over plain HTTP", c.Name)
+	}
+	resp.Body.Close()
+}
