@@ -20,7 +20,7 @@ import (
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
 type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok bool)
 
-// SDKBackend implements Backend over sbx-go-sdk v0.1.2. Workspaces are resolved
+// SDKBackend implements Backend over sbx-go-sdk v0.1.7. Workspaces are resolved
 // to host paths via the resolver (config-provided). It is a thin translation
 // layer: lifecycle/exec/ports/files all resolve a *sandbox.Sandbox handle by
 // name and call the SDK, mapping the SDK's not-found sentinel to ErrNotFound.
@@ -335,7 +335,7 @@ func memString(b int64) string {
 }
 
 // Stats returns a point-in-time resource snapshot for the named sandbox.
-// Maps to exec.Stats in sbx-go-sdk v0.1.2.
+// Maps to exec.Stats in sbx-go-sdk v0.1.7.
 func (b *SDKBackend) Stats(ctx context.Context, name string) (Usage, error) {
 	sb, err := b.handle(ctx, name)
 	if err != nil {
@@ -358,7 +358,7 @@ func (b *SDKBackend) Stats(ctx context.Context, name string) (Usage, error) {
 
 // Logs follows the log file at path inside the named sandbox. Lines are
 // streamed to out until ctx is cancelled or the session ends.
-// Maps to exec.Logs in sbx-go-sdk v0.1.2.
+// Maps to exec.Logs in sbx-go-sdk v0.1.7.
 func (b *SDKBackend) Logs(ctx context.Context, name, path string, out chan<- LogLine) error {
 	sb, err := b.handle(ctx, name)
 	if err != nil {
@@ -395,7 +395,7 @@ func (b *SDKBackend) Logs(ctx context.Context, name, path string, out chan<- Log
 }
 
 // BlockedEgress returns the daemon-wide set of blocked (host, vm) pairs.
-// Maps to policy.Log in sbx-go-sdk v0.1.2.
+// Maps to policy.Log in sbx-go-sdk v0.1.7.
 func (b *SDKBackend) BlockedEgress(ctx context.Context) ([]BlockedHost, error) {
 	pl, err := sdkpolicy.Log(ctx, b.cl)
 	if err != nil {

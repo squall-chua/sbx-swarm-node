@@ -96,7 +96,7 @@ type LogLine struct {
 	Err  error // set on stream error/EOF
 }
 
-// PolicyRule mirrors a structured row from policy.List (SDK v0.1.2).
+// PolicyRule mirrors a structured row from policy.List (SDK v0.1.7).
 type PolicyRule struct {
 	Provenance string `json:"provenance"`
 	AppliesTo  string `json:"applies_to"`
