@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/memberlist v0.5.4
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/squall-chua/sbx-go-sdk v0.1.6
+	github.com/squall-chua/sbx-go-sdk v0.1.7
 	github.com/stretchr/testify v1.11.1
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/sync v0.21.0
