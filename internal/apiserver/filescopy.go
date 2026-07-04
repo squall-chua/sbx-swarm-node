@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,10 +35,8 @@ const appendChunksScript = `for a in "$@"; do printf %s "$a" | base64 -d; done >
 var readChunkScript = fmt.Sprintf(`dd if="$0" bs=%d skip="$1" count=1 2>/dev/null | base64 -w0`, execChunkRaw)
 
 // copyFileToSandbox writes localPath into the sandbox at remotePath over the
-// daemon's reliable request path (see the package note above). It streams to a
-// temp beside the destination, verifies the byte count, retries the whole stream
-// on a short result (re-truncating, so retries never double-append), then
-// atomically renames into place. A half-written file is never published.
+// daemon's reliable request path. It is a thin wrapper over copyReaderToSandbox
+// for an on-disk source (the REST upload handler stages the body to a temp file).
 func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, remotePath string) error {
 	f, err := os.Open(localPath)
 	if err != nil {
@@ -50,23 +47,31 @@ func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, 
 	if err != nil {
 		return err
 	}
-	want := fi.Size()
+	return copyReaderToSandbox(ctx, b, name, f, fi.Size(), remotePath)
+}
 
+// copyReaderToSandbox writes size bytes from r into the sandbox at remotePath over
+// the daemon's reliable request path (see the package note above). It streams to a
+// temp beside the destination, verifies the byte count, retries the whole stream
+// on a short result (re-truncating, so retries never double-append), then
+// atomically renames into place. A half-written file is never published. r must be
+// seekable so a failed attempt can rewind and retry (an *os.File or *bytes.Reader).
+func copyReaderToSandbox(ctx context.Context, b sandbox.Backend, name string, r io.ReadSeeker, size int64, remotePath string) error {
 	dir := path.Dir(remotePath)
 	// The console's "destination folder" upload invites paths whose folder does
 	// not exist yet; create it so the write does not fail.
 	if _, err := execChecked(ctx, b, name, "mkdir", "-p", dir); err != nil {
 		return fmt.Errorf("create destination dir %s: %w", dir, err)
 	}
-	tmp := path.Join(dir, ".sbxup-"+filepath.Base(localPath)+".part")
+	tmp := path.Join(dir, ".sbxup-"+path.Base(remotePath)+".part")
 	defer func() { _, _ = b.Exec(ctx, name, []string{"rm", "-f", tmp}, sandbox.ExecOpts{}) }()
 
 	var lastErr error
 	for try := 0; try < transferTries; try++ {
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
+		if _, err := r.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		if err := streamToSandbox(ctx, b, name, f, tmp); err != nil {
+		if err := streamToSandbox(ctx, b, name, r, tmp); err != nil {
 			lastErr = err
 			continue
 		}
@@ -75,13 +80,13 @@ func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, 
 			lastErr = err
 			continue
 		}
-		if got == want {
+		if got == size {
 			if _, err := execChecked(ctx, b, name, "mv", "-f", tmp, remotePath); err != nil {
 				return err
 			}
 			return nil
 		}
-		lastErr = fmt.Errorf("verification failed: wrote %d of %d bytes", got, want)
+		lastErr = fmt.Errorf("verification failed: wrote %d of %d bytes", got, size)
 	}
 	return fmt.Errorf("transfer to %s failed after %d attempts: %w", remotePath, transferTries, lastErr)
 }
@@ -89,7 +94,7 @@ func copyFileToSandbox(ctx context.Context, b sandbox.Backend, name, localPath, 
 // streamToSandbox truncates tmp, then appends f's contents as base64 exec-argv
 // chunks (execChunkBatch per exec). A failed append aborts the attempt; the
 // caller re-truncates and retries.
-func streamToSandbox(ctx context.Context, b sandbox.Backend, name string, f *os.File, tmp string) error {
+func streamToSandbox(ctx context.Context, b sandbox.Backend, name string, r io.Reader, tmp string) error {
 	if _, err := execChecked(ctx, b, name, "sh", "-c", `: > "$0"`, tmp); err != nil {
 		return err
 	}
@@ -105,7 +110,7 @@ func streamToSandbox(ctx context.Context, b sandbox.Backend, name string, f *os.
 		return err
 	}
 	for {
-		n, rerr := io.ReadFull(f, buf)
+		n, rerr := io.ReadFull(r, buf)
 		if n > 0 {
 			batch = append(batch, base64.StdEncoding.EncodeToString(buf[:n]))
 			if len(batch) == execChunkBatch {
