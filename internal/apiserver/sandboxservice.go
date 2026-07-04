@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -377,6 +378,53 @@ func (s *SandboxService) Exec(ctx context.Context, r *sbxv1.ExecRequest) (*sbxv1
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &sbxv1.ExecResponse{ExitCode: int32(res.ExitCode), Stdout: res.Stdout, Stderr: res.Stderr}, nil
+}
+
+// WriteFiles lands a batch of files into a sandbox's VM over the reliable chunked
+// request path (the same transport as the REST upload; see filescopy.go). It is
+// the gRPC-only ingress the Agency uses to drop an Opencode harness before
+// starting the agent. Each write is guarded against path traversal, staged and
+// byte-verified, then optionally chmod'd. On any file's failure the whole call
+// fails (Agency treats the harness as all-or-nothing).
+func (s *SandboxService) WriteFiles(ctx context.Context, r *sbxv1.WriteFilesRequest) (*sbxv1.WriteFilesResponse, error) {
+	name, err := s.mgr.Resolve(ctx, r.Id)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	b := s.mgr.Backend()
+	actor := principalFromContext(ctx).userRole
+	for _, fw := range r.Files {
+		dest, err := resolveUploadDest(fw.Path)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "%s: %v", fw.Path, err)
+		}
+		werr := copyReaderToSandbox(ctx, b, name, bytes.NewReader(fw.Content), int64(len(fw.Content)), dest)
+		if werr == nil && fw.Mode != 0 {
+			_, werr = execChecked(ctx, b, name, "chmod", fmt.Sprintf("%o", fw.Mode), dest)
+		}
+		s.auditWrite(actor, dest, werr)
+		if werr != nil {
+			return nil, status.Errorf(codes.Internal, "write %s: %v", dest, werr)
+		}
+	}
+	_ = s.mgr.BumpActivity(ctx, r.Id) // WriteFiles is Activity
+	return &sbxv1.WriteFilesResponse{FilesWritten: int32(len(r.Files))}, nil
+}
+
+// auditWrite records one file.write per landed file, attributed to the gRPC
+// principal (blank => "system" for a node-forwarded call).
+func (s *SandboxService) auditWrite(actor, target string, err error) {
+	if s.audit == nil {
+		return
+	}
+	if actor == "" {
+		actor = "system"
+	}
+	outcome := "ok"
+	if err != nil {
+		outcome = "error"
+	}
+	_ = s.audit.Record(audit.Entry{Actor: actor, Action: "file.write", Target: target, Outcome: outcome})
 }
 
 func (s *SandboxService) AgentRun(ctx context.Context, r *sbxv1.AgentRunRequest) (*sbxv1.Operation, error) {

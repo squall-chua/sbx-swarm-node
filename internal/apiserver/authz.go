@@ -26,6 +26,7 @@ var mutatingMethods = map[string]bool{
 	"/sbxswarm.v1.SandboxService/StartSandbox":      true,
 	"/sbxswarm.v1.SandboxService/StopSandbox":       true,
 	"/sbxswarm.v1.SandboxService/Exec":              true,
+	"/sbxswarm.v1.SandboxService/WriteFiles":        true,
 	"/sbxswarm.v1.SandboxService/AgentRun":          true,
 	"/sbxswarm.v1.SandboxService/PublishPort":       true,
 	"/sbxswarm.v1.SandboxService/UnpublishPort":     true,

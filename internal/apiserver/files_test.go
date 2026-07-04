@@ -125,6 +125,12 @@ func (fs *fakeContainerFS) wire(f *sandbox.Fake) {
 		case cmd[0] == "rm": // rm -f <path>
 			delete(fs.files, cmd[len(cmd)-1])
 			return sandbox.ExecResult{}, nil
+		case cmd[0] == "cat": // cat <path>: read a whole file back (round-trip assertions)
+			b, ok := fs.files[cmd[len(cmd)-1]]
+			if !ok {
+				return sandbox.ExecResult{ExitCode: 1, Stderr: []byte("cat: No such file")}, nil
+			}
+			return sandbox.ExecResult{Stdout: append([]byte(nil), b...)}, nil
 		case cmd[0] == "sh" && strings.HasPrefix(cmd[2], ": >"): // truncate: $0=cmd[3]
 			fs.files[cmd[3]] = []byte{}
 			return sandbox.ExecResult{}, nil

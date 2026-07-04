@@ -29,6 +29,9 @@ service SandboxService {
   rpc Exec(ExecRequest) returns (ExecResponse) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/exec" body: "*"};
   }
+  rpc WriteFiles(WriteFilesRequest) returns (WriteFilesResponse) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/files:write" body: "*"};
+  }
   rpc AgentRun(AgentRunRequest) returns (Operation) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/agent-run" body: "*"};
   }
@@ -128,6 +131,17 @@ message ExecResponse {
   bytes stdout = 2;
   bytes stderr = 3;
 }
+
+message WriteFilesRequest {
+  string id = 1;
+  repeated FileWrite files = 2;
+}
+message FileWrite {
+  string path = 1;    // absolute, or relative to the default upload dir (/home/agent); no ".."
+  bytes content = 2;
+  uint32 mode = 3;    // optional unix mode (e.g. 0644); 0 => leave default
+}
+message WriteFilesResponse { int32 files_written = 1; }
 
 message AgentRunRequest {
   string id = 1;

@@ -26,6 +26,7 @@ const (
 	SandboxService_StartSandbox_FullMethodName   = "/sbxswarm.v1.SandboxService/StartSandbox"
 	SandboxService_StopSandbox_FullMethodName    = "/sbxswarm.v1.SandboxService/StopSandbox"
 	SandboxService_Exec_FullMethodName           = "/sbxswarm.v1.SandboxService/Exec"
+	SandboxService_WriteFiles_FullMethodName     = "/sbxswarm.v1.SandboxService/WriteFiles"
 	SandboxService_AgentRun_FullMethodName       = "/sbxswarm.v1.SandboxService/AgentRun"
 	SandboxService_PublishPort_FullMethodName    = "/sbxswarm.v1.SandboxService/PublishPort"
 	SandboxService_ListPorts_FullMethodName      = "/sbxswarm.v1.SandboxService/ListPorts"
@@ -49,6 +50,7 @@ type SandboxServiceClient interface {
 	StartSandbox(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
 	StopSandbox(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
 	Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error)
+	WriteFiles(ctx context.Context, in *WriteFilesRequest, opts ...grpc.CallOption) (*WriteFilesResponse, error)
 	AgentRun(ctx context.Context, in *AgentRunRequest, opts ...grpc.CallOption) (*Operation, error)
 	PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*Port, error)
 	ListPorts(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListPortsResponse, error)
@@ -133,6 +135,16 @@ func (c *sandboxServiceClient) Exec(ctx context.Context, in *ExecRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExecResponse)
 	err := c.cc.Invoke(ctx, SandboxService_Exec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxServiceClient) WriteFiles(ctx context.Context, in *WriteFilesRequest, opts ...grpc.CallOption) (*WriteFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteFilesResponse)
+	err := c.cc.Invoke(ctx, SandboxService_WriteFiles_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +262,7 @@ type SandboxServiceServer interface {
 	StartSandbox(context.Context, *IdRequest) (*Sandbox, error)
 	StopSandbox(context.Context, *IdRequest) (*Sandbox, error)
 	Exec(context.Context, *ExecRequest) (*ExecResponse, error)
+	WriteFiles(context.Context, *WriteFilesRequest) (*WriteFilesResponse, error)
 	AgentRun(context.Context, *AgentRunRequest) (*Operation, error)
 	PublishPort(context.Context, *PublishPortRequest) (*Port, error)
 	ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error)
@@ -290,6 +303,9 @@ func (UnimplementedSandboxServiceServer) StopSandbox(context.Context, *IdRequest
 }
 func (UnimplementedSandboxServiceServer) Exec(context.Context, *ExecRequest) (*ExecResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Exec not implemented")
+}
+func (UnimplementedSandboxServiceServer) WriteFiles(context.Context, *WriteFilesRequest) (*WriteFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteFiles not implemented")
 }
 func (UnimplementedSandboxServiceServer) AgentRun(context.Context, *AgentRunRequest) (*Operation, error) {
 	return nil, status.Error(codes.Unimplemented, "method AgentRun not implemented")
@@ -464,6 +480,24 @@ func _SandboxService_Exec_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SandboxServiceServer).Exec(ctx, req.(*ExecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxService_WriteFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).WriteFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_WriteFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).WriteFiles(ctx, req.(*WriteFilesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -682,6 +716,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Exec",
 			Handler:    _SandboxService_Exec_Handler,
+		},
+		{
+			MethodName: "WriteFiles",
+			Handler:    _SandboxService_WriteFiles_Handler,
 		},
 		{
 			MethodName: "AgentRun",
