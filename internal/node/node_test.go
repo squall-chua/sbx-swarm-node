@@ -59,7 +59,7 @@ func TestWorkspaceResolver(t *testing.T) {
 		{Name: "data", HostPath: "/srv/data", ReadOnly: false},
 		{Name: "ro", HostPath: "/srv/ro", ReadOnly: true},
 		{Name: "repo", HostPath: "/srv/repo.git", ReadOnly: false, Git: &config.GitConfig{}},
-	})
+	}, "")
 
 	host, ro, ok := resolve("data")
 	require.True(t, ok)

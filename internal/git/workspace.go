@@ -2,6 +2,8 @@ package git
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -11,6 +13,9 @@ type Spec struct {
 	Name          string
 	Base          string // host_path: the bare/mirror base repo
 	Remote        string
+	RemoteURL     string     // upstream for auto-mirror + provider ops (ADR-0019/0020)
+	Provider      string     // github|gitlab|gerrit|plain; "" => derive
+	Cred          Credential // node-side credential + trust
 	DefaultBranch string
 	AllowPush     bool
 	PreSteps      [][]string
@@ -29,12 +34,42 @@ type Workspace struct {
 // New builds a Workspace orchestrator.
 func New(s Spec) *Workspace { return &Workspace{spec: s, runner: NewRunner(s.Allowlist)} }
 
-func (w *Workspace) Name() string    { return w.spec.Name }
-func (w *Workspace) AllowPush() bool { return w.spec.AllowPush }
+func (w *Workspace) Name() string          { return w.spec.Name }
+func (w *Workspace) AllowPush() bool       { return w.spec.AllowPush }
+func (w *Workspace) RemoteURL() string     { return w.spec.RemoteURL }
+func (w *Workspace) Provider() string      { return w.spec.Provider }
+func (w *Workspace) DefaultBranch() string { return w.spec.DefaultBranch }
+func (w *Workspace) Cred() Credential      { return w.spec.Cred }
+func (w *Workspace) Base() string          { return w.spec.Base }
 
 // env disables interactive credential prompts so a missing/expired host-side
 // credential fails fast instead of hanging (ADR-0014: creds are host-side).
 func gitEnv() []string { return []string{"GIT_TERMINAL_PROMPT=0"} }
+
+// credEnv returns the credential env for the workspace remote, plus the base
+// GIT_TERMINAL_PROMPT guard. Errors only on a malformed credential.
+func (w *Workspace) credEnv() ([]string, error) { return w.spec.Cred.Env(w.spec.RemoteURL) }
+
+// EnsureBase creates the mirror base from RemoteURL on first use (ADR-0020). No-op
+// if the base already has a git dir, or if RemoteURL is empty (legacy operator-
+// prepared base). Runs under the workspace lock with the credential env.
+func (w *Workspace) EnsureBase(ctx context.Context) error {
+	if w.spec.RemoteURL == "" {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, err := os.Stat(filepath.Join(w.spec.Base, "HEAD")); err == nil {
+		return nil // already a bare/mirror repo
+	}
+	env, err := w.credEnv()
+	if err != nil {
+		return err
+	}
+	_, err = w.runner.Run(ctx, filepath.Dir(w.spec.Base), env,
+		[][]string{{"git", "clone", "--mirror", w.spec.RemoteURL, w.spec.Base}})
+	return err
+}
 
 // PreLock locks the workspace and runs the PRE pipeline (freshen the bare base
 // from upstream). On success it returns an unlock func — the caller MUST hold the
@@ -43,13 +78,17 @@ func gitEnv() []string { return []string{"GIT_TERMINAL_PROMPT=0"} }
 // returns the error.
 func (w *Workspace) PreLock(ctx context.Context, branch string) (func(), error) {
 	w.mu.Lock()
+	env := gitEnv()
+	if ce, err := w.credEnv(); err == nil {
+		env = append(ce, env...)
+	}
 	vars := Vars{Branch: branch, Remote: w.spec.Remote, BaseRef: w.spec.DefaultBranch}
 	argv, err := Build(w.spec.PreSteps, vars)
 	if err != nil {
 		w.mu.Unlock()
 		return nil, err
 	}
-	if _, err := w.runner.Run(ctx, w.spec.Base, gitEnv(), argv); err != nil {
+	if _, err := w.runner.Run(ctx, w.spec.Base, env, argv); err != nil {
 		w.mu.Unlock()
 		return nil, err
 	}
@@ -61,11 +100,15 @@ func (w *Workspace) PreLock(ctx context.Context, branch string) (func(), error) 
 func (w *Workspace) Publish(ctx context.Context, branch, sandboxRemote string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	env := gitEnv()
+	if ce, err := w.credEnv(); err == nil {
+		env = append(ce, env...)
+	}
 	vars := Vars{Branch: branch, Remote: w.spec.Remote, BaseRef: w.spec.DefaultBranch, SandboxRemote: sandboxRemote}
 	argv, err := Build(w.spec.PublishSteps, vars)
 	if err != nil {
 		return err
 	}
-	_, err = w.runner.Run(ctx, w.spec.Base, gitEnv(), argv)
+	_, err = w.runner.Run(ctx, w.spec.Base, env, argv)
 	return err
 }

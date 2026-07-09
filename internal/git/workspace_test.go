@@ -63,3 +63,26 @@ func TestWorkspace_PreLockAndPublish(t *testing.T) {
 	out, _ := cmd.CombinedOutput()
 	require.Contains(t, string(out), "agent/x")
 }
+
+func TestWorkspace_EnsureBase_ClonesMirror(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	upstream := filepath.Join(root, "upstream.git")
+	work := filepath.Join(root, "work")
+	gitCmd(t, root, "init", "--bare", upstream)
+	gitCmd(t, root, "clone", upstream, work)
+	gitCmd(t, work, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
+	gitCmd(t, work, "push", "origin", "HEAD:main")
+
+	base := filepath.Join(root, "acme.git")
+	w := New(Spec{
+		Name: "acme", Base: base, RemoteURL: upstream, DefaultBranch: "main",
+		Allowlist: []string{"git"},
+	})
+	require.NoError(t, w.EnsureBase(context.Background()))
+	// base now exists as a mirror and carries refs/heads/main:
+	out, err := exec.Command("git", "--git-dir", base, "rev-parse", "refs/heads/main").CombinedOutput()
+	require.NoError(t, err, string(out))
+}
