@@ -50,8 +50,11 @@ dispatched from the existing `publish_work.go` switch:
 
 `Env` gains three fields the new paths need:
 
-- `APIBase string` — the REST base URL (derivation below); unused by Gerrit.
+- `APIBase string` — the REST base URL (GitHub/GitLab only; empty for Gerrit).
 - `Title string`, `Body string` — from the existing `PublishWorkRequest.title/body`.
+
+The idempotency key `(workspace, source, target)` is available from the workspace
+`RemoteURL()` plus the `source`/`target` args — no sandbox id is threaded in.
 
 PR and MR share one small internal `restClient{http *http.Client, base, token
 string, provider Provider}`. Gerrit uses the `git.Runner` only. A `Strategy`
@@ -59,34 +62,73 @@ interface / registry is deliberately **not** introduced — five strategies in a
 switch do not justify it. Add one only if a future provider needs runtime
 registration.
 
+### Idempotency key + preconditions (checked before the base is mutated)
+
+- **Idempotency key** = `(workspace, source, target)`, sandbox-independent
+  (ADR-0021). All three strategies deliver exactly one PR / MR / change per key;
+  a re-publish updates it in place. GitHub already enforces this for PRs
+  (`state=open` on `(head, base)`); Gerrit gets it from the derived Change-Id.
+- **PR / MR require an HTTPS token.** If `cred.Token == ""` (an SSH-only
+  workspace), reject with `FailedPrecondition: REST strategy requires an HTTPS
+  token credential`. Gerrit is exempt — it delivers over `git push` and works with
+  whichever transport the workspace uses.
+- **PR / MR parse the repo identity from `remote_url` up front** (rules below); an
+  unparseable remote is rejected with `InvalidArgument` before any base mutation.
+- Existing P1 gates still run first: provider `Supports(strategy)`, `AllowPush`
+  for every non-`patch` strategy, and the source-branch resolution.
+
 ### Per-strategy behavior
 
 **PR / MR** — push then REST:
 
 1. Push the source branch to origin, reusing P1's `Branch` push (`source:source`).
-2. `restClient`:
+2. `restClient` (repo identity parsed from `remote_url` — see below):
    - GitHub: `GET /repos/{owner}/{repo}/pulls?head={owner}:{source}&base={target}&state=open`.
-   - GitLab: `GET /projects/{url-encoded owner/repo}/merge_requests?source_branch={source}&target_branch={target}&state=opened`.
-   - found → `PATCH` (GH) / `PUT` (GL) title+body, return its URL.
-   - none → `POST` create with title+body.
+   - GitLab: `GET /projects/{url-encoded project path}/merge_requests?source_branch={source}&target_branch={target}&state=opened`.
+   - **found** → update title/body **only for the fields the request set non-empty**
+     (Q4), `PATCH` (GH) / `PUT` (GL); return its URL.
+   - **none** → `POST` create; `title` = request title or the source tip subject if
+     empty (Q4); `body` = request body (may be empty).
 3. `Result{Ref: "refs/heads/"+source, DeliveryURL: html_url/web_url}`.
+
+Repo identity is parsed per provider from `remote_url` (both `https://host/…` and
+`git@host:…` forms, trailing `.git` stripped):
+- **GitHub:** first two path segments → `{owner}/{repo}`.
+- **GitLab:** the *whole* remaining path, URL-encoded, is the project (handles
+  nested subgroups `group/subgroup/repo`).
+- Fewer than 2 segments (GitHub) or empty path (GitLab) → early
+  `InvalidArgument: cannot parse owner/repo from remote_url`.
 
 Only **same-repo** is supported: the head branch is pushed to origin and the PR
 head is `{owner}:{source}`. Cross-fork (head from a separate fork remote) is out
 of scope.
 
-**Gerrit** — push a review ref with a stable Change-Id:
+**Gerrit** — push one squashed change with a stable Change-Id:
 
-1. In a temp worktree checked out at the bundled source tip:
-   - if the tip commit message already has a `Change-Id:` trailer, keep it;
-   - else `git commit --amend --no-edit --trailer "Change-Id: I<sha1(workspace \0 sandbox \0 source)>"`.
-2. `git push origin HEAD:refs/for/<target>`.
-3. Parse the change URL from push stderr (Gerrit prints it). `Result{ChangeID,
-   DeliveryURL}`.
+Gerrit creates one change *per commit* pushed to `refs/for/<target>`, and every
+such commit must carry its own `Change-Id` trailer or the whole push is rejected.
+To deliver "one change per `(workspace, source, target)`" (the Q1 unit) we squash
+the branch to a single snapshot commit:
 
-The Change-Id is deterministic in the workspace name, sandbox id, and source
-branch, so a second publish amends the same change (a new patchset), not a new
-one. The temp worktree keeps the amend off the mirror base's refs.
+1. In a temp worktree off the base, build one commit holding `source`'s tree
+   parented on `target`'s tip: `git commit-tree source^{tree} -p <target> -m <msg>`.
+   - `<msg>` = request `title`/`body`, or the source tip subject if empty (Q4),
+     with the `Change-Id` trailer appended.
+   - `Change-Id = I<sha1(remoteURL \0 source \0 target)>` — deterministic in the
+     idempotency key, **not** the sandbox, so a re-publish lands a new patchset on
+     the same change.
+   - Inject a git identity for the commit (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`): name
+     = the audit actor resolved in `PublishWork` (`"system"` fallback), email =
+     a fixed placeholder (`noreply@sbx-swarm.local`). The base is a bare repo with
+     no `user.email`, so without this `commit-tree` errors.
+2. `git push origin <commit>:refs/for/<target>`.
+3. `Result{ChangeID, DeliveryURL}`. `ChangeID` is always the injected value.
+   `DeliveryURL` is best-effort: parse the first `remote: <url>` line from push
+   stderr; if the format doesn't match (Gerrit versions vary), leave it empty.
+
+The snapshot is a tree copy, not a merge, so it never conflicts. A pre-existing
+`Change-Id` on the source tip is not consulted — the squash message is authoritative
+and its Change-Id is derived from the key.
 
 ### Config + base-URL derivation
 
@@ -96,8 +138,8 @@ one. The temp worktree keeps the amend off the mirror base's refs.
   - GitHub: `github.com` → `https://api.github.com`; any other host `H` →
     `https://H/api/v3` (GitHub Enterprise).
   - GitLab: host `H` → `https://H/api/v4` (public and self-hosted alike).
-  - Gerrit: `https://H` (the Gerrit host; used only for URL parsing, no REST call).
-  - Plain: `""` (REST strategies are unsupported on plain, gated upstream).
+  - Gerrit / Plain: `""` — Gerrit delivers over `git push` (no REST), and plain has
+    no REST strategy. `api_base` is a GitHub/GitLab-only concept.
 - REST auth uses the **same token** with a per-provider header: GitHub
   `Authorization: Bearer <token>`; GitLab `PRIVATE-TOKEN: <token>`.
 - TLS trust: `cred.CAPath` → `tls.Config.RootCAs`; empty → system roots.
@@ -111,9 +153,13 @@ one. The temp worktree keeps the amend off the mirror base's refs.
   request, headers, or URL query.
 - HTTP → gRPC status: 401/403 → `PermissionDenied`, 404 → `FailedPrecondition`,
   422 → `InvalidArgument`, 5xx → `Unavailable`, other non-2xx → `Internal`.
-- Gate-before-mutation is preserved: an unsupported or (transitionally)
-  unimplemented strategy is still rejected before the base is fetched/pushed.
-- No retries: one attempt inside the existing publish timeout; fail-closed.
+- Gate-before-mutation is preserved: unsupported strategy, missing token (PR/MR),
+  or unparseable remote are all rejected before the base is fetched/pushed.
+- No retries: one attempt inside the existing publish timeout; fail-closed. Safe
+  under partial failure — if the branch push succeeds but the REST call fails, a
+  re-publish re-pushes idempotently, finds no open PR/MR, and creates one.
+- The result does **not** distinguish created vs updated (same URL either way); add
+  a flag only if the Agency asks for it.
 
 ## Testing
 
@@ -121,8 +167,9 @@ one. The temp worktree keeps the amend off the mirror base's refs.
   first publish `POST`s, the second `PATCH`/`PUT`s the same PR/MR — no duplicate.
 - A generated self-signed cert served by the fake, trusted via `ca_path`, proving
   `CAPath` → `RootCAs` works and that a wrong/absent CA fails closed.
-- A Gerrit fake = a bare repo accepting `refs/for/*`; assert one change across two
-  pushes (stable Change-Id) and that a pre-existing Change-Id is respected.
+- A Gerrit fake = a bare repo accepting `refs/for/*`; assert one squashed change
+  across two pushes (stable derived Change-Id), and that a multi-commit source
+  still produces exactly one change.
 - Extend the credential leak test to the REST paths (create, update, and a forced
   REST error), asserting the token and its base64 form never leak.
 - `//go:build integration` real smoke behind env tokens (`GH_*`, `GL_*`,

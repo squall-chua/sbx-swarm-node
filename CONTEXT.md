@@ -134,6 +134,20 @@ default branch (the detached-HEAD fallback). Always the sandbox's own state — 
 supplies.
 _Avoid_: target branch (that is the push destination), recorded branch (bare)
 
+**Publish deliverable**:
+The single upstream artifact a PublishWork produces — a pull request, merge request, or Gerrit change.
+It is identified by the tuple **(workspace, Source branch, target)**, not by the sandbox: re-publishing
+the same Source branch to the same target updates the same deliverable in place rather than making a new
+one, even from a different sandbox (ADR-0021). GitHub enforces this for pull requests; Gerrit gets it from
+a derived Change-Id.
+_Avoid_: PR (when you mean any of the three), artifact (that is the caller's downstream object)
+
+**Change-Id**:
+Gerrit's `Change-Id: I<hex>` commit-message trailer that ties every re-push to one Gerrit change (a new
+patchset) instead of opening a new one. PublishWork derives it deterministically from the Publish
+deliverable key, so it is stable across re-publishes and independent of the sandbox.
+_Avoid_: change number (that is Gerrit's separate numeric id), commit id
+
 **Activity** (sandbox):
 What resets a sandbox's idle clock for Idle-stop. Two kinds count: a **control-plane** interaction —
 Provision (create), Start, Exec, Agent run, File transfer upload, or an explicit KeepAlive ping — and observed **work**, i.e.
