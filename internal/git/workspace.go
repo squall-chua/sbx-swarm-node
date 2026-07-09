@@ -128,16 +128,21 @@ func (w *Workspace) Publish(ctx context.Context, branch, sandboxRemote string) e
 	return err
 }
 
-// FetchFromBundle fetches branch from a git bundle file into the base, under the
-// workspace lock, so a strategy can push it. Reuses the credential env for parity.
-func (w *Workspace) FetchFromBundle(ctx context.Context, branch, bundlePath string) error {
+// FetchFromBundle locks the workspace, fetches branch from a git bundle file into
+// the base, and returns the unlock func (like PreLock) so the caller runs its push
+// strategy against the base WHILE STILL HOLDING THE LOCK — fetch+push must be atomic
+// on a shared base (a concurrent publish or PRE prune must not interleave). On fetch
+// error it unlocks and returns the error.
+func (w *Workspace) FetchFromBundle(ctx context.Context, branch, bundlePath string) (func(), error) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	env := gitEnv()
 	if ce, err := w.credEnv(); err == nil {
 		env = append(ce, env...)
 	}
-	_, err := w.runner.Run(ctx, w.spec.Base, env,
-		[][]string{{"git", "fetch", bundlePath, "+refs/heads/" + branch + ":refs/heads/" + branch}})
-	return err
+	if _, err := w.runner.Run(ctx, w.spec.Base, env,
+		[][]string{{"git", "fetch", bundlePath, "+refs/heads/" + branch + ":refs/heads/" + branch}}); err != nil {
+		w.mu.Unlock()
+		return nil, err
+	}
+	return w.mu.Unlock, nil
 }

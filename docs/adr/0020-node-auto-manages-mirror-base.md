@@ -23,3 +23,11 @@ Trade-off: the node now owns base creation and its on-disk layout for provider w
 than an operator-prepared `host_path` the operator fully controls. An operator who wants to seed a
 base from an existing local clone, or place it on a specific volume, must still set `host_path`
 explicitly — omitting it commits to the node's managed directory and layout.
+
+## P1 status
+
+`EnsureBase` is implemented and unit-tested, but its automatic call-site wiring (calling it before
+the first PRE fetch / publish) is deferred to a follow-up. Until that wiring lands, a provider
+workspace still needs an operator-prepared `host_path` — otherwise the mounted base won't exist at
+first use, even though config validation accepts an empty `host_path` when `remote_url` is set. The
+auto-managed-base mechanism is complete; only its wiring is pending.

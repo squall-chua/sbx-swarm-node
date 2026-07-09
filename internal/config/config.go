@@ -55,7 +55,7 @@ type ProvisionLimits struct {
 // WorkspaceConfig is a named host directory advertised for mounting/cloning.
 type WorkspaceConfig struct {
 	Name     string     `yaml:"name"`
-	HostPath string     `yaml:"host_path"`
+	HostPath string     `yaml:"host_path"` // P1: still set host_path; auto-mirror base wiring (ADR-0020) is a follow-up
 	ReadOnly bool       `yaml:"read_only"`
 	Git      *GitConfig `yaml:"git,omitempty"` // non-nil => git-backed (clone-only, ADR-0015)
 }

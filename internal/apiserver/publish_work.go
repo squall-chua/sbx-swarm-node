@@ -26,6 +26,9 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 	if r.Strategy != "patch" && !ws.AllowPush() {
 		return nil, status.Error(codes.FailedPrecondition, "workspace does not allow push")
 	}
+	if r.Strategy != "branch" && r.Strategy != "patch" {
+		return nil, status.Errorf(codes.Unimplemented, "strategy %q not yet implemented", r.Strategy)
+	}
 
 	to := s.publishTimeout
 	if to <= 0 {
@@ -48,9 +51,11 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 	defer cleanup()
 
 	runEnv, _ := ws.Cred().Env(ws.RemoteURL())
-	if err := ws.FetchFromBundle(pubCtx, source, bundlePath); err != nil { // adds source to the base
+	unlock, err := ws.FetchFromBundle(pubCtx, source, bundlePath) // adds source to the base
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "publish-work fetch: %v", err)
 	}
+	defer unlock() // hold the workspace lock across the strategy push — fetch+push atomic
 	env := gitprovider.Env{Dir: ws.Base(), RunEnv: runEnv, Remote: ws.RemoteName(), RemoteURL: ws.RemoteURL(), Cred: ws.Cred()}
 	runner := git.NewRunner([]string{"git"})
 
