@@ -3,6 +3,7 @@ package apiserver
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -162,7 +163,12 @@ func TestPublishWork_NoCredentialLeak(t *testing.T) {
 		"audit entries":         fmt.Sprint(auditList),
 		"persisted record":      fmt.Sprint(mustGet),
 	}
+	// Assert BOTH the raw token and its wire form (the base64 Basic-auth header the
+	// token is actually injected as) are absent — a surface that dumped the git env
+	// value would leak the encoded form, not the raw token.
+	b64 := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + tok))
 	for name, sfc := range surfaces {
-		require.NotContains(t, sfc, tok, "credential leaked into outward surface: %s", name)
+		require.NotContains(t, sfc, tok, "raw credential leaked into outward surface: %s", name)
+		require.NotContains(t, sfc, b64, "base64 credential header leaked into outward surface: %s", name)
 	}
 }

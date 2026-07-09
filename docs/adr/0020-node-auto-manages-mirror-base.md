@@ -26,8 +26,8 @@ explicitly — omitting it commits to the node's managed directory and layout.
 
 ## P1 status
 
-`EnsureBase` is implemented and unit-tested, but its automatic call-site wiring (calling it before
-the first PRE fetch / publish) is deferred to a follow-up. Until that wiring lands, a provider
-workspace still needs an operator-prepared `host_path` — otherwise the mounted base won't exist at
-first use, even though config validation accepts an empty `host_path` when `remote_url` is set. The
-auto-managed-base mechanism is complete; only its wiring is pending.
+`EnsureBase` is implemented, unit-tested, and **wired into both runtime call sites**: it runs before
+the PRE fetch in `ProvisionLocal` (sandbox create) and before the bundle in `PublishWork`. A provider
+workspace with `remote_url` and no `host_path` is therefore created on first use from the node-managed
+directory — no operator-prepared base is required. (P2 adds the PR/MR/Gerrit REST strategies; the
+mirror-base mechanism itself is complete in P1.)
