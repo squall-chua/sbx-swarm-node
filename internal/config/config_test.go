@@ -235,6 +235,14 @@ func TestValidate_GitWorkspaceNeedsHostPath(t *testing.T) {
 	require.ErrorContains(t, cfg.Validate(), "host_path")
 }
 
+func TestValidate_GitWorkspaceProviderWithoutHostPathAllowed(t *testing.T) {
+	// ADR-0020: a provider workspace (remote_url set) may omit host_path — the
+	// node auto-manages the mirror base.
+	cfg := Default()
+	cfg.Workspaces = []WorkspaceConfig{{Name: "repo", Git: &GitConfig{RemoteURL: "https://github.com/acme/app"}}}
+	require.NoError(t, cfg.Validate())
+}
+
 func TestIdleTimeout_ValidateAndDuration(t *testing.T) {
 	c := Default()
 	require.Equal(t, "", c.IdleTimeout) // disabled by default

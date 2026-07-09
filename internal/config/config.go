@@ -250,8 +250,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("default_strategy must be one of least-loaded|bin-pack|spread, got %q", c.DefaultStrategy)
 	}
 	for _, w := range c.Workspaces {
-		if w.Git != nil && w.HostPath == "" {
-			return fmt.Errorf("workspace %q is git-backed but has no host_path", w.Name)
+		if w.Git != nil && w.HostPath == "" && w.Git.RemoteURL == "" {
+			return fmt.Errorf("workspace %q is git-backed but has neither host_path nor remote_url", w.Name)
 		}
 	}
 	switch c.Backend {
