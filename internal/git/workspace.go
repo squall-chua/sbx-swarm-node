@@ -61,7 +61,10 @@ func (w *Workspace) credEnv() ([]string, error) { return w.spec.Cred.Env(w.spec.
 
 // EnsureBase creates the mirror base from RemoteURL on first use (ADR-0020). No-op
 // if the base already has a git dir, or if RemoteURL is empty (legacy operator-
-// prepared base). Runs under the workspace lock with the credential env.
+// prepared base). Runs under the workspace lock with the credential env. The
+// clone's remote.origin.mirror flag is cleared afterward (keeping the all-refs
+// mirror fetch refspec) so downstream refspec pushes (Publish, gitprovider.Branch)
+// aren't rejected by a mirror-mode origin.
 func (w *Workspace) EnsureBase(ctx context.Context) error {
 	if w.spec.RemoteURL == "" {
 		return nil
@@ -76,7 +79,10 @@ func (w *Workspace) EnsureBase(ctx context.Context) error {
 		return err
 	}
 	_, err = w.runner.Run(ctx, filepath.Dir(w.spec.Base), env,
-		[][]string{{"git", "clone", "--mirror", w.spec.RemoteURL, w.spec.Base}})
+		[][]string{
+			{"git", "clone", "--mirror", w.spec.RemoteURL, w.spec.Base},
+			{"git", "-C", w.spec.Base, "config", "remote.origin.mirror", "false"},
+		})
 	return err
 }
 

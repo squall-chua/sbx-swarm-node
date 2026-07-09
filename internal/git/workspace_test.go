@@ -86,3 +86,34 @@ func TestWorkspace_EnsureBase_ClonesMirror(t *testing.T) {
 	out, err := exec.Command("git", "--git-dir", base, "rev-parse", "refs/heads/main").CombinedOutput()
 	require.NoError(t, err, string(out))
 }
+
+// TestWorkspace_EnsureBase_AllowsRefspecPush guards against a mirror base
+// rejecting refspec pushes (git errors on "git push origin src:dst" when
+// remote.origin.mirror=true). EnsureBase must clear the mirror flag after
+// cloning so downstream Publish/Branch pushes work.
+func TestWorkspace_EnsureBase_AllowsRefspecPush(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	upstream := filepath.Join(root, "upstream.git")
+	work := filepath.Join(root, "work")
+	gitCmd(t, root, "init", "--bare", upstream)
+	gitCmd(t, root, "clone", upstream, work)
+	gitCmd(t, work, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
+	gitCmd(t, work, "push", "origin", "HEAD:main")
+
+	base := filepath.Join(root, "acme.git")
+	w := New(Spec{
+		Name: "acme", Base: base, RemoteURL: upstream, DefaultBranch: "main",
+		Allowlist: []string{"git"},
+	})
+	require.NoError(t, w.EnsureBase(context.Background()))
+
+	// Refspec push under a new ref name must succeed against upstream.
+	out, err := exec.Command("git", "--git-dir", base, "push", "origin", "refs/heads/main:refs/heads/pushed-branch").CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	out, err = exec.Command("git", "--git-dir", upstream, "rev-parse", "refs/heads/pushed-branch").CombinedOutput()
+	require.NoError(t, err, string(out))
+}
