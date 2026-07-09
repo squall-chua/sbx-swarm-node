@@ -42,6 +42,12 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 		return nil, err
 	}
 
+	// Ensure the node-managed mirror base exists (ADR-0020) before we touch it.
+	// No-op for an operator-prepared base or a legacy workspace with no remote_url.
+	if err := ws.EnsureBase(pubCtx); err != nil {
+		return nil, status.Errorf(codes.Internal, "publish-work ensure base: %v", err)
+	}
+
 	// Bundle the source branch out of the LIVE sandbox into the base under lock,
 	// then run the strategy from the base.
 	bundlePath, cleanup, err := s.bundleBranches(pubCtx, rec.BackendName, []string{source})
@@ -50,7 +56,10 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 	}
 	defer cleanup()
 
-	runEnv, _ := ws.Cred().Env(ws.RemoteURL())
+	runEnv, err := ws.Cred().Env(ws.RemoteURL())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "publish-work credential: %v", err)
+	}
 	unlock, err := ws.FetchFromBundle(pubCtx, source, bundlePath) // adds source to the base
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "publish-work fetch: %v", err)

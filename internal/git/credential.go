@@ -2,6 +2,7 @@ package git
 
 import (
 	"encoding/base64"
+	"strings"
 )
 
 // Credential is a workspace's node-side upstream credential + trust (ADR-0019).
@@ -30,11 +31,12 @@ func (c Credential) Env(remoteURL string) ([]string, error) {
 		)
 	}
 
-	// SSH key + host-key policy.
+	// SSH key + host-key policy. git runs GIT_SSH_COMMAND through the shell, so the
+	// operator-supplied paths are shell-quoted to survive spaces or metacharacters.
 	if c.SSHKeyPath != "" {
-		ssh := "ssh -i " + c.SSHKeyPath + " -o IdentitiesOnly=yes"
+		ssh := "ssh -i " + shQuote(c.SSHKeyPath) + " -o IdentitiesOnly=yes"
 		if c.SSHKnownHostsPath != "" {
-			ssh += " -o StrictHostKeyChecking=yes -o UserKnownHostsFile=" + c.SSHKnownHostsPath
+			ssh += " -o StrictHostKeyChecking=yes -o UserKnownHostsFile=" + shQuote(c.SSHKnownHostsPath)
 		} else {
 			ssh += " -o StrictHostKeyChecking=accept-new"
 		}
@@ -46,4 +48,11 @@ func (c Credential) Env(remoteURL string) ([]string, error) {
 		env = append(env, "GIT_SSL_CAINFO="+c.CAPath)
 	}
 	return env, nil
+}
+
+// shQuote single-quotes s for safe embedding in GIT_SSH_COMMAND, which git runs via
+// the shell. Single quotes disable every shell metacharacter; an embedded single
+// quote is closed, escaped, and reopened ('\'').
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

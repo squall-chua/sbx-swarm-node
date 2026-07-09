@@ -39,16 +39,15 @@ func Derive(remoteURL, explicit string) Provider {
 // hostOf extracts the host from an HTTPS or scp-like SSH URL.
 func hostOf(remote string) string {
 	remote = strings.TrimSpace(remote)
-	if i := strings.Index(remote, "://"); i >= 0 {
+	if strings.Contains(remote, "://") {
 		if u, err := url.Parse(remote); err == nil {
 			return strings.ToLower(u.Hostname())
 		}
 	}
 	// scp-like: git@host:path
-	if at := strings.Index(remote, "@"); at >= 0 {
-		rest := remote[at+1:]
-		if colon := strings.Index(rest, ":"); colon >= 0 {
-			return strings.ToLower(rest[:colon])
+	if _, after, ok := strings.Cut(remote, "@"); ok {
+		if host, _, ok := strings.Cut(after, ":"); ok {
+			return strings.ToLower(host)
 		}
 	}
 	return ""

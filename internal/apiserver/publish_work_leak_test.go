@@ -155,7 +155,9 @@ func TestPublishWork_NoCredentialLeak(t *testing.T) {
 		"PublishResult(patch)":  rp.String(),
 		"Patch bytes":           string(rp.Patch),
 		"error string":          ferr.Error(),
-		"slog logs":             logs.String(),
+		// Nothing on the PublishWork path logs via slog today; this is a forward
+		// regression-guard that catches a future addition that logs the credential.
+		"slog logs": logs.String(),
 		"captured events":       fmt.Sprint(cp.calls),
 		"audit entries":         fmt.Sprint(auditList),
 		"persisted record":      fmt.Sprint(mustGet),

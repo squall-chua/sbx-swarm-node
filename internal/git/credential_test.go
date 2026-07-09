@@ -28,9 +28,19 @@ func TestCredential_Env_SSHKey(t *testing.T) {
 	require.NoError(t, err)
 	joined := strings.Join(env, "\n")
 	require.Contains(t, joined, "GIT_SSH_COMMAND=")
-	require.Contains(t, joined, "-i /k/id")
+	require.Contains(t, joined, "-i '/k/id'")
 	require.Contains(t, joined, "StrictHostKeyChecking=yes")
-	require.Contains(t, joined, "UserKnownHostsFile=/k/known_hosts")
+	require.Contains(t, joined, "UserKnownHostsFile='/k/known_hosts'")
+}
+
+func TestCredential_Env_SSHKey_QuotesPathsWithSpaces(t *testing.T) {
+	c := Credential{SSHKeyPath: "/home/op user/id", SSHKnownHostsPath: "/home/op user/known_hosts"}
+	env, err := c.Env("ssh://git@host/repo")
+	require.NoError(t, err)
+	joined := strings.Join(env, "\n")
+	// A path with a space must be shell-quoted as one argument, not split.
+	require.Contains(t, joined, "-i '/home/op user/id'")
+	require.Contains(t, joined, "UserKnownHostsFile='/home/op user/known_hosts'")
 }
 
 func TestCredential_Env_SSHKey_NoKnownHosts_AcceptNew(t *testing.T) {

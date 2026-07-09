@@ -59,6 +59,17 @@ func gitEnv() []string { return []string{"GIT_TERMINAL_PROMPT=0"} }
 // GIT_TERMINAL_PROMPT guard. Errors only on a malformed credential.
 func (w *Workspace) credEnv() ([]string, error) { return w.spec.Cred.Env(w.spec.RemoteURL) }
 
+// runEnv is the environment for a git child run in the base: the credential env
+// (which already carries the GIT_TERMINAL_PROMPT guard), falling back to the bare
+// guard if the credential is malformed.
+func (w *Workspace) runEnv() []string {
+	env, err := w.credEnv()
+	if err != nil {
+		return gitEnv()
+	}
+	return env
+}
+
 // EnsureBase creates the mirror base from RemoteURL on first use (ADR-0020). No-op
 // if the base already has a git dir, or if RemoteURL is empty (legacy operator-
 // prepared base). Runs under the workspace lock with the credential env. The
@@ -78,7 +89,11 @@ func (w *Workspace) EnsureBase(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = w.runner.Run(ctx, filepath.Dir(w.spec.Base), env,
+	parent := filepath.Dir(w.spec.Base)
+	if err := os.MkdirAll(parent, 0o755); err != nil { // node-managed root may not exist yet
+		return err
+	}
+	_, err = w.runner.Run(ctx, parent, env,
 		[][]string{
 			{"git", "clone", "--mirror", w.spec.RemoteURL, w.spec.Base},
 			{"git", "-C", w.spec.Base, "config", "remote.origin.mirror", "false"},
@@ -93,10 +108,7 @@ func (w *Workspace) EnsureBase(ctx context.Context) error {
 // returns the error.
 func (w *Workspace) PreLock(ctx context.Context, branch string) (func(), error) {
 	w.mu.Lock()
-	env := gitEnv()
-	if ce, err := w.credEnv(); err == nil {
-		env = append(ce, env...)
-	}
+	env := w.runEnv()
 	vars := Vars{Branch: branch, Remote: w.spec.Remote, BaseRef: w.spec.DefaultBranch}
 	argv, err := Build(w.spec.PreSteps, vars)
 	if err != nil {
@@ -115,10 +127,7 @@ func (w *Workspace) PreLock(ctx context.Context, branch string) (func(), error) 
 func (w *Workspace) Publish(ctx context.Context, branch, sandboxRemote string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	env := gitEnv()
-	if ce, err := w.credEnv(); err == nil {
-		env = append(ce, env...)
-	}
+	env := w.runEnv()
 	vars := Vars{Branch: branch, Remote: w.spec.Remote, BaseRef: w.spec.DefaultBranch, SandboxRemote: sandboxRemote}
 	argv, err := Build(w.spec.PublishSteps, vars)
 	if err != nil {
@@ -135,10 +144,7 @@ func (w *Workspace) Publish(ctx context.Context, branch, sandboxRemote string) e
 // error it unlocks and returns the error.
 func (w *Workspace) FetchFromBundle(ctx context.Context, branch, bundlePath string) (func(), error) {
 	w.mu.Lock()
-	env := gitEnv()
-	if ce, err := w.credEnv(); err == nil {
-		env = append(ce, env...)
-	}
+	env := w.runEnv()
 	if _, err := w.runner.Run(ctx, w.spec.Base, env,
 		[][]string{{"git", "fetch", bundlePath, "+refs/heads/" + branch + ":refs/heads/" + branch}}); err != nil {
 		w.mu.Unlock()
