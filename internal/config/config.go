@@ -61,8 +61,9 @@ type WorkspaceConfig struct {
 }
 
 // GitConfig configures a git-backed workspace's pre/publish pipelines (ADR-0003).
-// Credentials are operator host-side git config (ADR-0014) — there are no auth
-// fields here.
+// Legacy workspaces use operator host-side git config for credentials (ADR-0014);
+// registered provider workspaces carry a node-side credential in the fields below
+// (ADR-0019).
 type GitConfig struct {
 	Remote        string     `yaml:"remote"`
 	DefaultBranch string     `yaml:"default_branch"`
