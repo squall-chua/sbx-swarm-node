@@ -214,6 +214,21 @@ func TestGitConfig_WithDefaults(t *testing.T) {
 	require.Equal(t, []string{"git"}, g2.ExecAllowlist)
 }
 
+func TestGitConfig_ProviderFields(t *testing.T) {
+	g := GitConfig{
+		RemoteURL: "https://github.com/acme/app",
+		Provider:  "github",
+		TokenEnv:  "ACME_GH_TOKEN",
+		CAPath:    "/etc/sbx/acme-ca.pem",
+	}.WithDefaults()
+	require.Equal(t, "https://github.com/acme/app", g.RemoteURL)
+	require.Equal(t, "github", g.Provider)
+	require.Equal(t, "ACME_GH_TOKEN", g.TokenEnv)
+	// back-compat defaults still applied:
+	require.Equal(t, "origin", g.Remote)
+	require.Equal(t, []string{"git", "git-lfs"}, g.ExecAllowlist)
+}
+
 func TestValidate_GitWorkspaceNeedsHostPath(t *testing.T) {
 	cfg := Default()
 	cfg.Workspaces = []WorkspaceConfig{{Name: "repo", Git: &GitConfig{}}}

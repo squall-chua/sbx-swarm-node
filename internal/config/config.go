@@ -70,6 +70,15 @@ type GitConfig struct {
 	PreSteps      [][]string `yaml:"pre_steps"`
 	PublishSteps  [][]string `yaml:"publish_steps"`
 	ExecAllowlist []string   `yaml:"exec_allowlist"`
+
+	// Registered provider workspace (ADR-0019/0020). All optional; empty keeps
+	// legacy ambient-credential behavior (ADR-0014).
+	RemoteURL         string `yaml:"remote_url"`           // HTTPS or SSH upstream
+	Provider          string `yaml:"provider"`             // github|gitlab|gerrit|plain; "" => derive
+	TokenEnv          string `yaml:"token_env"`            // env var holding the HTTPS token
+	SSHKeyPath        string `yaml:"ssh_key_path"`         // SSH private key path
+	SSHKnownHostsPath string `yaml:"ssh_known_hosts_path"` // pins SSH host key; "" => accept-new
+	CAPath            string `yaml:"ca_path"`              // internal-CA / self-signed PEM (HTTPS only)
 }
 
 // WithDefaults returns a copy with unset fields filled with built-in defaults.
