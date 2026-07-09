@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -44,4 +45,26 @@ func TestBranch_PushesToRemote(t *testing.T) {
 	// upstream now has feature-x:
 	out, err := exec.Command("git", "--git-dir", upstream, "rev-parse", "refs/heads/feature-x").CombinedOutput()
 	require.NoError(t, err, string(out))
+}
+
+func TestPatch_ReturnsDiffBytes(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "r")
+	gitCmd(t, root, "init", repo)
+	gitCmd(t, repo, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "--allow-empty", "-m", "base")
+	gitCmd(t, repo, "branch", "-M", "main")
+	gitCmd(t, repo, "checkout", "-b", "work")
+	// a real change so format-patch emits a patch:
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "f.txt"), []byte("hi"), 0o644))
+	gitCmd(t, repo, "add", "f.txt")
+	gitCmd(t, repo, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-m", "add f")
+
+	r := git.NewRunner([]string{"git"})
+	res, err := Patch(context.Background(), r, Env{Dir: repo}, "work", "main")
+	require.NoError(t, err)
+	require.Contains(t, string(res.Patch), "add f")
+	require.Empty(t, res.Ref)
 }

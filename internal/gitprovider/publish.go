@@ -45,7 +45,16 @@ func Branch(ctx context.Context, r *git.Runner, e Env, source, target string) (R
 	return Result{Ref: "refs/heads/" + dest}, nil
 }
 
-// Patch is implemented in Task 8; this stub keeps PublishWork compiling.
+// Patch returns format-patch bytes for target..source (no remote write). If
+// target is empty it falls back to <source>~1..<source> (last commit).
 func Patch(ctx context.Context, r *git.Runner, e Env, source, target string) (Result, error) {
-	return Result{}, fmt.Errorf("todo")
+	rng := source + "~1.." + source
+	if target != "" {
+		rng = target + ".." + source
+	}
+	results, err := r.Run(ctx, e.Dir, e.RunEnv, [][]string{{"git", "format-patch", rng, "--stdout"}})
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Patch: results[len(results)-1].Output}, nil
 }
