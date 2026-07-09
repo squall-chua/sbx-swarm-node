@@ -34,6 +34,7 @@ const (
 	SandboxService_GetStats_FullMethodName       = "/sbxswarm.v1.SandboxService/GetStats"
 	SandboxService_ListBlocked_FullMethodName    = "/sbxswarm.v1.SandboxService/ListBlocked"
 	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
+	SandboxService_PublishWork_FullMethodName    = "/sbxswarm.v1.SandboxService/PublishWork"
 	SandboxService_ListBranches_FullMethodName   = "/sbxswarm.v1.SandboxService/ListBranches"
 	SandboxService_KeepAlive_FullMethodName      = "/sbxswarm.v1.SandboxService/KeepAlive"
 	SandboxService_ListOperations_FullMethodName = "/sbxswarm.v1.SandboxService/ListOperations"
@@ -58,6 +59,7 @@ type SandboxServiceClient interface {
 	GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error)
 	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
 	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
+	PublishWork(ctx context.Context, in *PublishWorkRequest, opts ...grpc.CallOption) (*PublishResult, error)
 	ListBranches(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBranchesResponse, error)
 	KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
 	ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error)
@@ -221,6 +223,16 @@ func (c *sandboxServiceClient) PublishSandbox(ctx context.Context, in *PublishSa
 	return out, nil
 }
 
+func (c *sandboxServiceClient) PublishWork(ctx context.Context, in *PublishWorkRequest, opts ...grpc.CallOption) (*PublishResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishResult)
+	err := c.cc.Invoke(ctx, SandboxService_PublishWork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sandboxServiceClient) ListBranches(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBranchesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListBranchesResponse)
@@ -270,6 +282,7 @@ type SandboxServiceServer interface {
 	GetStats(context.Context, *IdRequest) (*Stats, error)
 	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
 	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
+	PublishWork(context.Context, *PublishWorkRequest) (*PublishResult, error)
 	ListBranches(context.Context, *IdRequest) (*ListBranchesResponse, error)
 	KeepAlive(context.Context, *IdRequest) (*Sandbox, error)
 	ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error)
@@ -327,6 +340,9 @@ func (UnimplementedSandboxServiceServer) ListBlocked(context.Context, *IdRequest
 }
 func (UnimplementedSandboxServiceServer) PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishSandbox not implemented")
+}
+func (UnimplementedSandboxServiceServer) PublishWork(context.Context, *PublishWorkRequest) (*PublishResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishWork not implemented")
 }
 func (UnimplementedSandboxServiceServer) ListBranches(context.Context, *IdRequest) (*ListBranchesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBranches not implemented")
@@ -628,6 +644,24 @@ func _SandboxService_PublishSandbox_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_PublishWork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishWorkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).PublishWork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_PublishWork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).PublishWork(ctx, req.(*PublishWorkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SandboxService_ListBranches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IdRequest)
 	if err := dec(in); err != nil {
@@ -748,6 +782,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PublishSandbox",
 			Handler:    _SandboxService_PublishSandbox_Handler,
+		},
+		{
+			MethodName: "PublishWork",
+			Handler:    _SandboxService_PublishWork_Handler,
 		},
 		{
 			MethodName: "ListBranches",
