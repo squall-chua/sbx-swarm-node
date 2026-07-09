@@ -1,0 +1,89 @@
+package apiserver
+
+import (
+	"context"
+
+	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/git"
+	"github.com/squall-chua/sbx-swarm-node/internal/gitprovider"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// PublishWork synchronously publishes the sandbox's source branch via the chosen
+// strategy against its registered provider workspace (ADR-0019). Source branch is
+// the sandbox's own HEAD (recorded branch on detached HEAD), never caller-supplied.
+func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRequest) (*sbxv1.PublishResult, error) {
+	rec, ws, err := s.gitTarget(ctx, r.Id)
+	if err != nil {
+		return nil, err
+	}
+	prov := gitprovider.Derive(ws.RemoteURL(), ws.Provider())
+	if !prov.Supports(r.Strategy) {
+		return nil, status.Errorf(codes.InvalidArgument, "%s on %s: unsupported (set provider explicitly if self-hosted)", r.Strategy, prov)
+	}
+	if r.Strategy != "patch" && !ws.AllowPush() {
+		return nil, status.Error(codes.FailedPrecondition, "workspace does not allow push")
+	}
+
+	to := s.publishTimeout
+	if to <= 0 {
+		to = defaultPublishTimeout
+	}
+	pubCtx, cancel := context.WithTimeout(ctx, to)
+	defer cancel()
+
+	source, err := s.sourceBranch(pubCtx, rec)
+	if err != nil {
+		return nil, err
+	}
+
+	// Bundle the source branch out of the LIVE sandbox into the base under lock,
+	// then run the strategy from the base.
+	bundlePath, cleanup, err := s.bundleBranches(pubCtx, rec.BackendName, []string{source})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "publish-work bundle: %v", err)
+	}
+	defer cleanup()
+
+	runEnv, _ := ws.Cred().Env(ws.RemoteURL())
+	if err := ws.FetchFromBundle(pubCtx, source, bundlePath); err != nil { // adds source to the base
+		return nil, status.Errorf(codes.Internal, "publish-work fetch: %v", err)
+	}
+	env := gitprovider.Env{Dir: ws.Base(), RunEnv: runEnv, Remote: ws.RemoteName(), RemoteURL: ws.RemoteURL(), Cred: ws.Cred()}
+	runner := git.NewRunner([]string{"git"})
+
+	var res gitprovider.Result
+	switch r.Strategy {
+	case "branch":
+		res, err = gitprovider.Branch(pubCtx, runner, env, source, r.Target)
+	case "patch":
+		res, err = gitprovider.Patch(pubCtx, runner, env, source, r.Target)
+	default:
+		return nil, status.Errorf(codes.Unimplemented, "strategy %q not yet implemented", r.Strategy)
+	}
+	actor := principalFromContext(ctx).userRole
+	if actor == "" {
+		actor = "system"
+	}
+	s.auditPublish(ws.Name(), source, actor, err)
+	if err != nil {
+		s.emit("sandbox.publish_failed", r.Id, map[string]string{"branch": source, "strategy": r.Strategy})
+		return nil, status.Errorf(codes.Internal, "publish-work: %v", err)
+	}
+	s.emit("sandbox.published", r.Id, map[string]string{"branch": source, "strategy": r.Strategy})
+	return &sbxv1.PublishResult{Ref: res.Ref, DeliveryUrl: res.DeliveryURL, ChangeId: res.ChangeID, Patch: res.Patch}, nil
+}
+
+// sourceBranch resolves the publish source: live HEAD when it is a real branch,
+// else the recorded branch (detached-HEAD fallback). Never caller-supplied.
+func (s *SandboxService) sourceBranch(ctx context.Context, rec *sandbox.Record) (string, error) {
+	if b, err := s.agentHeadBranch(ctx, rec.BackendName); err == nil && b != "" {
+		return b, nil
+	}
+	if rec.Spec.Branch != "" {
+		return rec.Spec.Branch, nil
+	}
+	return "", status.Error(codes.FailedPrecondition, "no source branch: detached HEAD and no recorded branch")
+}

@@ -42,6 +42,15 @@ func (w *Workspace) DefaultBranch() string { return w.spec.DefaultBranch }
 func (w *Workspace) Cred() Credential      { return w.spec.Cred }
 func (w *Workspace) Base() string          { return w.spec.Base }
 
+// RemoteName returns the configured upstream remote name in the base, defaulting
+// to "origin".
+func (w *Workspace) RemoteName() string {
+	if w.spec.Remote != "" {
+		return w.spec.Remote
+	}
+	return "origin"
+}
+
 // env disables interactive credential prompts so a missing/expired host-side
 // credential fails fast instead of hanging (ADR-0014: creds are host-side).
 func gitEnv() []string { return []string{"GIT_TERMINAL_PROMPT=0"} }
@@ -110,5 +119,19 @@ func (w *Workspace) Publish(ctx context.Context, branch, sandboxRemote string) e
 		return err
 	}
 	_, err = w.runner.Run(ctx, w.spec.Base, env, argv)
+	return err
+}
+
+// FetchFromBundle fetches branch from a git bundle file into the base, under the
+// workspace lock, so a strategy can push it. Reuses the credential env for parity.
+func (w *Workspace) FetchFromBundle(ctx context.Context, branch, bundlePath string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	env := gitEnv()
+	if ce, err := w.credEnv(); err == nil {
+		env = append(ce, env...)
+	}
+	_, err := w.runner.Run(ctx, w.spec.Base, env,
+		[][]string{{"git", "fetch", bundlePath, "+refs/heads/" + branch + ":refs/heads/" + branch}})
 	return err
 }
