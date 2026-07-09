@@ -90,14 +90,49 @@ Terminal; triggers capacity reclaim and cleanup. Only the owner declares it.
 _Avoid_: unreachable, missing
 
 **Git-backed workspace**:
-A workspace whose `host_path` is a bare/mirror git repo the swarm owns exclusively. Provisioning clones
+A workspace whose backing store is a bare/mirror git repo the swarm owns exclusively. Provisioning clones
 it into the sandbox (SDK `WithClone`), and the owner node runs the workspace's configured pre/publish
-pipelines around the sandbox lifecycle.
+pipelines around the sandbox lifecycle. A **Registered provider workspace** is the newer form: it binds an
+upstream Remote, a node-side Workspace credential, an optional CA trust, and a Provider — all resolved by
+workspace name — and the node auto-manages the mirror base from the Remote rather than an operator-prepared
+`host_path`.
+
+**Provider**:
+The upstream forge kind a Registered provider workspace targets — `github`, `gitlab`, `gerrit`, or `plain`.
+It decides which Publish strategies the workspace supports and how PublishWork talks to it. Set explicitly
+in config, or derived from the Remote for the obvious public hosts only (else `plain`).
+_Avoid_: forge, host, vendor
+
+**Workspace credential**:
+The node-side secret a Registered provider workspace uses to reach its Remote — an HTTPS token or an SSH
+key, plus an optional CA trust — held per workspace and applied host-side to both the git transport and the
+REST API. Never gossiped, never placed in Sandbox-visible state, never returned to the Agency, never logged.
+_Avoid_: token (bare), secret (that is the Sandbox-injected kind), key
 
 **Publish**:
 The post-sandbox step that retrieves the agent's branch from the sandbox clone and pushes it upstream,
-executed via the workspace's configured, node-local pipeline.
+executed via the workspace's configured, node-local pipeline. Branch-only; asynchronous (an Operation).
+Distinct from PublishWork.
 _Avoid_: post, push (bare)
+
+**PublishWork**:
+The synchronous publish of a sandbox's Source branch to its Registered provider workspace via a chosen
+Publish strategy. Blocks until the push / API call completes and returns the result (ref, delivery URL,
+change id, or patch bytes) for the caller to turn into an artifact. Distinct from Publish: synchronous,
+provider-aware, and not an Operation.
+_Avoid_: publish (bare), git publish
+
+**Publish strategy**:
+How PublishWork delivers the Source branch — `branch` (plain push), `patch` (format-patch bytes, no remote
+write), `pull_request` (GitHub), `merge_request` (GitLab), or `gerrit_change`. A strategy the workspace's
+Provider does not support is rejected with a clear error.
+_Avoid_: mode, publish type
+
+**Source branch**:
+The branch PublishWork publishes: the sandbox's live HEAD when that is a real branch, else the recorded
+default branch (the detached-HEAD fallback). Always the sandbox's own state — never a value the caller
+supplies.
+_Avoid_: target branch (that is the push destination), recorded branch (bare)
 
 **Activity** (sandbox):
 What resets a sandbox's idle clock for Idle-stop. Two kinds count: a **control-plane** interaction —

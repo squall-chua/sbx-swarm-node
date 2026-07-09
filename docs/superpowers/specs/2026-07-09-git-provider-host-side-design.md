@@ -68,6 +68,22 @@ Clone-by-name extends the existing `CreateSandbox`, which already carries
 
 ## Design decisions
 
+> Refined during a grilling session (2026-07-09). The nine resolutions are folded
+> into the sections below; the notable divergences from the original task text are
+> flagged inline (source branch, Gerrit mechanism).
+
+### ADR-0020 (new): the node auto-manages the mirror base from remote_url
+
+The clone source stays a host-side bare/mirror repo the sandbox mounts read-only
+(ADR-0015) — the credential never enters the sandbox; it only ever touches the
+host-side fetch. The change from ADR-0014's world: the node **creates and
+initializes** that base itself. On first clone (base dir missing/empty) the node
+runs `git clone --mirror <remote_url>` host-side with the vaulted credential + CA
+into a node-managed data dir (e.g. `<data>/git-workspaces/<name>.git`); thereafter
+it `fetch`es (the existing PRE pipeline). The operator supplies only
+`remote_url` + credential — no manual base prep. `host_path` becomes **optional**
+for a provider workspace (defaults to the managed dir).
+
 ### ADR-0019 (new): registered provider workspaces hold a node-side credential
 
 ADR-0014 says "no credential fields — use ambient host-side git config." That
@@ -100,14 +116,20 @@ workspaces:
   - name: internal-svc
     git:
       remote_url: ssh://git@gerrit.corp.internal:29418/svc
+      provider: gerrit              # explicit: not host-derivable (see Provider derivation)
       ssh_key_path: /etc/sbx/gerrit.key
+      ssh_known_hosts_path: /etc/sbx/gerrit_known_hosts   # optional; pins the SSH host key
       ca_path: /etc/sbx/corp-ca.pem
 ```
 
 - Secret material is referenced, not inlined: `token_env` (env var name),
-  `ssh_key_path`, `ca_path` (file paths). No plaintext token/PEM in the main YAML.
-- `ca_path` is **optional**: omit for public hosts (system trust covers them),
-  provide only for an internal CA / self-signed host.
+  `ssh_key_path`, `ssh_known_hosts_path`, `ca_path` (file paths). No plaintext
+  token/PEM in the main YAML.
+- `ca_path` is **optional** (TLS only): omit for public hosts (system trust covers
+  them), provide only for an internal CA / self-signed **HTTPS** host. It does
+  nothing for SSH — see host-key handling below.
+- `host_path` is **optional** for a provider workspace (the node auto-manages the
+  mirror base, ADR-0020).
 - Existing `remote` / `pre_steps` / `publish_steps` / `allow_push` stay for
   back-compat; the new fields are additive. `allow_push` still gates writes.
 - Read once at boot into an in-memory, per-workspace
@@ -135,7 +157,11 @@ Cloning from A but publishing to a different fork B is out of scope.
 - **HTTPS token** -> injected via `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` /
   `GIT_CONFIG_VALUE_n` env (git >= 2.31) setting
   `http.<url>.extraheader=Authorization: ...`. Keeps the token out of argv / `ps`.
-- **SSH key** -> `GIT_SSH_COMMAND="ssh -i <key> -o IdentitiesOnly=yes -o UserKnownHostsFile=..."`.
+- **SSH key** -> `GIT_SSH_COMMAND="ssh -i <key> -o IdentitiesOnly=yes ..."`.
+- **SSH host key** -> if `ssh_known_hosts_path` is set: `-o StrictHostKeyChecking=yes
+  -o UserKnownHostsFile=<path>` (pinned). If absent: `-o StrictHostKeyChecking=accept-new`
+  (trust-on-first-use, pins the first key seen) with a one-line warning logged.
+  **Never** `StrictHostKeyChecking=no`.
 - **CA (HTTPS)** -> `GIT_SSL_CAINFO=<ca_path>` for git; `tls.Config.RootCAs` for REST.
   TLS verification is never disabled.
 - **REST** -> a per-workspace `*http.Client` built with that CA pool + the
@@ -149,13 +175,33 @@ the credential-env in one place and passes it in.
 The declarative ADR-0003 pipeline cannot express REST calls or Change-Id logic, so
 a new imperative package carries the provider behavior:
 
-- `Derive(remoteURL, explicit) -> Provider` — host-based (github.com -> github,
-  gitlab -> gitlab, explicit/heuristic gerrit, else plain).
+- `Derive(remoteURL, explicit) -> Provider`. **Explicit `provider:` is
+  authoritative** — it always wins. Derivation is best-effort for obvious public
+  hosts **only**: host `== github.com` -> github; host contains `gitlab` -> gitlab;
+  **everything else -> `plain`** (never guess github/gitlab/gerrit for an arbitrary
+  internal host). Self-hosted GitLab/Gerrit therefore *require* an explicit
+  `provider:`; we fail loud rather than mis-derive.
+- `plain` supports only `branch` + `patch`. `pull_request`/`merge_request`/
+  `gerrit_change` against a `plain` (or wrongly-defaulted) workspace hit the same
+  "unsupported strategy for provider" error, whose message tells the operator to
+  set `provider:` explicitly.
 - Per-strategy functions: `branch`, `patch`, `pull_request` (GitHub REST),
-  `merge_request` (GitLab REST), `gerrit_change`.
+  `merge_request` (GitLab REST), `gerrit_change` (git-only, no REST).
 - Each validates that the derived provider supports the requested strategy, else a
   clear error the Agency surfaces as-is (e.g. `gerrit_change on github:
   unsupported`).
+
+### REST base URL (self-hosted / enterprise)
+
+Derived from the remote **host**, independent of transport (an SSH `remote_url`
+still yields an HTTPS API host) — required for the `ca_path` self-hosted case:
+
+- **GitHub:** host `== github.com` -> `https://api.github.com`; else (Enterprise)
+  -> `https://<host>/api/v3`.
+- **GitLab:** `https://<host>/api/v4` (same for gitlab.com and self-hosted).
+- **Gerrit:** no REST client. See the gerrit strategy below.
+
+The REST client carries the per-workspace CA pool + `Authorization` header.
 - Idempotency: PR/MR "find by head -> update in place, else create" (no duplicate);
   gerrit ensures a stable `Change-Id` trailer so a re-publish lands as a new
   patchset on the same Change (no duplicate Change).
@@ -163,10 +209,21 @@ a new imperative package carries the provider behavior:
 ### `PublishWork` handler (in `SandboxService`, next to `PublishSandbox`)
 
 - Add `PublishWork` to `sandbox.proto`, regenerate.
-- Synchronous; blocks until done. Source branch = **`rec.Spec.Branch`** (recorded
-  at clone; never taken from the caller).
-- Reuse the existing `bundleBranches` to pull the recorded branch out of the live
-  sandbox onto a host working area, then dispatch to the provider strategy.
+- Synchronous; blocks until done. **Requires a live sandbox** for all strategies
+  (it bundles the source branch out of the running sandbox); sandbox gone ->
+  `FailedPrecondition`.
+- **Source branch** (never caller-supplied): read live HEAD in the sandbox
+  (`git rev-parse --abbrev-ref HEAD`). If HEAD is a real branch (not detached, not
+  `"HEAD"`) -> **live HEAD**. If detached/undeterminable -> **recorded branch**
+  (`rec.Spec.Branch`, captured at clone). Live HEAD wins so the agent's actual work
+  is published even if it switched branches; the recorded branch is the
+  detached-HEAD safety net. (This refines the original task's "always the recorded
+  branch": the caller still never supplies it, but the sandbox's own HEAD takes
+  precedence over the recorded name.)
+- Reuse the existing `bundleBranches` to pull the source branch out of the live
+  sandbox into the node-managed base under the per-workspace lock, then dispatch to
+  the provider strategy (a temporary worktree off the base for strategies that
+  rewrite a commit, i.e. gerrit).
 - Map result -> `PublishResult{ ref, delivery_url, change_id, patch }`.
 
 ### Clone-by-name (mostly exists)
@@ -188,14 +245,27 @@ derived provider does not support with a clear error.
 - **patch** — `git format-patch` host-side; return bytes in `PublishResult.patch`.
   No remote write. Safe at Job-terminal time because the git-backed workspace
   survives Sandbox teardown.
-- **pull_request** (GitHub) — push the branch, then open a PR (recorded -> target)
-  via GitHub REST. Idempotent: if a PR exists for that head, update it (no
-  duplicate). Return the PR URL in `delivery_url`.
-- **merge_request** (GitLab) — same via the GitLab MR API. Return the MR URL.
-- **gerrit_change** — ensure a stable `Change-Id` trailer (commit-msg hook or
-  amend), then `git push HEAD:refs/for/<target>`. A re-publish with the same
-  `Change-Id` lands as a new patchset on the same Change (no duplicate). Return the
-  Change URL in `delivery_url`, the id in `change_id`, `ref = refs/for/<target>`.
+- **pull_request** (GitHub) / **merge_request** (GitLab) — `target` (the base
+  branch) is **required**; empty -> `InvalidArgument` before any push. Push the
+  source branch first, then via REST: derive `owner/repo` from the `remote_url`
+  path; look up an **open** PR/MR with `head = source-branch` AND `base = target`.
+  If found -> PATCH title/body (the commits are already current from the push;
+  no duplicate). If none open -> create. A **merged/closed** PR/MR is *not*
+  reopened — a new one is created (and fails cleanly with the provider's own error
+  if there are no new commits). Return the PR/MR URL in `delivery_url`.
+- **gerrit_change** — no REST client. Read HEAD's commit message host-side; if it
+  already carries a `Change-Id:` trailer, keep it, else `git commit --amend`
+  (message-only) to inject a **deterministic** `Change-Id:
+  I<sha1hex(workspace \0 sandbox-id \0 source-branch)>` — keyed on identity, not
+  commit content, so it is stable across re-publish and across added commits.
+  (Git hooks are never cloned, so the sandbox has no `commit-msg` hook and the
+  commit normally lacks a trailer; amend host-side is the only mechanism — a hook
+  can't run on an already-created commit.) Then `git push HEAD:refs/for/<target>`.
+  Gerrit prints the Change URL + number on the push's stderr; parse it. Re-publish
+  with the same `Change-Id` lands as a new patchset on the same Change (no
+  duplicate). Return `ref = refs/for/<target>`, `delivery_url` = the URL from
+  stderr, `change_id` = the `Change-Id` trailer (the stable id, not the Change
+  number).
 
 ## Result mapping (cross-check with the Agency)
 
@@ -227,8 +297,14 @@ Coverage:
 - gerrit_change incl. stable Change-Id (second publish = new patchset, no duplicate
   Change);
 - provider-mismatch rejection (gerrit_change on GitHub errors);
-- **leak test**: assert no credential / token / SSH key / CA bytes appear in
-  `PublishResult`, emitted events, audit records, or the Sandbox record.
+- **leak test** (the security bar): register the hermetic workspace with sentinel
+  token/SSH-key/CA values; run clone-by-name + every publish strategy **and one
+  forced git failure** (error paths leak most). Assert the sentinel appears in
+  **none** of: (1) the returned `PublishResult` (incl. `patch` bytes), (2) emitted
+  events, (3) audit records, (4) the persisted/gossiped Sandbox record, (5)
+  captured logs (incl. the failure's error string). Plus a structural check that
+  the credential reaches git only via `cmd.Env`, never argv; and that the clone
+  succeeds while the sandbox never receives the token.
 
 Env-gated real smoke (`//go:build integration`, skipped in CI): real
 GitHub/GitLab/Gerrit behind env tokens.
@@ -236,8 +312,8 @@ GitHub/GitLab/Gerrit behind env tokens.
 ## Non-goals / boundaries
 
 - Never send any credential, token, SSH key, or CA material back to the Agency.
-- Never take a source branch from the caller — always the sandbox's recorded
-  branch.
+- Never take a source branch from the caller — it is the sandbox's own state
+  (live HEAD, or the recorded branch when HEAD is detached), never a caller field.
 - In-VM per-job branch selection is out of scope; check out the workspace default
   branch and publish the recorded branch.
 - One workspace = one remote; clone-from-A publish-to-B is out of scope.
@@ -247,8 +323,10 @@ GitHub/GitLab/Gerrit behind env tokens.
 
 ## Phasing
 
-- **P1** (green, zero external network): ADR-0019; config surface; credential-env
-  plumbing; clone-by-name with vaulted creds; `PublishWork` proto + handler;
-  `branch` + `patch` strategies; provider-mismatch rejection; leak test.
+- **P1** (green, zero external network): ADR-0019 + ADR-0020; config surface
+  (incl. `ssh_known_hosts_path`); credential-env plumbing (HTTPS token, SSH key +
+  host-key handling, CA); node auto-managed mirror base + clone-by-name; source-
+  branch resolution (live HEAD / recorded fallback); `PublishWork` proto + handler;
+  `branch` + `patch` strategies; provider derivation + mismatch rejection; leak test.
 - **P2**: `pull_request` / `merge_request` / `gerrit_change` incl. update-in-place;
   REST clients; gerrit Change-Id; the `httptest` matrix + env-gated real smoke.
