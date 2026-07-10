@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -158,10 +162,10 @@ func TestPublishWork_NoCredentialLeak(t *testing.T) {
 		"error string":          ferr.Error(),
 		// Nothing on the PublishWork path logs via slog today; this is a forward
 		// regression-guard that catches a future addition that logs the credential.
-		"slog logs": logs.String(),
-		"captured events":       fmt.Sprint(cp.calls),
-		"audit entries":         fmt.Sprint(auditList),
-		"persisted record":      fmt.Sprint(mustGet),
+		"slog logs":        logs.String(),
+		"captured events":  fmt.Sprint(cp.calls),
+		"audit entries":    fmt.Sprint(auditList),
+		"persisted record": fmt.Sprint(mustGet),
 	}
 	// Assert BOTH the raw token and its wire form (the base64 Basic-auth header the
 	// token is actually injected as) are absent — a surface that dumped the git env
@@ -170,5 +174,71 @@ func TestPublishWork_NoCredentialLeak(t *testing.T) {
 	for name, sfc := range surfaces {
 		require.NotContains(t, sfc, tok, "raw credential leaked into outward surface: %s", name)
 		require.NotContains(t, sfc, b64, "base64 credential header leaked into outward surface: %s", name)
+	}
+}
+
+// gitBaseOf returns the base dir of the single workspace registered on svc
+// (field is s.gitWS), so the REST-leak test can re-register a github provider
+// over the same base.
+func gitBaseOf(t *testing.T, svc *SandboxService) string {
+	t.Helper()
+	for _, w := range svc.gitWS {
+		return w.Base()
+	}
+	t.Fatal("no workspace registered")
+	return ""
+}
+
+// TestPublishWork_PullRequest_NoCredentialLeak extends the credential-leak bar
+// to a REST strategy: the token must be used to talk to the (fake) provider
+// API and to push the head branch, but must never leak into the delivery
+// result, the backend call log, or the audit list.
+func TestPublishWork_PullRequest_NoCredentialLeak(t *testing.T) {
+	const tok = "SENTINEL-PR-TOKEN-7c1d"
+	// fake GitHub PR API (create then found).
+	var created bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/app/pulls", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if created {
+				_, _ = w.Write([]byte(`[{"number":1,"html_url":"https://github.com/acme/app/pull/1"}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
+			return
+		}
+		created = true
+		w.WriteHeader(201)
+		_, _ = w.Write([]byte(`{"number":1,"html_url":"https://github.com/acme/app/pull/1"}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
+	require.NoError(t, os.WriteFile(caPath, caPEM, 0o600))
+
+	svc, rec, al, cp := credLeakFixture(t, tok)
+	svc.publishTimeout = 10 * time.Second
+	// re-register the workspace as a github provider pointing at the fake.
+	ws := git.New(git.Spec{
+		Name: "repo", Base: gitBaseOf(t, svc), Remote: "origin", DefaultBranch: "main", AllowPush: true,
+		Provider: "github", RemoteURL: "https://github.com/acme/app", APIBaseURL: srv.URL,
+		Cred:      git.Credential{Token: tok, CAPath: caPath},
+		Allowlist: []string{"git"},
+	})
+	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+
+	res, err := svc.PublishWork(context.Background(), &sbxv1.PublishWorkRequest{Id: rec.ID, Strategy: "pull_request", Target: "main", Title: "t"})
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/acme/app/pull/1", res.DeliveryUrl)
+
+	auditList, err := al.List()
+	require.NoError(t, err)
+	b64 := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + tok))
+	surfaces := []string{res.String(), fmt.Sprint(cp.calls), fmt.Sprint(auditList)}
+	for _, s := range surfaces {
+		require.NotContains(t, s, tok)
+		require.NotContains(t, s, b64)
+		require.NotContains(t, s, "Bearer "+tok)
 	}
 }

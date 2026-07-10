@@ -26,8 +26,13 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 	if r.Strategy != "patch" && !ws.AllowPush() {
 		return nil, status.Error(codes.FailedPrecondition, "workspace does not allow push")
 	}
-	if r.Strategy != "branch" && r.Strategy != "patch" {
-		return nil, status.Errorf(codes.Unimplemented, "strategy %q not yet implemented", r.Strategy)
+	if r.Strategy == "pull_request" || r.Strategy == "merge_request" {
+		if ws.Cred().Token == "" {
+			return nil, status.Error(codes.FailedPrecondition, "REST strategy requires an HTTPS token credential")
+		}
+		if _, _, err := gitprovider.ParseRepo(prov, ws.RemoteURL()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 	}
 
 	to := s.publishTimeout
@@ -65,7 +70,16 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 		return nil, status.Errorf(codes.Internal, "publish-work fetch: %v", err)
 	}
 	defer unlock() // hold the workspace lock across the strategy push — fetch+push atomic
-	env := gitprovider.Env{Dir: ws.Base(), RunEnv: runEnv, Remote: ws.RemoteName(), RemoteURL: ws.RemoteURL(), Cred: ws.Cred()}
+	actor := principalFromContext(ctx).userRole
+	if actor == "" {
+		actor = "system"
+	}
+	env := gitprovider.Env{
+		Dir: ws.Base(), RunEnv: runEnv, Remote: ws.RemoteName(),
+		RemoteURL: ws.RemoteURL(), Cred: ws.Cred(),
+		APIBase: gitprovider.APIBase(prov, ws.RemoteURL(), ws.APIBaseURL()),
+		Title:   r.Title, Body: r.Body, Actor: actor,
+	}
 	runner := git.NewRunner([]string{"git"})
 
 	var res gitprovider.Result
@@ -74,12 +88,14 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 		res, err = gitprovider.Branch(pubCtx, runner, env, source, r.Target)
 	case "patch":
 		res, err = gitprovider.Patch(pubCtx, runner, env, source, r.Target)
+	case "pull_request":
+		res, err = gitprovider.PullRequest(pubCtx, runner, env, source, r.Target)
+	case "merge_request":
+		res, err = gitprovider.MergeRequest(pubCtx, runner, env, source, r.Target)
+	case "gerrit_change":
+		res, err = gitprovider.GerritChange(pubCtx, runner, env, source, r.Target)
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "strategy %q not yet implemented", r.Strategy)
-	}
-	actor := principalFromContext(ctx).userRole
-	if actor == "" {
-		actor = "system"
 	}
 	s.auditPublish(ws.Name(), source, actor, err)
 	if err != nil {
