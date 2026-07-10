@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -100,7 +101,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	opsM.SetMetrics(metrics)
 	sandboxes := apiserver.NewSandboxService(mgr, opsM)
 	auditLog := audit.New(st, func() int64 { return time.Now().Unix() })
-	gitWS := buildGitWorkspaces(cfg.Workspaces)
+	gitWS := buildGitWorkspaces(cfg.Workspaces, cfg.DataDir)
 	sandboxes.SetGit(gitWS)
 	sandboxes.SetAudit(auditLog)
 	sandboxes.SetEvents(bus)
@@ -562,16 +563,43 @@ func resolveCfgLimit(configured, detected float64) float64 {
 	return detected
 }
 
-func buildGitWorkspaces(ws []config.WorkspaceConfig) map[string]*git.Workspace {
+// effectiveGitBase resolves a workspace's host-side base repo path: the operator-
+// set host_path, or (for a provider workspace with a remote_url and no host_path)
+// a node-managed mirror base under the data dir (ADR-0020).
+func effectiveGitBase(w config.WorkspaceConfig, dataDir string) string {
+	if w.HostPath != "" {
+		return w.HostPath
+	}
+	if w.Git != nil && w.Git.RemoteURL != "" {
+		root := os.Getenv("SBX_GIT_WORKSPACE_DIR")
+		if root == "" {
+			root = filepath.Join(dataDir, "git-workspaces")
+		}
+		return filepath.Join(root, w.Name+".git")
+	}
+	return w.HostPath // "" — legacy non-provider workspace with no host_path
+}
+
+func buildGitWorkspaces(ws []config.WorkspaceConfig, dataDir string) map[string]*git.Workspace {
 	out := map[string]*git.Workspace{}
 	for _, w := range ws {
 		if w.Git == nil {
 			continue
 		}
 		g := w.Git.WithDefaults()
+		var token string
+		if g.TokenEnv != "" {
+			token = os.Getenv(g.TokenEnv)
+		}
 		out[w.Name] = git.New(git.Spec{
-			Name: w.Name, Base: w.HostPath, Remote: g.Remote, DefaultBranch: g.DefaultBranch,
-			AllowPush: g.AllowPush, PreSteps: g.PreSteps, PublishSteps: g.PublishSteps, Allowlist: g.ExecAllowlist,
+			Name: w.Name, Base: effectiveGitBase(w, dataDir), Remote: g.Remote,
+			RemoteURL: g.RemoteURL, Provider: g.Provider,
+			Cred: git.Credential{
+				Token: token, SSHKeyPath: g.SSHKeyPath,
+				SSHKnownHostsPath: g.SSHKnownHostsPath, CAPath: g.CAPath,
+			},
+			DefaultBranch: g.DefaultBranch,
+			AllowPush:     g.AllowPush, APIBaseURL: g.APIBaseURL, PreSteps: g.PreSteps, PublishSteps: g.PublishSteps, Allowlist: g.ExecAllowlist,
 		})
 	}
 	return out
@@ -585,7 +613,7 @@ func buildBackend(cfg *config.Config) (sandbox.Backend, error) {
 	if cfg.Backend == "sdk" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces))
+		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir))
 	}
 	return sandbox.NewFake(), nil
 }
@@ -593,14 +621,14 @@ func buildBackend(cfg *config.Config) (sandbox.Backend, error) {
 // workspaceResolver maps a workspace name to its host path + read-only flag for
 // the SDK backend. Git-backed workspaces are always read-only — the bare base
 // must never be agent-writable (ADR-0015).
-func workspaceResolver(ws []config.WorkspaceConfig) sandbox.WorkspaceResolver {
+func workspaceResolver(ws []config.WorkspaceConfig, dataDir string) sandbox.WorkspaceResolver {
 	type entry struct {
 		path     string
 		readOnly bool
 	}
 	m := make(map[string]entry, len(ws))
 	for _, w := range ws {
-		m[w.Name] = entry{path: w.HostPath, readOnly: w.ReadOnly || w.Git != nil}
+		m[w.Name] = entry{path: effectiveGitBase(w, dataDir), readOnly: w.ReadOnly || w.Git != nil}
 	}
 	return func(name string) (string, bool, bool) {
 		e, ok := m[name]

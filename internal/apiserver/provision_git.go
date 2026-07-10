@@ -27,6 +27,12 @@ func ProvisionLocal(ctx context.Context, mgr *sandbox.Manager, gitWS map[string]
 		if len(spec.Workspaces) != 1 || gw == nil {
 			return nil, status.Error(codes.InvalidArgument, "clone mode requires exactly one git-backed workspace")
 		}
+		// Create the node-managed mirror base on first use (ADR-0020) so the PRE
+		// fetch below has a base to freshen. No-op for an operator-prepared base or
+		// a legacy workspace with no remote_url.
+		if err := gw.EnsureBase(ctx); err != nil {
+			return nil, status.Errorf(codes.Internal, "git ensure base: %v", err)
+		}
 		unlock, err := gw.PreLock(ctx, spec.Branch)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "git pre: %v", err)

@@ -1,5 +1,7 @@
 # Upstream git credentials are operator host-side config, not swarm-managed
 
+> Superseded for registered provider workspaces by ADR-0019 (node-side credential feeds git + REST); non-provider git-backed workspaces are unaffected.
+
 For a git-backed workspace, the credentials the node uses to reach the upstream remote — both the **PRE
 fetch** and the **publish push** — are configured on the host by the operator who prepares the bare/mirror
 base, using standard git mechanisms (a deploy SSH key, a credential helper, or an authenticated `origin`

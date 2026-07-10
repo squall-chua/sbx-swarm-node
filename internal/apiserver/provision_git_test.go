@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -83,4 +84,46 @@ func TestProvisionLocal_CloneRunsPreAndCreates(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "agent/x", rec.Spec.Branch)
+}
+
+// A provider workspace with no operator-prepared base (empty on disk) must be
+// auto-created from remote_url by EnsureBase (ADR-0020) before the PRE fetch runs.
+// The PRE step below runs with cwd=Base, so without EnsureBase provisioning fails
+// on a missing directory — this is the regression guard for the EnsureBase wiring.
+func TestProvisionLocal_ProviderWorkspaceAutoCreatesBase(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	upstream := filepath.Join(root, "up.git")
+	base := filepath.Join(root, "auto", "repo.git") // does not exist yet
+	run := func(dir string, a ...string) {
+		c := exec.Command("git", a...)
+		c.Dir = dir
+		out, err := c.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	require.NoError(t, exec.Command("git", "init", "--bare", upstream).Run())
+	work := filepath.Join(root, "work")
+	require.NoError(t, exec.Command("git", "clone", upstream, work).Run())
+	run(work, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+	run(work, "push", "origin", "HEAD:main")
+
+	ws := git.New(git.Spec{
+		Name: "repo", Base: base, Remote: "origin", RemoteURL: upstream, DefaultBranch: "main", AllowPush: true,
+		PreSteps:  [][]string{{"git", "fetch", "{remote}"}}, // runs in Base — fails if the base was never created
+		Allowlist: []string{"git"},
+	})
+	gitWS := map[string]*git.Workspace{"repo": ws}
+
+	_, statErr := os.Stat(base)
+	require.True(t, os.IsNotExist(statErr), "base must not exist before provisioning")
+
+	rec, err := ProvisionLocal(context.Background(), newTestManager(t), gitWS, sandbox.CreateSpec{
+		Agent: "shell", Clone: true, Branch: "agent/x", Workspaces: []sandbox.WorkspaceMount{{Name: "repo"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "agent/x", rec.Spec.Branch)
+	_, headErr := os.Stat(filepath.Join(base, "HEAD"))
+	require.NoError(t, headErr, "EnsureBase must have created the mirror base")
 }

@@ -55,14 +55,15 @@ type ProvisionLimits struct {
 // WorkspaceConfig is a named host directory advertised for mounting/cloning.
 type WorkspaceConfig struct {
 	Name     string     `yaml:"name"`
-	HostPath string     `yaml:"host_path"`
+	HostPath string     `yaml:"host_path"` // optional for a provider workspace: empty => node auto-manages the mirror base from remote_url (ADR-0020)
 	ReadOnly bool       `yaml:"read_only"`
 	Git      *GitConfig `yaml:"git,omitempty"` // non-nil => git-backed (clone-only, ADR-0015)
 }
 
 // GitConfig configures a git-backed workspace's pre/publish pipelines (ADR-0003).
-// Credentials are operator host-side git config (ADR-0014) — there are no auth
-// fields here.
+// Legacy workspaces use operator host-side git config for credentials (ADR-0014);
+// registered provider workspaces carry a node-side credential in the fields below
+// (ADR-0019).
 type GitConfig struct {
 	Remote        string     `yaml:"remote"`
 	DefaultBranch string     `yaml:"default_branch"`
@@ -70,6 +71,16 @@ type GitConfig struct {
 	PreSteps      [][]string `yaml:"pre_steps"`
 	PublishSteps  [][]string `yaml:"publish_steps"`
 	ExecAllowlist []string   `yaml:"exec_allowlist"`
+
+	// Registered provider workspace (ADR-0019/0020). All optional; empty keeps
+	// legacy ambient-credential behavior (ADR-0014).
+	RemoteURL         string `yaml:"remote_url"`           // HTTPS or SSH upstream
+	Provider          string `yaml:"provider"`             // github|gitlab|gerrit|plain; "" => derive
+	TokenEnv          string `yaml:"token_env"`            // env var holding the HTTPS token
+	SSHKeyPath        string `yaml:"ssh_key_path"`         // SSH private key path
+	SSHKnownHostsPath string `yaml:"ssh_known_hosts_path"` // pins SSH host key; "" => accept-new
+	CAPath            string `yaml:"ca_path"`              // internal-CA / self-signed PEM (HTTPS only)
+	APIBaseURL        string `yaml:"api_base_url"`         // REST API base override; "" => derive from remote_url (GitHub/GitLab only)
 }
 
 // WithDefaults returns a copy with unset fields filled with built-in defaults.
@@ -240,8 +251,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("default_strategy must be one of least-loaded|bin-pack|spread, got %q", c.DefaultStrategy)
 	}
 	for _, w := range c.Workspaces {
-		if w.Git != nil && w.HostPath == "" {
-			return fmt.Errorf("workspace %q is git-backed but has no host_path", w.Name)
+		if w.Git != nil && w.HostPath == "" && w.Git.RemoteURL == "" {
+			return fmt.Errorf("workspace %q is git-backed but has neither host_path nor remote_url", w.Name)
 		}
 	}
 	switch c.Backend {

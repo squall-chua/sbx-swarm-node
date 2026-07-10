@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -59,7 +60,7 @@ func TestWorkspaceResolver(t *testing.T) {
 		{Name: "data", HostPath: "/srv/data", ReadOnly: false},
 		{Name: "ro", HostPath: "/srv/ro", ReadOnly: true},
 		{Name: "repo", HostPath: "/srv/repo.git", ReadOnly: false, Git: &config.GitConfig{}},
-	})
+	}, "")
 
 	host, ro, ok := resolve("data")
 	require.True(t, ok)
@@ -78,6 +79,44 @@ func TestWorkspaceResolver(t *testing.T) {
 
 	_, _, ok = resolve("missing")
 	require.False(t, ok)
+}
+
+// TestEffectiveGitBase_ProviderVsHostPath asserts buildGitWorkspaces and
+// workspaceResolver resolve a workspace's host-side base identically, for both
+// the operator-set host_path case and the provider-workspace (remote_url, no
+// host_path) auto-mirror case (ADR-0020).
+func TestEffectiveGitBase_ProviderVsHostPath(t *testing.T) {
+	t.Setenv("SBX_GIT_WORKSPACE_DIR", "")
+	dataDir := t.TempDir()
+
+	t.Run("provider workspace with empty host_path", func(t *testing.T) {
+		ws := []config.WorkspaceConfig{
+			{Name: "acme", HostPath: "", Git: &config.GitConfig{RemoteURL: "https://github.com/acme/app"}},
+		}
+		want := filepath.Join(dataDir, "git-workspaces", "acme.git")
+
+		gw := buildGitWorkspaces(ws, dataDir)
+		require.Equal(t, want, gw["acme"].Base())
+
+		host, ro, ok := workspaceResolver(ws, dataDir)("acme")
+		require.True(t, ok)
+		require.True(t, ro)
+		require.Equal(t, want, host)
+	})
+
+	t.Run("operator host_path set", func(t *testing.T) {
+		ws := []config.WorkspaceConfig{
+			{Name: "repo", HostPath: "/srv/repo.git", Git: &config.GitConfig{RemoteURL: "https://github.com/acme/app"}},
+		}
+
+		gw := buildGitWorkspaces(ws, dataDir)
+		require.Equal(t, "/srv/repo.git", gw["repo"].Base())
+
+		host, ro, ok := workspaceResolver(ws, dataDir)("repo")
+		require.True(t, ok)
+		require.True(t, ro)
+		require.Equal(t, "/srv/repo.git", host)
+	})
 }
 
 func TestNode_SSEEndpointAuthed(t *testing.T) {
