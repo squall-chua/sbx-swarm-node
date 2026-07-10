@@ -118,6 +118,57 @@ func TestPullRequest_TLSTrustAndLeak(t *testing.T) {
 	require.Equal(t, "https://github.com/acme/app/pull/7", res.DeliveryURL)
 }
 
+func newFakeGitLab(t *testing.T) (*httptest.Server, *atomic.Bool, *string) {
+	var created atomic.Bool
+	var gotTok string
+	mux := http.NewServeMux()
+	// project path "group/app" url-encodes to group%2Fapp
+	mux.HandleFunc("/projects/group%2Fapp/merge_requests", func(w http.ResponseWriter, r *http.Request) {
+		gotTok = r.Header.Get("PRIVATE-TOKEN")
+		switch r.Method {
+		case http.MethodGet:
+			if created.Load() {
+				_, _ = w.Write([]byte(`[{"iid":3,"web_url":"https://gitlab.corp/group/app/-/merge_requests/3"}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
+		case http.MethodPost:
+			created.Store(true)
+			_, _ = w.Write([]byte(`{"iid":3,"web_url":"https://gitlab.corp/group/app/-/merge_requests/3"}`))
+		}
+	})
+	mux.HandleFunc("/projects/group%2Fapp/merge_requests/3", func(w http.ResponseWriter, r *http.Request) {
+		gotTok = r.Header.Get("PRIVATE-TOKEN")
+		_, _ = w.Write([]byte(`{"iid":3,"web_url":"https://gitlab.corp/group/app/-/merge_requests/3"}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, &created, &gotTok
+}
+
+func TestMergeRequest_CreateThenUpdate(t *testing.T) {
+	if _, err := lookGit(); err != nil {
+		t.Skip("git not installed")
+	}
+	srv, created, gotTok := newFakeGitLab(t)
+	// reuse the git upstream/base scaffolding from prEnv by pointing RemoteURL at gitlab.
+	f := &fakeGitHub{srv: srv} // only srv is used by prEnv for APIBase + caFile
+	e, r, _ := prEnv(t, f, "GLTOK", "My MR", "desc")
+	e.RemoteURL = "https://gitlab.corp/group/app"
+	e.APIBase = srv.URL
+
+	res, err := MergeRequest(context.Background(), r, e, "feature", "main")
+	require.NoError(t, err)
+	require.Equal(t, "refs/heads/feature", res.Ref)
+	require.Equal(t, "https://gitlab.corp/group/app/-/merge_requests/3", res.DeliveryURL)
+	require.True(t, created.Load())
+
+	res2, err := MergeRequest(context.Background(), r, e, "feature", "main")
+	require.NoError(t, err)
+	require.Equal(t, res.DeliveryURL, res2.DeliveryURL)
+	require.Equal(t, "GLTOK", *gotTok)
+}
+
 func TestStatusToCode(t *testing.T) {
 	require.Equal(t, "PermissionDenied", statusToCode(401).String())
 	require.Equal(t, "PermissionDenied", statusToCode(403).String())

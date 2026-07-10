@@ -197,3 +197,64 @@ func PullRequest(ctx context.Context, r *git.Runner, e Env, source, target strin
 	}
 	return Result{Ref: "refs/heads/" + source, DeliveryURL: out.HTMLURL}, nil
 }
+
+// MergeRequest pushes source to origin, then create-or-updates the open GitLab MR
+// for (source_branch, target_branch). Idempotent per (workspace, source, target).
+func MergeRequest(ctx context.Context, r *git.Runner, e Env, source, target string) (Result, error) {
+	_, project, err := ParseRepo(GitLab, e.RemoteURL)
+	if err != nil {
+		return Result{}, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if target == "" {
+		return Result{}, status.Error(codes.InvalidArgument, "merge_request requires a target branch")
+	}
+	if _, err := Branch(ctx, r, e, source, source); err != nil {
+		return Result{}, err
+	}
+	c, err := newRESTClient(GitLab, e.APIBase, e.Cred)
+	if err != nil {
+		return Result{}, err
+	}
+	proj := url.PathEscape(project) // group/app -> group%2Fapp
+	q := url.Values{"source_branch": {source}, "target_branch": {target}, "state": {"opened"}}
+	listURL := fmt.Sprintf("%s/projects/%s/merge_requests?%s", e.APIBase, proj, q.Encode())
+	var found []struct {
+		IID    int    `json:"iid"`
+		WebURL string `json:"web_url"`
+	}
+	if err := c.do(ctx, http.MethodGet, listURL, nil, &found); err != nil {
+		return Result{}, err
+	}
+	var out struct {
+		WebURL string `json:"web_url"`
+	}
+	if len(found) > 0 {
+		patch := map[string]string{}
+		if e.Title != "" {
+			patch["title"] = e.Title
+		}
+		if e.Body != "" {
+			patch["description"] = e.Body
+		}
+		if len(patch) == 0 {
+			return Result{Ref: "refs/heads/" + source, DeliveryURL: found[0].WebURL}, nil
+		}
+		updURL := fmt.Sprintf("%s/projects/%s/merge_requests/%d", e.APIBase, proj, found[0].IID)
+		if err := c.do(ctx, http.MethodPut, updURL, patch, &out); err != nil {
+			return Result{}, err
+		}
+		return Result{Ref: "refs/heads/" + source, DeliveryURL: out.WebURL}, nil
+	}
+	title := e.Title
+	if title == "" {
+		title = tipSubject(ctx, r, e.Dir, source)
+	}
+	create := map[string]string{"source_branch": source, "target_branch": target, "title": title}
+	if e.Body != "" {
+		create["description"] = e.Body
+	}
+	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("%s/projects/%s/merge_requests", e.APIBase, proj), create, &out); err != nil {
+		return Result{}, err
+	}
+	return Result{Ref: "refs/heads/" + source, DeliveryURL: out.WebURL}, nil
+}
