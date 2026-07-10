@@ -30,4 +30,20 @@ explicitly — omitting it commits to the node's managed directory and layout.
 the PRE fetch in `ProvisionLocal` (sandbox create) and before the bundle in `PublishWork`. A provider
 workspace with `remote_url` and no `host_path` is therefore created on first use from the node-managed
 directory — no operator-prepared base is required. (P2 adds the PR/MR/Gerrit REST strategies; the
-mirror-base mechanism itself is complete in P1.)
+base mechanism itself is complete in P1.)
+
+## Amendment: the base is a non-bare detached checkout, not a bare mirror
+
+Originally `EnsureBase` ran `git clone --mirror` (a bare repo), matching how a server-side
+fetch/push base is normally built. That breaks the clone-mode contract: the node hands the base
+**directly to `sbx --clone`** as the primary workspace, and `sbx --clone` requires a working tree —
+it rejects a bare repo (`--clone requires a Git repository, but <base> is not in a Git repository`).
+
+One base must serve two masters: a working tree for `sbx --clone`, and a repo the server side can
+`fetch +refs/heads/*:refs/heads/*` / `push` into. The fix is a **non-bare clone with a DETACHED
+HEAD** (`git clone <remote_url> <base>` then `git checkout --detach`). A working tree satisfies
+`sbx --clone`; a detached HEAD leaves no branch checked out, so the PRE fetch and Publish's
+fetch-into-base update `refs/heads/*` without the "refusing to fetch into checked-out branch" error.
+A plain (non-mirror) clone also keeps a normal `origin`, so refspec pushes are not rejected the way
+a `--mirror` origin would reject them (no `remote.origin.mirror` to clear). The path `<name>.git` is
+kept for continuity even though the repo is no longer bare.

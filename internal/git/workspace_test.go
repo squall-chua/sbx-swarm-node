@@ -80,6 +80,7 @@ func TestWorkspace_EnsureBase_ClonesMirror(t *testing.T) {
 	gitCmd(t, root, "clone", upstream, work)
 	gitCmd(t, work, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
 	gitCmd(t, work, "push", "origin", "HEAD:main")
+	gitCmd(t, root, "-C", upstream, "symbolic-ref", "HEAD", "refs/heads/main") // like a real remote: default branch = main
 
 	base := filepath.Join(root, "acme.git")
 	w := New(Spec{
@@ -87,15 +88,17 @@ func TestWorkspace_EnsureBase_ClonesMirror(t *testing.T) {
 		Allowlist: []string{"git"},
 	})
 	require.NoError(t, w.EnsureBase(context.Background()))
-	// base now exists as a mirror and carries refs/heads/main:
-	out, err := exec.Command("git", "--git-dir", base, "rev-parse", "refs/heads/main").CombinedOutput()
+	// base now exists as a non-bare working clone and carries refs/heads/main:
+	out, err := exec.Command("git", "-C", base, "rev-parse", "refs/heads/main").CombinedOutput()
 	require.NoError(t, err, string(out))
+	// HEAD is detached, so the PRE fetch into refs/heads/* never hits a checked-out branch:
+	out, err = exec.Command("git", "-C", base, "symbolic-ref", "-q", "HEAD").CombinedOutput()
+	require.Error(t, err, "HEAD should be detached, got %s", out)
 }
 
-// TestWorkspace_EnsureBase_AllowsRefspecPush guards against a mirror base
-// rejecting refspec pushes (git errors on "git push origin src:dst" when
-// remote.origin.mirror=true). EnsureBase must clear the mirror flag after
-// cloning so downstream Publish/Branch pushes work.
+// TestWorkspace_EnsureBase_AllowsRefspecPush guards downstream Publish/Branch
+// pushes: a mirror origin rejects "git push origin src:dst" (refspec) pushes, so
+// EnsureBase must produce a plain (non-mirror) origin.
 func TestWorkspace_EnsureBase_AllowsRefspecPush(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -107,6 +110,7 @@ func TestWorkspace_EnsureBase_AllowsRefspecPush(t *testing.T) {
 	gitCmd(t, root, "clone", upstream, work)
 	gitCmd(t, work, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
 	gitCmd(t, work, "push", "origin", "HEAD:main")
+	gitCmd(t, root, "-C", upstream, "symbolic-ref", "HEAD", "refs/heads/main") // like a real remote: default branch = main
 
 	base := filepath.Join(root, "acme.git")
 	w := New(Spec{
@@ -116,7 +120,7 @@ func TestWorkspace_EnsureBase_AllowsRefspecPush(t *testing.T) {
 	require.NoError(t, w.EnsureBase(context.Background()))
 
 	// Refspec push under a new ref name must succeed against upstream.
-	out, err := exec.Command("git", "--git-dir", base, "push", "origin", "refs/heads/main:refs/heads/pushed-branch").CombinedOutput()
+	out, err := exec.Command("git", "-C", base, "push", "origin", "refs/heads/main:refs/heads/pushed-branch").CombinedOutput()
 	require.NoError(t, err, string(out))
 
 	out, err = exec.Command("git", "--git-dir", upstream, "rev-parse", "refs/heads/pushed-branch").CombinedOutput()
