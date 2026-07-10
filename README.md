@@ -265,11 +265,12 @@ stateDiagram-v2
 The console SPA is embedded into the binary at build time.
 
 ```bash
-# Build the console + the node binary
-make build          # == web/scripts/build.sh (nuxi generate → web/dist) then `go build ./...`
+# Build the console + the node binary (version stamped from the latest git tag)
+make build          # web/dist, then `go build ./...` + a version-stamped ./sbx-swarm-node
 
-# Just the Go binary (uses the already-built web/dist)
-go build -o sbx-swarm-node ./cmd/sbx-swarm-node
+# Just the Go binary (uses the already-built web/dist). Without -ldflags the node
+# reports version "dev" (fine for a dev node — the Agency allows version drift).
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 | sed 's/^v//')" -o sbx-swarm-node ./cmd/sbx-swarm-node
 
 # Run the tests
 go test ./...
