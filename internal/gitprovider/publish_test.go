@@ -47,6 +47,20 @@ func TestBranch_PushesToRemote(t *testing.T) {
 	require.NoError(t, err, string(out))
 }
 
+func TestTipSubject(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := t.TempDir()
+	gitCmd(t, repo, "init", ".")
+	gitCmd(t, repo, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "--allow-empty", "-m", "hello subject")
+	gitCmd(t, repo, "branch", "-M", "main")
+	r := git.NewRunner([]string{"git"})
+	require.Equal(t, "hello subject", tipSubject(context.Background(), r, repo, "main"))
+	// missing ref falls back to the ref name.
+	require.Equal(t, "nope", tipSubject(context.Background(), r, repo, "nope"))
+}
+
 func TestPatch_ReturnsDiffBytes(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

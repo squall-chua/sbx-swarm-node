@@ -4,6 +4,7 @@
 package gitprovider
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -62,3 +63,61 @@ var strategySupport = map[Provider]map[string]bool{
 
 // Supports reports whether this provider can run the given publish strategy.
 func (p Provider) Supports(strategy string) bool { return strategySupport[p][strategy] }
+
+// pathOf extracts the path (no host) from an HTTPS or scp-like SSH URL.
+func pathOf(remote string) string {
+	remote = strings.TrimSpace(remote)
+	if strings.Contains(remote, "://") {
+		if u, err := url.Parse(remote); err == nil {
+			return u.Path
+		}
+	}
+	if _, after, ok := strings.Cut(remote, "@"); ok { // scp-like git@host:path
+		if _, path, ok := strings.Cut(after, ":"); ok {
+			return path
+		}
+	}
+	return ""
+}
+
+// APIBase returns the REST API base URL for a provider. override wins. GitHub
+// derives api.github.com (public) or HOST/api/v3 (enterprise); GitLab derives
+// HOST/api/v4 (public and self-hosted). Gerrit (git push, no REST) and plain
+// return "".
+func APIBase(p Provider, remoteURL, override string) string {
+	if override != "" {
+		return override
+	}
+	host := hostOf(remoteURL)
+	switch p {
+	case GitHub:
+		if host == "github.com" {
+			return "https://api.github.com"
+		}
+		return "https://" + host + "/api/v3"
+	case GitLab:
+		return "https://" + host + "/api/v4"
+	default:
+		return ""
+	}
+}
+
+// ParseRepo extracts the repo identity from a remote URL. GitHub requires exactly
+// owner/repo (both returned). GitLab returns the whole project path as repo (may
+// be nested subgroups) with an empty owner; the caller URL-encodes it. A remote
+// that does not yield a valid identity is an error (rejected before any mutation).
+func ParseRepo(p Provider, remoteURL string) (owner, repo string, err error) {
+	path := strings.Trim(pathOf(remoteURL), "/")
+	path = strings.TrimSuffix(path, ".git")
+	if path == "" {
+		return "", "", fmt.Errorf("cannot parse owner/repo from remote_url")
+	}
+	if p == GitLab {
+		return "", path, nil
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("cannot parse owner/repo from remote_url")
+	}
+	return parts[0], parts[1], nil
+}

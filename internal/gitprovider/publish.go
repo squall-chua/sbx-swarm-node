@@ -3,6 +3,7 @@ package gitprovider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/git"
 )
@@ -24,6 +25,10 @@ type Env struct {
 	Remote    string // configured upstream remote name in the base (e.g. "origin")
 	RemoteURL string
 	Cred      git.Credential
+	APIBase   string // REST base URL (GitHub/GitLab); "" for gerrit/plain
+	Title     string // raw request title ("" => not supplied)
+	Body      string // raw request body ("" => not supplied)
+	Actor     string // audit actor, used as the git identity for the Gerrit squash
 }
 
 // Branch pushes source to <target||source> on the base's upstream remote.
@@ -57,4 +62,17 @@ func Patch(ctx context.Context, r *git.Runner, e Env, source, target string) (Re
 		return Result{}, err
 	}
 	return Result{Patch: results[len(results)-1].Output}, nil
+}
+
+// tipSubject returns the first line of ref's tip commit message, falling back to
+// the ref name if git fails. Used as the create-time title default (spec Q4).
+func tipSubject(ctx context.Context, r *git.Runner, dir, ref string) string {
+	res, err := r.Run(ctx, dir, nil, [][]string{{"git", "log", "-1", "--format=%s", ref}})
+	if err != nil || len(res) == 0 {
+		return ref
+	}
+	if s := strings.TrimSpace(string(res[len(res)-1].Output)); s != "" {
+		return s
+	}
+	return ref
 }
