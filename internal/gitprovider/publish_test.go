@@ -82,3 +82,5 @@ func TestPatch_ReturnsDiffBytes(t *testing.T) {
 	require.Contains(t, string(res.Patch), "add f")
 	require.Empty(t, res.Ref)
 }
+
+func lookGit() (string, error) { return exec.LookPath("git") }

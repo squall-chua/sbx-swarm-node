@@ -16,6 +16,13 @@ type Result struct {
 	Patch       []byte
 }
 
+// String is a safe, log-friendly representation of a Result: Ref/DeliveryURL/
+// ChangeID only. Result never carries a credential or token, so this is safe to
+// log, but Patch is omitted (may be large/binary and isn't needed for identity).
+func (r Result) String() string {
+	return fmt.Sprintf("Result{Ref:%s DeliveryURL:%s ChangeID:%s}", r.Ref, r.DeliveryURL, r.ChangeID)
+}
+
 // Env is the resolved per-publish context handed to a strategy: the base git dir,
 // the credential env for the git child, the upstream remote name/URL, and the
 // credential (for REST in P2). Never logged.
