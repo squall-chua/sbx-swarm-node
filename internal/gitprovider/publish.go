@@ -38,6 +38,31 @@ type Env struct {
 	Actor     string // audit actor, used as the git identity for the Gerrit squash
 }
 
+// String is a redacted representation of an Env: it deliberately omits RunEnv
+// (which carries the base64 auth extraheader) and Cred (the token), so a stray
+// %v/%+v on an Env can never leak the credential. Never widen it to include them.
+func (e Env) String() string {
+	return fmt.Sprintf("Env{Dir:%s Remote:%s RemoteURL:%s APIBase:%s Actor:%s}",
+		e.Dir, e.Remote, e.RemoteURL, e.APIBase, e.Actor)
+}
+
+// actor is the audit actor, defaulting to "system" when unset (also the git
+// identity name for the Gerrit squash commit).
+func (e Env) actor() string {
+	if e.Actor != "" {
+		return e.Actor
+	}
+	return "system"
+}
+
+// remote is the configured upstream remote name in the base, defaulting to "origin".
+func (e Env) remote() string {
+	if e.Remote != "" {
+		return e.Remote
+	}
+	return "origin"
+}
+
 // Branch pushes source to <target||source> on the base's upstream remote.
 func Branch(ctx context.Context, r *git.Runner, e Env, source, target string) (Result, error) {
 	if source == "" {
@@ -47,11 +72,7 @@ func Branch(ctx context.Context, r *git.Runner, e Env, source, target string) (R
 	if dest == "" {
 		dest = source
 	}
-	remote := e.Remote
-	if remote == "" {
-		remote = "origin"
-	}
-	if _, err := r.Run(ctx, e.Dir, e.RunEnv, [][]string{{"git", "push", remote, source + ":" + dest}}); err != nil {
+	if _, err := r.Run(ctx, e.Dir, e.RunEnv, [][]string{{"git", "push", e.remote(), source + ":" + dest}}); err != nil {
 		return Result{}, err
 	}
 	return Result{Ref: "refs/heads/" + dest}, nil

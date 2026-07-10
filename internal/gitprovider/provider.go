@@ -37,21 +37,28 @@ func Derive(remoteURL, explicit string) Provider {
 	}
 }
 
-// hostOf extracts the host from an HTTPS or scp-like SSH URL.
-func hostOf(remote string) string {
+// splitRemote parses an HTTPS or scp-like SSH remote into its host and path.
+// A "://" URL that parses wins; otherwise the scp-like git@host:path form is
+// tried. Either component is "" when the remote yields neither.
+func splitRemote(remote string) (host, path string) {
 	remote = strings.TrimSpace(remote)
 	if strings.Contains(remote, "://") {
 		if u, err := url.Parse(remote); err == nil {
-			return strings.ToLower(u.Hostname())
+			return u.Hostname(), u.Path
 		}
 	}
-	// scp-like: git@host:path
-	if _, after, ok := strings.Cut(remote, "@"); ok {
-		if host, _, ok := strings.Cut(after, ":"); ok {
-			return strings.ToLower(host)
+	if _, after, ok := strings.Cut(remote, "@"); ok { // scp-like git@host:path
+		if h, p, ok := strings.Cut(after, ":"); ok {
+			return h, p
 		}
 	}
-	return ""
+	return "", ""
+}
+
+// hostOf extracts the lowercased host from an HTTPS or scp-like SSH URL.
+func hostOf(remote string) string {
+	host, _ := splitRemote(remote)
+	return strings.ToLower(host)
 }
 
 var strategySupport = map[Provider]map[string]bool{
@@ -66,18 +73,8 @@ func (p Provider) Supports(strategy string) bool { return strategySupport[p][str
 
 // pathOf extracts the path (no host) from an HTTPS or scp-like SSH URL.
 func pathOf(remote string) string {
-	remote = strings.TrimSpace(remote)
-	if strings.Contains(remote, "://") {
-		if u, err := url.Parse(remote); err == nil {
-			return u.Path
-		}
-	}
-	if _, after, ok := strings.Cut(remote, "@"); ok { // scp-like git@host:path
-		if _, path, ok := strings.Cut(after, ":"); ok {
-			return path
-		}
-	}
-	return ""
+	_, path := splitRemote(remote)
+	return path
 }
 
 // APIBase returns the REST API base URL for a provider. override wins. GitHub

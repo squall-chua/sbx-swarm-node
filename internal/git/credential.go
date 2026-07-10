@@ -15,6 +15,10 @@ type Credential struct {
 	CAPath            string // internal-CA / self-signed PEM (HTTPS)
 }
 
+// String redacts the credential so a stray %v/%+v (directly or via an enclosing
+// struct like gitprovider.Env) can never print the token or key paths.
+func (c Credential) String() string { return "Credential{<redacted>}" }
+
 // Env returns environment variables that apply this credential + trust to a git
 // child process for remoteURL. The token is injected as an http extraheader via
 // GIT_CONFIG_* env (git >= 2.31), keeping it out of argv. SSH uses GIT_SSH_COMMAND.
@@ -52,7 +56,7 @@ func (c Credential) Env(remoteURL string) ([]string, error) {
 
 // shQuote single-quotes s for safe embedding in GIT_SSH_COMMAND, which git runs via
 // the shell. Single quotes disable every shell metacharacter; an embedded single
-// quote is closed, escaped, and reopened ('\'').
+// quote is closed, escaped, and reopened ('\”).
 func shQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

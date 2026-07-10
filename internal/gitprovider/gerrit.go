@@ -23,10 +23,6 @@ func GerritChange(ctx context.Context, r *git.Runner, e Env, source, target stri
 	if target == "" {
 		return Result{}, status.Error(codes.InvalidArgument, "gerrit_change requires a target branch")
 	}
-	remote := e.Remote
-	if remote == "" {
-		remote = "origin"
-	}
 	changeID := gerritChangeID(e.RemoteURL, source, target)
 
 	subject := e.Title
@@ -39,10 +35,7 @@ func GerritChange(ctx context.Context, r *git.Runner, e Env, source, target stri
 	}
 	msg += "\n\nChange-Id: " + changeID
 
-	actor := e.Actor
-	if actor == "" {
-		actor = "system"
-	}
+	actor := e.actor()
 	// The base is a bare repo with no user.email; commit-tree needs an identity.
 	ident := []string{
 		"GIT_AUTHOR_NAME=" + actor, "GIT_AUTHOR_EMAIL=" + gerritIdentityEmail,
@@ -59,12 +52,12 @@ func GerritChange(ctx context.Context, r *git.Runner, e Env, source, target stri
 	commit := strings.TrimSpace(string(made[len(made)-1].Output))
 
 	pushed, err := r.Run(ctx, e.Dir, env, [][]string{
-		{"git", "push", remote, commit + ":refs/for/" + target},
+		{"git", "push", e.remote(), commit + ":refs/for/" + target},
 	})
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{ChangeID: changeID, DeliveryURL: parseGerritURL(pushed[len(pushed)-1].Output)}, nil
+	return Result{Ref: "refs/for/" + target, ChangeID: changeID, DeliveryURL: parseGerritURL(pushed[len(pushed)-1].Output)}, nil
 }
 
 // gerritChangeID derives Gerrit's Change-Id from the deliverable key

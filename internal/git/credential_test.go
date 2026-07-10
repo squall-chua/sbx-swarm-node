@@ -1,11 +1,21 @@
 package git
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestCredential_String_Redacts(t *testing.T) {
+	c := Credential{Token: "SENTINEL-TOKEN-9f3a", SSHKeyPath: "/keys/id", CAPath: "/ca.pem"}
+	// Direct %v and via an enclosing struct must both redact the secret fields.
+	s := fmt.Sprintf("%v / %+v", c, struct{ C Credential }{c})
+	require.NotContains(t, s, "SENTINEL-TOKEN-9f3a")
+	require.NotContains(t, s, "/keys/id")
+	require.Contains(t, s, "redacted")
+}
 
 func TestCredential_Env_HTTPSToken(t *testing.T) {
 	c := Credential{Token: "SENTINEL-TOKEN-9f3a", CAPath: "/ca.pem"}

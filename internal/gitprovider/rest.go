@@ -26,7 +26,7 @@ type restClient struct {
 	provider Provider
 }
 
-func newRESTClient(p Provider, base string, cred git.Credential) (*restClient, error) {
+func newRESTClient(p Provider, cred git.Credential) (*restClient, error) {
 	if cred.Token == "" {
 		return nil, status.Error(codes.FailedPrecondition, "REST strategy requires an HTTPS token credential")
 	}
@@ -42,7 +42,6 @@ func newRESTClient(p Provider, base string, cred git.Credential) (*restClient, e
 		}
 		tc.RootCAs = pool
 	}
-	_ = base // base is passed per-request by the caller
 	return &restClient{
 		http:     &http.Client{Transport: &http.Transport{TLSClientConfig: tc}},
 		cred:     cred,
@@ -138,6 +137,82 @@ func forgeMessage(data []byte) string {
 	return string(data)
 }
 
+// forgeItem models the subset of a GitHub PR / GitLab MR JSON object the
+// create-or-update flow needs, carrying both providers' field names so one shape
+// decodes either. id() and url() pick whichever the forge populated.
+type forgeItem struct {
+	Number  int    `json:"number"`   // GitHub PR number
+	IID     int    `json:"iid"`      // GitLab MR iid
+	HTMLURL string `json:"html_url"` // GitHub
+	WebURL  string `json:"web_url"`  // GitLab
+}
+
+func (i forgeItem) id() int {
+	if i.IID != 0 {
+		return i.IID
+	}
+	return i.Number
+}
+
+func (i forgeItem) url() string {
+	if i.WebURL != "" {
+		return i.WebURL
+	}
+	return i.HTMLURL
+}
+
+// forgeRequest captures the provider-specific REST shape of a create-or-update so
+// PullRequest and MergeRequest share one flow (they differ only in create-body
+// field names, the update verb, the body field name, and the resource path).
+type forgeRequest struct {
+	resourceURL  string            // <base>/repos/o/r/pulls | <base>/projects/p/merge_requests
+	listQuery    string            // encoded query selecting the open item for (source,target)
+	create       map[string]string // create body except title (filled from e.Title||tipSubject)
+	updateMethod string            // http.MethodPatch (GitHub) | http.MethodPut (GitLab)
+	bodyField    string            // "body" (GitHub) | "description" (GitLab)
+}
+
+// createOrUpdate finds the open PR/MR for (source,target) and updates it in place
+// (only non-empty title/body), or creates one — idempotent per (workspace, source,
+// target). The head branch is assumed already pushed by the caller.
+func (c *restClient) createOrUpdate(ctx context.Context, r *git.Runner, e Env, source string, req forgeRequest) (Result, error) {
+	ref := "refs/heads/" + source
+	var found []forgeItem
+	if err := c.do(ctx, http.MethodGet, req.resourceURL+"?"+req.listQuery, nil, &found); err != nil {
+		return Result{}, err
+	}
+	var out forgeItem
+	if len(found) > 0 {
+		patch := map[string]string{}
+		if e.Title != "" {
+			patch["title"] = e.Title
+		}
+		if e.Body != "" {
+			patch[req.bodyField] = e.Body
+		}
+		if len(patch) == 0 {
+			return Result{Ref: ref, DeliveryURL: found[0].url()}, nil
+		}
+		updURL := fmt.Sprintf("%s/%d", req.resourceURL, found[0].id())
+		if err := c.do(ctx, req.updateMethod, updURL, patch, &out); err != nil {
+			return Result{}, err
+		}
+		return Result{Ref: ref, DeliveryURL: out.url()}, nil
+	}
+	title := e.Title
+	if title == "" {
+		title = tipSubject(ctx, r, e.Dir, source)
+	}
+	req.create["title"] = title
+	if e.Body != "" {
+		req.create[req.bodyField] = e.Body
+	}
+	if err := c.do(ctx, http.MethodPost, req.resourceURL, req.create, &out); err != nil {
+		return Result{}, err
+	}
+	return Result{Ref: ref, DeliveryURL: out.url()}, nil
+}
+
 // PullRequest pushes source to origin, then create-or-updates the open GitHub PR
 // for (head=owner:source, base=target). Idempotent per (workspace, source, target).
 func PullRequest(ctx context.Context, r *git.Runner, e Env, source, target string) (Result, error) {
@@ -151,51 +226,18 @@ func PullRequest(ctx context.Context, r *git.Runner, e Env, source, target strin
 	if _, err := Branch(ctx, r, e, source, source); err != nil { // push head to origin
 		return Result{}, err
 	}
-	c, err := newRESTClient(GitHub, e.APIBase, e.Cred)
+	c, err := newRESTClient(GitHub, e.Cred)
 	if err != nil {
 		return Result{}, err
 	}
 	q := url.Values{"head": {owner + ":" + source}, "base": {target}, "state": {"open"}}
-	listURL := fmt.Sprintf("%s/repos/%s/%s/pulls?%s", e.APIBase, owner, repo, q.Encode())
-	var found []struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-	}
-	if err := c.do(ctx, http.MethodGet, listURL, nil, &found); err != nil {
-		return Result{}, err
-	}
-	var out struct {
-		HTMLURL string `json:"html_url"`
-	}
-	if len(found) > 0 {
-		patch := map[string]string{}
-		if e.Title != "" {
-			patch["title"] = e.Title
-		}
-		if e.Body != "" {
-			patch["body"] = e.Body
-		}
-		if len(patch) == 0 {
-			return Result{Ref: "refs/heads/" + source, DeliveryURL: found[0].HTMLURL}, nil
-		}
-		updURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", e.APIBase, owner, repo, found[0].Number)
-		if err := c.do(ctx, http.MethodPatch, updURL, patch, &out); err != nil {
-			return Result{}, err
-		}
-		return Result{Ref: "refs/heads/" + source, DeliveryURL: out.HTMLURL}, nil
-	}
-	title := e.Title
-	if title == "" {
-		title = tipSubject(ctx, r, e.Dir, source)
-	}
-	create := map[string]string{"title": title, "head": source, "base": target}
-	if e.Body != "" {
-		create["body"] = e.Body
-	}
-	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("%s/repos/%s/%s/pulls", e.APIBase, owner, repo), create, &out); err != nil {
-		return Result{}, err
-	}
-	return Result{Ref: "refs/heads/" + source, DeliveryURL: out.HTMLURL}, nil
+	return c.createOrUpdate(ctx, r, e, source, forgeRequest{
+		resourceURL:  fmt.Sprintf("%s/repos/%s/%s/pulls", e.APIBase, owner, repo),
+		listQuery:    q.Encode(),
+		create:       map[string]string{"head": source, "base": target},
+		updateMethod: http.MethodPatch,
+		bodyField:    "body",
+	})
 }
 
 // MergeRequest pushes source to origin, then create-or-updates the open GitLab MR
@@ -211,50 +253,16 @@ func MergeRequest(ctx context.Context, r *git.Runner, e Env, source, target stri
 	if _, err := Branch(ctx, r, e, source, source); err != nil {
 		return Result{}, err
 	}
-	c, err := newRESTClient(GitLab, e.APIBase, e.Cred)
+	c, err := newRESTClient(GitLab, e.Cred)
 	if err != nil {
 		return Result{}, err
 	}
-	proj := url.PathEscape(project) // group/app -> group%2Fapp
 	q := url.Values{"source_branch": {source}, "target_branch": {target}, "state": {"opened"}}
-	listURL := fmt.Sprintf("%s/projects/%s/merge_requests?%s", e.APIBase, proj, q.Encode())
-	var found []struct {
-		IID    int    `json:"iid"`
-		WebURL string `json:"web_url"`
-	}
-	if err := c.do(ctx, http.MethodGet, listURL, nil, &found); err != nil {
-		return Result{}, err
-	}
-	var out struct {
-		WebURL string `json:"web_url"`
-	}
-	if len(found) > 0 {
-		patch := map[string]string{}
-		if e.Title != "" {
-			patch["title"] = e.Title
-		}
-		if e.Body != "" {
-			patch["description"] = e.Body
-		}
-		if len(patch) == 0 {
-			return Result{Ref: "refs/heads/" + source, DeliveryURL: found[0].WebURL}, nil
-		}
-		updURL := fmt.Sprintf("%s/projects/%s/merge_requests/%d", e.APIBase, proj, found[0].IID)
-		if err := c.do(ctx, http.MethodPut, updURL, patch, &out); err != nil {
-			return Result{}, err
-		}
-		return Result{Ref: "refs/heads/" + source, DeliveryURL: out.WebURL}, nil
-	}
-	title := e.Title
-	if title == "" {
-		title = tipSubject(ctx, r, e.Dir, source)
-	}
-	create := map[string]string{"source_branch": source, "target_branch": target, "title": title}
-	if e.Body != "" {
-		create["description"] = e.Body
-	}
-	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("%s/projects/%s/merge_requests", e.APIBase, proj), create, &out); err != nil {
-		return Result{}, err
-	}
-	return Result{Ref: "refs/heads/" + source, DeliveryURL: out.WebURL}, nil
+	return c.createOrUpdate(ctx, r, e, source, forgeRequest{
+		resourceURL:  fmt.Sprintf("%s/projects/%s/merge_requests", e.APIBase, url.PathEscape(project)),
+		listQuery:    q.Encode(),
+		create:       map[string]string{"source_branch": source, "target_branch": target},
+		updateMethod: http.MethodPut,
+		bodyField:    "description",
+	})
 }

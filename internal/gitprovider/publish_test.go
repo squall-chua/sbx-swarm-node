@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,18 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/git"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEnv_String_Redacts(t *testing.T) {
+	e := Env{
+		Dir: "/base", Remote: "origin", RemoteURL: "https://github.com/acme/app",
+		RunEnv: []string{"GIT_CONFIG_VALUE_0=Authorization: Basic U0VOVElORUw="},
+		Cred:   git.Credential{Token: "SENTINEL-ENV-TOK"},
+	}
+	s := fmt.Sprintf("%v / %+v", e, e)
+	require.NotContains(t, s, "SENTINEL-ENV-TOK")         // Cred token
+	require.NotContains(t, s, "U0VOVElORUw=")             // base64 auth in RunEnv
+	require.Contains(t, s, "https://github.com/acme/app") // non-secret fields still shown
+}
 
 func gitCmd(t *testing.T, dir string, args ...string) {
 	t.Helper()
