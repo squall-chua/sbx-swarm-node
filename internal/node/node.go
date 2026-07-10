@@ -599,7 +599,7 @@ func buildGitWorkspaces(ws []config.WorkspaceConfig, dataDir string) map[string]
 				SSHKnownHostsPath: g.SSHKnownHostsPath, CAPath: g.CAPath,
 			},
 			DefaultBranch: g.DefaultBranch,
-			AllowPush:     g.AllowPush, PreSteps: g.PreSteps, PublishSteps: g.PublishSteps, Allowlist: g.ExecAllowlist,
+			AllowPush:     g.AllowPush, APIBaseURL: g.APIBaseURL, PreSteps: g.PreSteps, PublishSteps: g.PublishSteps, Allowlist: g.ExecAllowlist,
 		})
 	}
 	return out

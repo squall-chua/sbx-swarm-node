@@ -229,6 +229,15 @@ func TestGitConfig_ProviderFields(t *testing.T) {
 	require.Equal(t, []string{"git", "git-lfs"}, g.ExecAllowlist)
 }
 
+func TestGitConfig_APIBaseURL(t *testing.T) {
+	g := GitConfig{
+		RemoteURL:  "https://ghe.corp.com/acme/app",
+		Provider:   "github",
+		APIBaseURL: "https://ghe.corp.com/api/v3",
+	}.WithDefaults()
+	require.Equal(t, "https://ghe.corp.com/api/v3", g.APIBaseURL)
+}
+
 func TestValidate_GitWorkspaceNeedsHostPath(t *testing.T) {
 	cfg := Default()
 	cfg.Workspaces = []WorkspaceConfig{{Name: "repo", Git: &GitConfig{}}}

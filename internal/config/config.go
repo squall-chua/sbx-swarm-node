@@ -80,6 +80,7 @@ type GitConfig struct {
 	SSHKeyPath        string `yaml:"ssh_key_path"`         // SSH private key path
 	SSHKnownHostsPath string `yaml:"ssh_known_hosts_path"` // pins SSH host key; "" => accept-new
 	CAPath            string `yaml:"ca_path"`              // internal-CA / self-signed PEM (HTTPS only)
+	APIBaseURL        string `yaml:"api_base_url"`         // REST API base override; "" => derive from remote_url (GitHub/GitLab only)
 }
 
 // WithDefaults returns a copy with unset fields filled with built-in defaults.

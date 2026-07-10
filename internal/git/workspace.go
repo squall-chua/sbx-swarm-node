@@ -18,6 +18,7 @@ type Spec struct {
 	Cred          Credential // node-side credential + trust
 	DefaultBranch string
 	AllowPush     bool
+	APIBaseURL    string // REST API base override (GitHub/GitLab); "" => derive
 	PreSteps      [][]string
 	PublishSteps  [][]string
 	Allowlist     []string
@@ -41,6 +42,7 @@ func (w *Workspace) Provider() string      { return w.spec.Provider }
 func (w *Workspace) DefaultBranch() string { return w.spec.DefaultBranch }
 func (w *Workspace) Cred() Credential      { return w.spec.Cred }
 func (w *Workspace) Base() string          { return w.spec.Base }
+func (w *Workspace) APIBaseURL() string    { return w.spec.APIBaseURL }
 
 // RemoteName returns the configured upstream remote name in the base, defaulting
 // to "origin".

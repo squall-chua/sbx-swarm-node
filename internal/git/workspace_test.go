@@ -64,6 +64,11 @@ func TestWorkspace_PreLockAndPublish(t *testing.T) {
 	require.Contains(t, string(out), "agent/x")
 }
 
+func TestWorkspace_APIBaseURL(t *testing.T) {
+	w := New(Spec{Name: "repo", APIBaseURL: "https://api.example.com"})
+	require.Equal(t, "https://api.example.com", w.APIBaseURL())
+}
+
 func TestWorkspace_EnsureBase_ClonesMirror(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
