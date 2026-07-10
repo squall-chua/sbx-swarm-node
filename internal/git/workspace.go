@@ -72,34 +72,52 @@ func (w *Workspace) runEnv() []string {
 	return env
 }
 
-// EnsureBase creates the mirror base from RemoteURL on first use (ADR-0020). No-op
-// if the base already has a git dir, or if RemoteURL is empty (legacy operator-
-// prepared base). Runs under the workspace lock with the credential env. The
-// clone's remote.origin.mirror flag is cleared afterward (keeping the all-refs
-// mirror fetch refspec) so downstream refspec pushes (Publish, gitprovider.Branch)
-// aren't rejected by a mirror-mode origin.
+// EnsureBase creates the base from RemoteURL on first use (ADR-0020). No-op if the
+// base already exists, or if RemoteURL is empty (legacy operator-prepared base).
+// Runs under the workspace lock with the credential env.
+//
+// The base is a NON-BARE clone with a DETACHED HEAD. It must serve two masters:
+// `sbx --clone` requires a working tree (it rejects a bare repo), while the
+// server-side PRE fetch (+refs/heads/*:refs/heads/*) and Publish's fetch-into-base
+// must update refs/heads/* without hitting "refusing to fetch into checked-out
+// branch". Detaching HEAD leaves no branch checked out, satisfying both. A plain
+// (non-mirror) clone also keeps a normal origin, so refspec pushes (Publish,
+// gitprovider.Branch) are not rejected the way a mirror origin would reject them.
 func (w *Workspace) EnsureBase(ctx context.Context) error {
 	if w.spec.RemoteURL == "" {
 		return nil
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// No-op if a repo is already there: our own non-bare clone (Base/.git) or an
+	// operator-prepared bare base (Base/HEAD).
+	if _, err := os.Stat(filepath.Join(w.spec.Base, ".git")); err == nil {
+		return nil
+	}
 	if _, err := os.Stat(filepath.Join(w.spec.Base, "HEAD")); err == nil {
-		return nil // already a bare/mirror repo
+		return nil
 	}
 	env, err := w.credEnv()
 	if err != nil {
 		return err
 	}
-	parent := filepath.Dir(w.spec.Base)
-	if err := os.MkdirAll(parent, 0o755); err != nil { // node-managed root may not exist yet
+	if err := os.MkdirAll(filepath.Dir(w.spec.Base), 0o755); err != nil { // node-managed root may not exist yet
 		return err
 	}
-	_, err = w.runner.Run(ctx, parent, env,
-		[][]string{
-			{"git", "clone", "--mirror", w.spec.RemoteURL, w.spec.Base},
-			{"git", "-C", w.spec.Base, "config", "remote.origin.mirror", "false"},
-		})
+	if _, err := w.runner.Run(ctx, "", env,
+		[][]string{{"git", "clone", w.spec.RemoteURL, w.spec.Base}}); err != nil {
+		return err
+	}
+	// Detach HEAD so no branch is checked out. If the clone landed on an unborn
+	// branch (upstream's default HEAD points at a branch with no commits), there's
+	// nothing to detach and nothing checked out to conflict with a later fetch, so
+	// leave it as-is.
+	if _, err := w.runner.Run(ctx, "", env,
+		[][]string{{"git", "-C", w.spec.Base, "rev-parse", "--verify", "-q", "HEAD"}}); err != nil {
+		return nil // unborn HEAD (empty checkout) — safe to leave
+	}
+	_, err = w.runner.Run(ctx, "", env,
+		[][]string{{"git", "-C", w.spec.Base, "checkout", "--detach"}})
 	return err
 }
 

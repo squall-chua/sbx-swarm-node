@@ -124,6 +124,6 @@ func TestProvisionLocal_ProviderWorkspaceAutoCreatesBase(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "agent/x", rec.Spec.Branch)
-	_, headErr := os.Stat(filepath.Join(base, "HEAD"))
-	require.NoError(t, headErr, "EnsureBase must have created the mirror base")
+	_, gitErr := os.Stat(filepath.Join(base, ".git"))
+	require.NoError(t, gitErr, "EnsureBase must have created the non-bare base")
 }

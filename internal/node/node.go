@@ -575,7 +575,15 @@ func effectiveGitBase(w config.WorkspaceConfig, dataDir string) string {
 		if root == "" {
 			root = filepath.Join(dataDir, "git-workspaces")
 		}
-		return filepath.Join(root, w.Name+".git")
+		base := filepath.Join(root, w.Name+".git")
+		// Absolute so the base resolves the same regardless of the child git's cwd
+		// (EnsureBase clones from one dir; PreLock/Publish run with cwd=Base). A
+		// relative base doubled the path between them. Abs only fails on a broken
+		// cwd; fall back to the relative path in that impossible case.
+		if abs, err := filepath.Abs(base); err == nil {
+			return abs
+		}
+		return base
 	}
 	return w.HostPath // "" — legacy non-provider workspace with no host_path
 }
