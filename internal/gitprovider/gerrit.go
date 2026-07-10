@@ -78,7 +78,7 @@ func gerritChangeID(remoteURL, source, target string) string {
 // parseGerritURL extracts the change URL Gerrit prints on push stderr
 // (a `remote:` line). Best-effort: "" if the output has no recognizable URL.
 func parseGerritURL(pushOutput []byte) string {
-	for _, line := range strings.Split(string(pushOutput), "\n") {
+	for line := range strings.SplitSeq(string(pushOutput), "\n") {
 		if !strings.Contains(line, "remote:") {
 			continue
 		}

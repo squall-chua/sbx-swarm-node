@@ -46,6 +46,7 @@ func TestPullRequest_Live(t *testing.T) {
 }
 
 func liveBase(t *testing.T, remote, tok string) string {
+	t.Helper()
 	base := filepath.Join(t.TempDir(), "base.git")
 	env := append(os.Environ(),
 		"GIT_CONFIG_COUNT=1",

@@ -52,7 +52,7 @@ func newRESTClient(p Provider, base string, cred git.Credential) (*restClient, e
 
 // do issues method url with provider auth, decoding a 2xx JSON body into out.
 // A non-2xx response maps to a gRPC status; the token never appears in any error.
-func (c *restClient) do(ctx context.Context, method, url string, body, out any) error {
+func (c *restClient) do(ctx context.Context, method, reqURL string, body, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -61,7 +61,7 @@ func (c *restClient) do(ctx context.Context, method, url string, body, out any) 
 		}
 		rdr = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, rdr)
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, rdr)
 	if err != nil {
 		return status.Errorf(codes.Internal, "build %s request", c.provider)
 	}
