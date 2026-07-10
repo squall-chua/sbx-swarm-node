@@ -23,6 +23,8 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // capturePub is an events.Publisher that records every call instead of
@@ -241,4 +243,39 @@ func TestPublishWork_PullRequest_NoCredentialLeak(t *testing.T) {
 		require.NotContains(t, s, b64)
 		require.NotContains(t, s, "Bearer "+tok)
 	}
+}
+
+// TestPublishWork_PullRequest_PropagatesForgeStatus proves the handler no longer
+// flattens every strategy error to codes.Internal: a forge rejecting the token
+// (GitHub 403 on the PR-list GET) must surface as codes.PermissionDenied to the
+// gRPC client, not a generic Internal, while still not leaking the credential.
+func TestPublishWork_PullRequest_PropagatesForgeStatus(t *testing.T) {
+	const tok = "SENTINEL-PR-TOKEN-403"
+	// fake GitHub: PR list GET is forbidden (token lacks repo scope).
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/app/pulls", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
+	require.NoError(t, os.WriteFile(caPath, caPEM, 0o600))
+
+	svc, rec, _, _ := credLeakFixture(t, tok)
+	svc.publishTimeout = 10 * time.Second
+	// re-register the workspace as a github provider pointing at the fake.
+	ws := git.New(git.Spec{
+		Name: "repo", Base: gitBaseOf(t, svc), Remote: "origin", DefaultBranch: "main", AllowPush: true,
+		Provider: "github", RemoteURL: "https://github.com/acme/app", APIBaseURL: srv.URL,
+		Cred:      git.Credential{Token: tok, CAPath: caPath},
+		Allowlist: []string{"git"},
+	})
+	svc.SetGit(map[string]*git.Workspace{"repo": ws})
+
+	_, err := svc.PublishWork(context.Background(), &sbxv1.PublishWorkRequest{Id: rec.ID, Strategy: "pull_request", Target: "main", Title: "t"})
+	require.Error(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.NotContains(t, err.Error(), tok)
 }

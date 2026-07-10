@@ -100,6 +100,9 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 	s.auditPublish(ws.Name(), source, actor, err)
 	if err != nil {
 		s.emit("sandbox.publish_failed", r.Id, map[string]string{"branch": source, "strategy": r.Strategy})
+		if st, ok := status.FromError(err); ok {
+			return nil, st.Err()
+		}
 		return nil, status.Errorf(codes.Internal, "publish-work: %v", err)
 	}
 	s.emit("sandbox.published", r.Id, map[string]string{"branch": source, "strategy": r.Strategy})
