@@ -616,7 +616,7 @@ func (x *PublishSandboxRequest) GetBranches() []string {
 
 type PublishWorkRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`             // sandbox id; source branch is the sandbox's own HEAD/recorded branch
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`             // sandbox id; source branch is the sandbox's recorded branch
 	Strategy      string                 `protobuf:"bytes,2,opt,name=strategy,proto3" json:"strategy,omitempty"` // branch|patch|pull_request|merge_request|gerrit_change
 	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`     // branch: push dest; PR/MR: base branch; gerrit: refs/for/<target>
 	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`       // PR/MR title
@@ -2595,9 +2595,9 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\rUnpublishPort\x12!.sbxswarm.v1.UnpublishPortRequest\x1a\x12.sbxswarm.v1.Empty\"1\x82\xd3\xe4\x93\x02+*)/v1/sandboxes/{id}/ports/{container_port}\x12X\n" +
 	"\bGetStats\x12\x16.sbxswarm.v1.IdRequest\x1a\x12.sbxswarm.v1.Stats\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/sandboxes/{id}/stats\x12s\n" +
 	"\vListBlocked\x12\x16.sbxswarm.v1.IdRequest\x1a .sbxswarm.v1.ListBlockedResponse\"*\x82\xd3\xe4\x93\x02$\x12\"/v1/sandboxes/{id}/network/blocked\x12w\n" +
-	"\x0ePublishSandbox\x12\".sbxswarm.v1.PublishSandboxRequest\x1a\x16.sbxswarm.v1.Operation\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/sandboxes/{id}/git/publish\x12z\n" +
-	"\vPublishWork\x12\x1f.sbxswarm.v1.PublishWorkRequest\x1a\x1a.sbxswarm.v1.PublishResult\".\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/sandboxes/{id}/git/publish-work\x12r\n" +
-	"\fListBranches\x12\x16.sbxswarm.v1.IdRequest\x1a!.sbxswarm.v1.ListBranchesResponse\"'\x82\xd3\xe4\x93\x02!\x12\x1f/v1/sandboxes/{id}/git/branches\x12j\n" +
+	"\x0ePublishSandbox\x12\".sbxswarm.v1.PublishSandboxRequest\x1a\x16.sbxswarm.v1.Operation\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/sandboxes/{id}/git/publish\x12r\n" +
+	"\fListBranches\x12\x16.sbxswarm.v1.IdRequest\x1a!.sbxswarm.v1.ListBranchesResponse\"'\x82\xd3\xe4\x93\x02!\x12\x1f/v1/sandboxes/{id}/git/branches\x12z\n" +
+	"\vPublishWork\x12\x1f.sbxswarm.v1.PublishWorkRequest\x1a\x1a.sbxswarm.v1.PublishResult\".\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/sandboxes/{id}/git/publish-work\x12j\n" +
 	"\n" +
 	"ReadReview\x12\x1e.sbxswarm.v1.ReadReviewRequest\x1a\x1f.sbxswarm.v1.ReadReviewResponse\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/reviews:read\x12\x81\x01\n" +
 	"\x0eResolveThreads\x12\".sbxswarm.v1.ResolveThreadsRequest\x1a#.sbxswarm.v1.ResolveThreadsResponse\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/reviews:resolve-threads\x12_\n" +
@@ -2705,8 +2705,8 @@ var file_sbxswarm_v1_sandbox_proto_depIdxs = []int32{
 	4,  // 35: sbxswarm.v1.SandboxService.GetStats:input_type -> sbxswarm.v1.IdRequest
 	4,  // 36: sbxswarm.v1.SandboxService.ListBlocked:input_type -> sbxswarm.v1.IdRequest
 	7,  // 37: sbxswarm.v1.SandboxService.PublishSandbox:input_type -> sbxswarm.v1.PublishSandboxRequest
-	8,  // 38: sbxswarm.v1.SandboxService.PublishWork:input_type -> sbxswarm.v1.PublishWorkRequest
-	4,  // 39: sbxswarm.v1.SandboxService.ListBranches:input_type -> sbxswarm.v1.IdRequest
+	4,  // 38: sbxswarm.v1.SandboxService.ListBranches:input_type -> sbxswarm.v1.IdRequest
+	8,  // 39: sbxswarm.v1.SandboxService.PublishWork:input_type -> sbxswarm.v1.PublishWorkRequest
 	15, // 40: sbxswarm.v1.SandboxService.ReadReview:input_type -> sbxswarm.v1.ReadReviewRequest
 	17, // 41: sbxswarm.v1.SandboxService.ResolveThreads:input_type -> sbxswarm.v1.ResolveThreadsRequest
 	4,  // 42: sbxswarm.v1.SandboxService.KeepAlive:input_type -> sbxswarm.v1.IdRequest
@@ -2726,8 +2726,8 @@ var file_sbxswarm_v1_sandbox_proto_depIdxs = []int32{
 	32, // 56: sbxswarm.v1.SandboxService.GetStats:output_type -> sbxswarm.v1.Stats
 	34, // 57: sbxswarm.v1.SandboxService.ListBlocked:output_type -> sbxswarm.v1.ListBlockedResponse
 	31, // 58: sbxswarm.v1.SandboxService.PublishSandbox:output_type -> sbxswarm.v1.Operation
-	9,  // 59: sbxswarm.v1.SandboxService.PublishWork:output_type -> sbxswarm.v1.PublishResult
-	6,  // 60: sbxswarm.v1.SandboxService.ListBranches:output_type -> sbxswarm.v1.ListBranchesResponse
+	6,  // 59: sbxswarm.v1.SandboxService.ListBranches:output_type -> sbxswarm.v1.ListBranchesResponse
+	9,  // 60: sbxswarm.v1.SandboxService.PublishWork:output_type -> sbxswarm.v1.PublishResult
 	16, // 61: sbxswarm.v1.SandboxService.ReadReview:output_type -> sbxswarm.v1.ReadReviewResponse
 	18, // 62: sbxswarm.v1.SandboxService.ResolveThreads:output_type -> sbxswarm.v1.ResolveThreadsResponse
 	2,  // 63: sbxswarm.v1.SandboxService.KeepAlive:output_type -> sbxswarm.v1.Sandbox

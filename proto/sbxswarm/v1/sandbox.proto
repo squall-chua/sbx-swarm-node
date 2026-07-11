@@ -53,11 +53,11 @@ service SandboxService {
   rpc PublishSandbox(PublishSandboxRequest) returns (Operation) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish" body: "*"};
   }
-  rpc PublishWork(PublishWorkRequest) returns (PublishResult) {
-    option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish-work" body: "*"};
-  }
   rpc ListBranches(IdRequest) returns (ListBranchesResponse) {
     option (google.api.http) = {get: "/v1/sandboxes/{id}/git/branches"};
+  }
+  rpc PublishWork(PublishWorkRequest) returns (PublishResult) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish-work" body: "*"};
   }
   rpc ReadReview(ReadReviewRequest) returns (ReadReviewResponse) {
     option (google.api.http) = {post: "/v1/reviews:read" body: "*"};
@@ -125,7 +125,7 @@ message PublishSandboxRequest {
 }
 
 message PublishWorkRequest {
-  string id = 1;       // sandbox id; source branch is the sandbox's own HEAD/recorded branch
+  string id = 1;       // sandbox id; source branch is the sandbox's recorded branch
   string strategy = 2; // branch|patch|pull_request|merge_request|gerrit_change
   string target = 3;   // branch: push dest; PR/MR: base branch; gerrit: refs/for/<target>
   string title = 4;    // PR/MR title
@@ -136,7 +136,7 @@ message PublishResult {
   string ref = 1;          // pushed ref (refs/heads/... or refs/for/...)
   string delivery_url = 2; // PR/MR/Change URL; empty for a plain branch push
   string change_id = 3;    // gerrit only
-  bytes  patch = 4;        // patch strategy only
+  bytes patch = 4;         // patch strategy only
   bool no_change = 5;      // push produced no new commits/Patchset (idempotent re-run / empty diff)
 }
 
