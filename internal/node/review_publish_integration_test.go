@@ -154,6 +154,139 @@ func TestNode_Gerrit_ReviewHeadRepublish(t *testing.T) {
 	t.Logf("re-published patchset on change %s (Change-Id %s)", change, wantChangeID)
 }
 
+// TestNode_GitHub_ReviewHeadPush drives the #23-b Sandbox path for a forge PR:
+// create a clone-mode sandbox with review_ref -> the node checks out the PR head
+// branch -> commit a fix -> PublishWork("branch") pushes it to the PR head branch
+// IN PLACE (new commits on the same PR, no new PR).
+//
+//	GITHUB_TOKEN=$(gh auth token) GH_REVIEW_REPO=squall-chua/test GH_REVIEW_PR=2 \
+//	go test -tags integration ./internal/node/ -run TestNode_GitHub_ReviewHeadPush -v
+func TestNode_GitHub_ReviewHeadPush(t *testing.T) {
+	token := os.Getenv("GITHUB_TOKEN")
+	repo := os.Getenv("GH_REVIEW_REPO")
+	pr := os.Getenv("GH_REVIEW_PR")
+	if token == "" || repo == "" || pr == "" {
+		t.Skip("set GITHUB_TOKEN, GH_REVIEW_REPO, GH_REVIEW_PR")
+	}
+	headBranch := githubPRHeadBranch(t, token, repo, pr)
+	beforeSHA := githubBranchSHA(t, token, repo, headBranch)
+	t.Logf("PR %s head branch=%s sha=%s", pr, headBranch, beforeSHA)
+	t.Setenv("GITHUB_TOKEN", token)
+
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = "127.0.0.1:0"
+	cfg.Backend = "sdk"
+	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}}
+	cfg.Workspaces = []config.WorkspaceConfig{{
+		Name: "gh",
+		Git: &config.GitConfig{
+			Provider:      "github",
+			RemoteURL:     "https://github.com/" + repo + ".git",
+			TokenEnv:      "GITHUB_TOKEN",
+			DefaultBranch: "main",
+			AllowPush:     true,
+		},
+	}}
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err, "node.New with backend:sdk (needs a version-compatible sbx daemon)")
+	require.NoError(t, n.Start())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+	c := &nodeClient{t: t, base: "https://" + n.Addr(),
+		http: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}}
+
+	var op struct{ SandboxID string `json:"sandbox_id"` }
+	c.do(http.MethodPost, "/v1/sandboxes", map[string]any{
+		"agent": "shell", "cpus": 1, "memory_bytes": 1 << 30, "clone": true,
+		"workspaces": []map[string]any{{"name": "gh"}},
+		"review_ref": map[string]any{"workspace": "gh", "id": pr},
+	}, &op)
+
+	var id, branch string
+	require.Eventually(t, func() bool {
+		var list struct {
+			Sandboxes []struct{ ID, Status, Branch string }
+		}
+		c.do(http.MethodGet, "/v1/sandboxes", nil, &list)
+		for _, s := range list.Sandboxes {
+			if s.Status == "running" {
+				id, branch = s.ID, s.Branch
+				return true
+			}
+		}
+		return false
+	}, 90*time.Second, time.Second, "sandbox never reached running")
+	t.Cleanup(func() { c.deleteAndWait(id) })
+	require.Equal(t, headBranch, branch, "sandbox checked out the PR head branch")
+
+	var ex struct {
+		ExitCode int    `json:"exit_code"`
+		Stdout   []byte `json:"stdout"`
+		Stderr   []byte `json:"stderr"`
+	}
+	c.do(http.MethodPost, "/v1/sandboxes/"+id+"/exec", map[string]any{
+		"cmd": []string{"sh", "-c",
+			"set -ex; git checkout " + headBranch + "; echo '# addressed review' >> NOTES.md; git add -A; " +
+				"git -c user.email=dev@example.com -c user.name=dev commit -m 'address review'"},
+	}, &ex)
+	require.Equalf(t, 0, ex.ExitCode, "fix commit failed: stdout=%s stderr=%s", ex.Stdout, ex.Stderr)
+
+	var res struct {
+		Ref      string `json:"ref"`
+		NoChange bool   `json:"no_change"`
+	}
+	c.do(http.MethodPost, "/v1/sandboxes/"+id+"/git/publish-work", map[string]any{
+		"strategy": "branch", "target": headBranch,
+	}, &res)
+	require.Equal(t, "refs/heads/"+headBranch, res.Ref)
+	require.False(t, res.NoChange, "a real fix commit advances the branch")
+
+	// Verify against the branch ref, which updates immediately (the PR object's
+	// head.sha is eventually consistent and lags the push).
+	afterSHA := githubBranchSHA(t, token, repo, headBranch)
+	require.NotEqual(t, beforeSHA, afterSHA, "PR head branch advanced in place (new commits, same PR)")
+	t.Logf("PR %s head branch %s advanced %s -> %s (in place, no new PR)", pr, headBranch, beforeSHA, afterSHA)
+}
+
+func githubGet(t *testing.T, token, url string, out any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	require.Equalf(t, 200, resp.StatusCode, "GET %s: %s", url, raw)
+	require.NoError(t, json.Unmarshal(raw, out))
+}
+
+func githubPRHeadBranch(t *testing.T, token, repo, pr string) string {
+	var p struct {
+		Head struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
+	}
+	githubGet(t, token, "https://api.github.com/repos/"+repo+"/pulls/"+pr, &p)
+	require.NotEmpty(t, p.Head.Ref)
+	return p.Head.Ref
+}
+
+func githubBranchSHA(t *testing.T, token, repo, branch string) string {
+	var r struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	githubGet(t, token, "https://api.github.com/repos/"+repo+"/git/ref/heads/"+branch, &r)
+	return r.Object.SHA
+}
+
 // gerritGet issues an XSSI-stripped authenticated GET and decodes into out.
 func gerritGet(t *testing.T, apiBase, pw, path string, out any) {
 	t.Helper()
