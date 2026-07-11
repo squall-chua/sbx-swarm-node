@@ -251,6 +251,17 @@ func TestNode_GitHub_ReviewHeadPush(t *testing.T) {
 	afterSHA := githubBranchSHA(t, token, repo, headBranch)
 	require.NotEqual(t, beforeSHA, afterSHA, "PR head branch advanced in place (new commits, same PR)")
 	t.Logf("PR %s head branch %s advanced %s -> %s (in place, no new PR)", pr, headBranch, beforeSHA, afterSHA)
+
+	// Re-publish with no new commit: the branch is already up to date, so the
+	// node reports no_change=true (the #23-d seam the Agency uses to skip the reply).
+	var res2 struct {
+		NoChange bool `json:"no_change"`
+	}
+	c.do(http.MethodPost, "/v1/sandboxes/"+id+"/git/publish-work", map[string]any{
+		"strategy": "branch", "target": headBranch,
+	}, &res2)
+	require.True(t, res2.NoChange, "idempotent re-publish with no new commit reports no_change")
+	require.Equal(t, afterSHA, githubBranchSHA(t, token, repo, headBranch), "no-op re-publish left the branch unchanged")
 }
 
 func githubGet(t *testing.T, token, url string, out any) {
