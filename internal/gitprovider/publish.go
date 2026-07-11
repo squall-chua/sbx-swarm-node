@@ -14,6 +14,7 @@ type Result struct {
 	DeliveryURL string
 	ChangeID    string
 	Patch       []byte
+	NoChange    bool // push produced nothing new (idempotent re-run / empty diff)
 }
 
 // String is a safe, log-friendly representation of a Result: Ref/DeliveryURL/
@@ -72,10 +73,30 @@ func Branch(ctx context.Context, r *git.Runner, e Env, source, target string) (R
 	if dest == "" {
 		dest = source
 	}
-	if _, err := r.Run(ctx, e.Dir, e.RunEnv, [][]string{{"git", "push", e.remote(), source + ":" + dest}}); err != nil {
+	// --porcelain gives a machine-readable status line per ref: flag '=' means the
+	// ref was already up to date (nothing pushed) — the no_change seam (#23-d).
+	res, err := r.Run(ctx, e.Dir, e.RunEnv, [][]string{{"git", "push", "--porcelain", e.remote(), source + ":" + dest}})
+	if err != nil {
 		return Result{}, err
 	}
-	return Result{Ref: "refs/heads/" + dest}, nil
+	return Result{Ref: "refs/heads/" + dest, NoChange: pushUpToDate(res[len(res)-1].Output)}, nil
+}
+
+// pushUpToDate reports whether a --porcelain push left every ref unchanged (each
+// status line's flag is '='). Empty/absent status → treat as a real push.
+func pushUpToDate(out []byte) bool {
+	sawRef := false
+	for _, line := range strings.Split(string(out), "\n") {
+		switch {
+		case line == "", strings.HasPrefix(line, "To "), line == "Done":
+			continue
+		case strings.HasPrefix(line, "="): // "=\t<ref>\t[up to date]"
+			sawRef = true
+		default:
+			return false // a non-'=' ref line = something changed
+		}
+	}
+	return sawRef
 }
 
 // Patch returns format-patch bytes for target..source (no remote write). If

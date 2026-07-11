@@ -57,7 +57,14 @@ func GerritChange(ctx context.Context, r *git.Runner, e Env, source, target stri
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Ref: "refs/for/" + target, ChangeID: changeID, DeliveryURL: parseGerritURL(pushed[len(pushed)-1].Output)}, nil
+	out := pushed[len(pushed)-1].Output
+	return Result{
+		Ref: "refs/for/" + target, ChangeID: changeID,
+		DeliveryURL: parseGerritURL(out),
+		// Gerrit refuses an empty/duplicate push with "no new changes" — the
+		// no_change seam (#23-d). ponytail: text match; Gerrit has no porcelain here.
+		NoChange: strings.Contains(string(out), "no new changes"),
+	}, nil
 }
 
 // gerritChangeID derives Gerrit's Change-Id from the deliverable key
