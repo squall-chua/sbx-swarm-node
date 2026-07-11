@@ -36,6 +36,8 @@ const (
 	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
 	SandboxService_PublishWork_FullMethodName    = "/sbxswarm.v1.SandboxService/PublishWork"
 	SandboxService_ListBranches_FullMethodName   = "/sbxswarm.v1.SandboxService/ListBranches"
+	SandboxService_ReadReview_FullMethodName     = "/sbxswarm.v1.SandboxService/ReadReview"
+	SandboxService_ResolveThreads_FullMethodName = "/sbxswarm.v1.SandboxService/ResolveThreads"
 	SandboxService_KeepAlive_FullMethodName      = "/sbxswarm.v1.SandboxService/KeepAlive"
 	SandboxService_ListOperations_FullMethodName = "/sbxswarm.v1.SandboxService/ListOperations"
 )
@@ -61,6 +63,8 @@ type SandboxServiceClient interface {
 	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
 	PublishWork(ctx context.Context, in *PublishWorkRequest, opts ...grpc.CallOption) (*PublishResult, error)
 	ListBranches(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBranchesResponse, error)
+	ReadReview(ctx context.Context, in *ReadReviewRequest, opts ...grpc.CallOption) (*ReadReviewResponse, error)
+	ResolveThreads(ctx context.Context, in *ResolveThreadsRequest, opts ...grpc.CallOption) (*ResolveThreadsResponse, error)
 	KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error)
 	ListOperations(ctx context.Context, in *ListOperationsRequest, opts ...grpc.CallOption) (*ListOperationsResponse, error)
 }
@@ -243,6 +247,26 @@ func (c *sandboxServiceClient) ListBranches(ctx context.Context, in *IdRequest, 
 	return out, nil
 }
 
+func (c *sandboxServiceClient) ReadReview(ctx context.Context, in *ReadReviewRequest, opts ...grpc.CallOption) (*ReadReviewResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadReviewResponse)
+	err := c.cc.Invoke(ctx, SandboxService_ReadReview_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxServiceClient) ResolveThreads(ctx context.Context, in *ResolveThreadsRequest, opts ...grpc.CallOption) (*ResolveThreadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveThreadsResponse)
+	err := c.cc.Invoke(ctx, SandboxService_ResolveThreads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sandboxServiceClient) KeepAlive(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Sandbox, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Sandbox)
@@ -284,6 +308,8 @@ type SandboxServiceServer interface {
 	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
 	PublishWork(context.Context, *PublishWorkRequest) (*PublishResult, error)
 	ListBranches(context.Context, *IdRequest) (*ListBranchesResponse, error)
+	ReadReview(context.Context, *ReadReviewRequest) (*ReadReviewResponse, error)
+	ResolveThreads(context.Context, *ResolveThreadsRequest) (*ResolveThreadsResponse, error)
 	KeepAlive(context.Context, *IdRequest) (*Sandbox, error)
 	ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsResponse, error)
 	mustEmbedUnimplementedSandboxServiceServer()
@@ -346,6 +372,12 @@ func (UnimplementedSandboxServiceServer) PublishWork(context.Context, *PublishWo
 }
 func (UnimplementedSandboxServiceServer) ListBranches(context.Context, *IdRequest) (*ListBranchesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBranches not implemented")
+}
+func (UnimplementedSandboxServiceServer) ReadReview(context.Context, *ReadReviewRequest) (*ReadReviewResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadReview not implemented")
+}
+func (UnimplementedSandboxServiceServer) ResolveThreads(context.Context, *ResolveThreadsRequest) (*ResolveThreadsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveThreads not implemented")
 }
 func (UnimplementedSandboxServiceServer) KeepAlive(context.Context, *IdRequest) (*Sandbox, error) {
 	return nil, status.Error(codes.Unimplemented, "method KeepAlive not implemented")
@@ -680,6 +712,42 @@ func _SandboxService_ListBranches_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_ReadReview_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadReviewRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).ReadReview(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_ReadReview_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).ReadReview(ctx, req.(*ReadReviewRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxService_ResolveThreads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveThreadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).ResolveThreads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_ResolveThreads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).ResolveThreads(ctx, req.(*ResolveThreadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SandboxService_KeepAlive_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IdRequest)
 	if err := dec(in); err != nil {
@@ -790,6 +858,14 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListBranches",
 			Handler:    _SandboxService_ListBranches_Handler,
+		},
+		{
+			MethodName: "ReadReview",
+			Handler:    _SandboxService_ReadReview_Handler,
+		},
+		{
+			MethodName: "ResolveThreads",
+			Handler:    _SandboxService_ResolveThreads_Handler,
 		},
 		{
 			MethodName: "KeepAlive",
