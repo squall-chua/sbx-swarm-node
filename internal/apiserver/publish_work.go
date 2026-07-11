@@ -106,7 +106,7 @@ func (s *SandboxService) PublishWork(ctx context.Context, r *sbxv1.PublishWorkRe
 		return nil, status.Errorf(codes.Internal, "publish-work: %v", err)
 	}
 	s.emit("sandbox.published", r.Id, map[string]string{"branch": source, "strategy": r.Strategy})
-	return &sbxv1.PublishResult{Ref: res.Ref, DeliveryUrl: res.DeliveryURL, ChangeId: res.ChangeID, Patch: res.Patch}, nil
+	return &sbxv1.PublishResult{Ref: res.Ref, DeliveryUrl: res.DeliveryURL, ChangeId: res.ChangeID, Patch: res.Patch, NoChange: res.NoChange}, nil
 }
 
 // sourceBranch resolves the publish source: live HEAD when it is a real branch,

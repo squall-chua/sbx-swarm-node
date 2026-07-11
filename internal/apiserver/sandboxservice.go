@@ -153,9 +153,13 @@ func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 	for _, w := range r.Workspaces {
 		ws = append(ws, sandbox.WorkspaceMount{Name: w.Name, ReadOnly: w.ReadOnly})
 	}
+	var reviewRef *sandbox.ReviewRef
+	if rr := r.ReviewRef; rr != nil {
+		reviewRef = &sandbox.ReviewRef{Workspace: rr.Workspace, ID: rr.Id}
+	}
 	return sandbox.CreateSpec{
 		Agent: r.Agent, Template: r.Template, CPUs: int(r.Cpus),
-		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, Workspaces: ws, Env: r.Env, Labels: r.Labels,
+		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, ReviewRef: reviewRef, Workspaces: ws, Env: r.Env, Labels: r.Labels,
 		DisplayName: r.Name,
 	}
 }

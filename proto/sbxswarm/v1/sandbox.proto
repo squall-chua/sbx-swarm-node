@@ -53,11 +53,17 @@ service SandboxService {
   rpc PublishSandbox(PublishSandboxRequest) returns (Operation) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish" body: "*"};
   }
+  rpc ListBranches(IdRequest) returns (ListBranchesResponse) {
+    option (google.api.http) = {get: "/v1/sandboxes/{id}/git/branches"};
+  }
   rpc PublishWork(PublishWorkRequest) returns (PublishResult) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/git/publish-work" body: "*"};
   }
-  rpc ListBranches(IdRequest) returns (ListBranchesResponse) {
-    option (google.api.http) = {get: "/v1/sandboxes/{id}/git/branches"};
+  rpc ReadReview(ReadReviewRequest) returns (ReadReviewResponse) {
+    option (google.api.http) = {post: "/v1/reviews:read" body: "*"};
+  }
+  rpc ResolveThreads(ResolveThreadsRequest) returns (ResolveThreadsResponse) {
+    option (google.api.http) = {post: "/v1/reviews:resolve-threads" body: "*"};
   }
   rpc KeepAlive(IdRequest) returns (Sandbox) {
     option (google.api.http) = {post: "/v1/sandboxes/{id}/keepalive"};
@@ -87,6 +93,7 @@ message CreateSandboxRequest {
   map<string, string> node_anti_affinity = 12;  // exclude nodes whose labels match (node labels, not the sandbox's own)
   string branch = 13; // clone-mode: branch the agent works on / auto-publish target
   string name = 14;   // optional human-readable display name (blank => auto-derived)
+  ReviewRef review_ref = 15; // when set, node checks out the Review's head instead of the workspace default
 }
 
 message Sandbox {
@@ -118,7 +125,7 @@ message PublishSandboxRequest {
 }
 
 message PublishWorkRequest {
-  string id = 1;       // sandbox id; source branch is the sandbox's own HEAD/recorded branch
+  string id = 1;       // sandbox id; source branch is the sandbox's recorded branch
   string strategy = 2; // branch|patch|pull_request|merge_request|gerrit_change
   string target = 3;   // branch: push dest; PR/MR: base branch; gerrit: refs/for/<target>
   string title = 4;    // PR/MR title
@@ -129,7 +136,59 @@ message PublishResult {
   string ref = 1;          // pushed ref (refs/heads/... or refs/for/...)
   string delivery_url = 2; // PR/MR/Change URL; empty for a plain branch push
   string change_id = 3;    // gerrit only
-  bytes  patch = 4;        // patch strategy only
+  bytes patch = 4;         // patch strategy only
+  bool no_change = 5;      // push produced no new commits/Patchset (idempotent re-run / empty diff)
+}
+
+// ReviewRef identifies a Review to operate on. The node derives the provider
+// from the workspace's remote. Id is the PR number / MR iid / Gerrit change
+// number, as a string.
+message ReviewRef {
+  string workspace = 1;
+  string id = 2;
+}
+
+message ReviewComment {
+  string id = 1;
+  string author = 2;
+  string body = 3;
+}
+
+message ReviewThread {
+  string id = 1;
+  string file = 2; // "" = review-level / general comment
+  int32 line = 3;
+  repeated ReviewComment comments = 4;
+}
+
+// Review is the resolver's read of a Review: PUBLISHED, UNRESOLVED comments
+// only (the node filters Gerrit drafts and resolved threads).
+message Review {
+  string head = 1;
+  repeated ReviewThread threads = 2;
+  repeated string requested_changes = 3;
+}
+
+// ThreadReply replies to one thread; resolve marks it resolved (opt-in).
+message ThreadReply {
+  string thread_id = 1;
+  string body = 2;
+  bool resolve = 3;
+}
+
+message ReadReviewRequest {
+  ReviewRef review_ref = 1;
+}
+message ReadReviewResponse {
+  Review review = 1;
+}
+
+message ResolveThreadsRequest {
+  ReviewRef review_ref = 1;
+  repeated ThreadReply replies = 2;
+}
+message ResolveThreadsResponse {
+  repeated string created_comment_ids = 1;
 }
 
 message ListSandboxesRequest {

@@ -1,0 +1,25 @@
+# Local Gerrit for testing the `gerrit_change` publish strategy.
+# The gerritcodereview/gerrit image defaults to auth.type =
+# DEVELOPMENT_BECOME_ANY_ACCOUNT: the FIRST account you register in the web UI
+# becomes an admin. For dev only — do not expose this.
+services:
+  gerrit:
+    image: gerritcodereview/gerrit:3.13.7
+    ports:
+      - "8080:8080"      # web UI + HTTP git
+      - "29418:29418"    # SSH git — use this for the workspace remote_url
+    environment:
+      - CANONICAL_WEB_URL=http://localhost:8080/
+    volumes:
+      - gerrit-etc:/var/gerrit/etc
+      - gerrit-git:/var/gerrit/git
+      - gerrit-db:/var/gerrit/db
+      - gerrit-index:/var/gerrit/index
+      - gerrit-cache:/var/gerrit/cache
+
+volumes:
+  gerrit-etc:
+  gerrit-git:
+  gerrit-db:
+  gerrit-index:
+  gerrit-cache:
