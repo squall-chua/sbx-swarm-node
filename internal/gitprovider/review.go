@@ -41,6 +41,60 @@ type Reply struct {
 	Resolve  bool
 }
 
+// ReviewHead names the local branch a clone-mode sandbox should check out for a
+// Review, and (Gerrit only) the ref to fetch into the base first. PublishWork
+// later pushes LocalBranch back in place (a forge PR branch / a new Patchset).
+type ReviewHead struct {
+	LocalBranch string
+	FetchRef    string // "" when the base already has LocalBranch (forge branches come via PreSteps)
+}
+
+// ReviewHead resolves the checkout target for a Review head. reviewID is the PR
+// number / Gerrit change number as a string.
+func ResolveReviewHead(ctx context.Context, e Env, prov Provider, reviewID string) (ReviewHead, error) {
+	switch prov {
+	case GitHub:
+		return githubReviewHead(ctx, e, reviewID)
+	case Gerrit:
+		return gerritReviewHead(ctx, e, reviewID)
+	default:
+		return ReviewHead{}, status.Errorf(codes.Unimplemented, "review-head checkout not supported for provider %q", prov)
+	}
+}
+
+// githubReviewHead reads the PR's head branch. Same-repo PRs only — a fork head
+// lives on another repo, so pushing the fix back in place (PublishWork "branch")
+// would target origin's branch, not the fork. The base already has the branch
+// (PreSteps fetch all heads), so no explicit fetch.
+func githubReviewHead(ctx context.Context, e Env, reviewID string) (ReviewHead, error) {
+	owner, repo, err := ParseRepo(GitHub, e.RemoteURL)
+	if err != nil {
+		return ReviewHead{}, status.Error(codes.InvalidArgument, err.Error())
+	}
+	c, err := newRESTClient(GitHub, e.Cred)
+	if err != nil {
+		return ReviewHead{}, err
+	}
+	var pr struct {
+		Head struct {
+			Ref  string `json:"ref"`
+			Repo struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
+		} `json:"head"`
+	}
+	if err := c.do(ctx, http.MethodGet, e.APIBase+"/repos/"+owner+"/"+repo+"/pulls/"+reviewID, nil, &pr); err != nil {
+		return ReviewHead{}, err
+	}
+	if pr.Head.Ref == "" {
+		return ReviewHead{}, status.Errorf(codes.FailedPrecondition, "pr %s has no head branch", reviewID)
+	}
+	if want := owner + "/" + repo; !strings.EqualFold(pr.Head.Repo.FullName, want) {
+		return ReviewHead{}, status.Errorf(codes.FailedPrecondition, "pr %s head is on a fork (%s); push-in-place needs a same-repo PR", reviewID, pr.Head.Repo.FullName)
+	}
+	return ReviewHead{LocalBranch: pr.Head.Ref}, nil
+}
+
 // ReadReview reads a Review's published, unresolved threads. Provider is derived
 // by the caller from the workspace remote (ADR-0024); reviewID is the PR number /
 // Gerrit change number as a string.

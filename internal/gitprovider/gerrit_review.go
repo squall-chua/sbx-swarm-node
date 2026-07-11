@@ -227,6 +227,31 @@ func gerritReadReview(ctx context.Context, e Env, changeID string) (ReviewData, 
 	return out, nil
 }
 
+// gerritReviewHead resolves the Change's current Patchset fetch ref (e.g.
+// refs/changes/01/1/3). The base has no refs/changes/*, so it is fetched into a
+// local review/<id> branch; the checked-out commit keeps its Change-Id trailer
+// so a later gerrit_change push lands a new Patchset on the same Change.
+func gerritReviewHead(ctx context.Context, e Env, changeID string) (ReviewHead, error) {
+	c, err := newGerritClient(e)
+	if err != nil {
+		return ReviewHead{}, err
+	}
+	var change struct {
+		CurrentRevision string `json:"current_revision"`
+		Revisions       map[string]struct {
+			Ref string `json:"ref"`
+		} `json:"revisions"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/changes/"+changeID+"?o=CURRENT_REVISION", nil, &change); err != nil {
+		return ReviewHead{}, err
+	}
+	rev, ok := change.Revisions[change.CurrentRevision]
+	if !ok || rev.Ref == "" {
+		return ReviewHead{}, status.Errorf(codes.FailedPrecondition, "gerrit change %s has no current patchset ref", changeID)
+	}
+	return ReviewHead{LocalBranch: "review/" + changeID, FetchRef: rev.Ref}, nil
+}
+
 // gerritCommentInput is one CommentInput in a SetReview call.
 type gerritCommentInput struct {
 	InReplyTo  string `json:"in_reply_to,omitempty"`

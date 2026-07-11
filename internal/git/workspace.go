@@ -142,6 +142,17 @@ func (w *Workspace) PreLock(ctx context.Context, branch string) (func(), error) 
 	return w.mu.Unlock, nil
 }
 
+// FetchRef fetches a single upstream ref into the base as a local branch,
+// forcing it (+). Used to bring a review head that PreSteps do not fetch (a
+// Gerrit Patchset at refs/changes/*) into the base before a clone.
+func (w *Workspace) FetchRef(ctx context.Context, ref, localBranch string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, err := w.runner.Run(ctx, w.spec.Base, w.runEnv(),
+		[][]string{{"git", "fetch", w.RemoteName(), "+" + ref + ":refs/heads/" + localBranch}})
+	return err
+}
+
 // Publish locks the workspace and runs the PUBLISH pipeline (fetch the branch
 // from the sandbox remote, push it upstream). Self-contained (no spanning).
 func (w *Workspace) Publish(ctx context.Context, branch, sandboxRemote string) error {

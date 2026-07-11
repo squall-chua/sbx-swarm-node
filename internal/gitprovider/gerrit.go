@@ -23,7 +23,13 @@ func GerritChange(ctx context.Context, r *git.Runner, e Env, source, target stri
 	if target == "" {
 		return Result{}, status.Error(codes.InvalidArgument, "gerrit_change requires a target branch")
 	}
-	changeID := gerritChangeID(e.RemoteURL, source, target)
+	// Reuse an existing Change-Id from the source history (a review-head sandbox
+	// carries the original Patchset's trailer) so the re-push lands a new Patchset
+	// on the same Change instead of a duplicate; otherwise derive a stable one.
+	changeID := existingChangeID(ctx, r, e.Dir, target, source)
+	if changeID == "" {
+		changeID = gerritChangeID(e.RemoteURL, source, target)
+	}
 
 	subject := e.Title
 	if subject == "" {
@@ -65,6 +71,22 @@ func GerritChange(ctx context.Context, r *git.Runner, e Env, source, target stri
 		// no_change seam (#23-d). ponytail: text match; Gerrit has no porcelain here.
 		NoChange: strings.Contains(string(out), "no new changes"),
 	}, nil
+}
+
+var changeIDRe = regexp.MustCompile(`(?m)^Change-Id: (I[0-9a-fA-F]+)\s*$`)
+
+// existingChangeID returns the Change-Id trailer from source's history above
+// target (the original Patchset commit carries it; fix commits on top do not).
+// "" if none — e.g. a fresh non-review branch, where the caller derives one.
+func existingChangeID(ctx context.Context, r *git.Runner, dir, target, source string) string {
+	res, err := r.Run(ctx, dir, nil, [][]string{{"git", "log", "--format=%B", target + ".." + source}})
+	if err != nil || len(res) == 0 {
+		return ""
+	}
+	if m := changeIDRe.FindSubmatch(res[len(res)-1].Output); m != nil {
+		return string(m[1])
+	}
+	return ""
 }
 
 // gerritChangeID derives Gerrit's Change-Id from the deliverable key

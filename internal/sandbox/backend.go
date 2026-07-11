@@ -27,10 +27,19 @@ type CreateSpec struct {
 	MemoryBytes int64
 	DiskGB      float64 // requested disk (GB); scheduling-only in v1 (no SDK create option)
 	Clone       bool
-	Branch      string // clone-mode recorded branch (auto-publish target)
+	Branch      string     // clone-mode recorded branch (auto-publish target)
+	ReviewRef   *ReviewRef // when set, clone checks out the Review head instead of Branch
 	Workspaces  []WorkspaceMount
 	Env         map[string]string
 	Labels      map[string]string // sandbox's own labels (e.g. idle-stop: off)
+}
+
+// ReviewRef identifies a Review whose head a clone-mode sandbox should check out.
+// The node derives the provider from the workspace remote; ID is the PR number /
+// Gerrit change number as a string.
+type ReviewRef struct {
+	Workspace string
+	ID        string
 }
 
 // Resources is a per-sandbox resource triple (cores / bytes / GB). Used for
