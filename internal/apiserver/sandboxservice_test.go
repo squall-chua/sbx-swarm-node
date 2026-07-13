@@ -96,6 +96,8 @@ func TestEffectiveSizing_BuiltinFloorWhenNoDefault(t *testing.T) {
 	require.Equal(t, floorCPUCores, got.Cpus)
 	require.Equal(t, floorMemoryBytes, got.MemoryBytes)
 	require.Equal(t, floorDiskGB, got.DiskGb)
+	// The daemon rejects sub-1-GiB memory; the floor must not regress below it.
+	require.GreaterOrEqual(t, got.MemoryBytes, int64(1<<30))
 }
 
 func TestResolveStrategy_AcceptsLeastActualLoad(t *testing.T) {

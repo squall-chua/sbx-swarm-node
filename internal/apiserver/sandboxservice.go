@@ -70,14 +70,14 @@ func (s *SandboxService) WithPlacement(place PlaceFunc, defaultStrategy string, 
 
 const (
 	floorCPUCores    int32 = 1
-	floorMemoryBytes int64 = 512 << 20 // 512 MiB
+	floorMemoryBytes int64 = 1 << 30 // 1 GiB — the sbx daemon rejects anything below this
 	floorDiskGB            = 1.0
 )
 
 // effectiveSpec returns a copy of r with each unset resource filled from the
 // configured default, else the built-in floor (no untracked sandboxes).
-// ponytail: floor approximates the daemon's hidden default; source it from the
-// daemon once the SDK exposes it.
+// ponytail: floor tracks the daemon's minimum (1 GiB memory); source it from
+// the daemon once the SDK exposes it.
 func effectiveSpec(r *sbxv1.CreateSandboxRequest, defaults sandbox.Resources) *sbxv1.CreateSandboxRequest {
 	out := proto.Clone(r).(*sbxv1.CreateSandboxRequest)
 	if out.Cpus <= 0 {
