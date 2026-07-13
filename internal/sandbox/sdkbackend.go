@@ -460,11 +460,15 @@ func (b *SDKBackend) PolicyList(ctx context.Context, scope string) ([]PolicyRule
 	}
 	out := make([]PolicyRule, 0, len(rules))
 	for _, r := range rules {
+		rule := r.Name // SDK v0.1.8: rule name, or ID when unnamed
+		if rule == "" {
+			rule = r.ID
+		}
 		out = append(out, PolicyRule{
-			Provenance: r.Provenance,
+			Provenance: r.Origin,
 			AppliesTo:  r.AppliesTo,
-			Rule:       r.Rule,
-			Type:       r.Type,
+			Rule:       rule,
+			Type:       r.ResourceType,
 			Decision:   r.Decision,
 			Resources:  strings.Join(r.Resources, ","),
 		})
