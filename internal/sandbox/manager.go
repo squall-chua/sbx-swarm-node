@@ -241,6 +241,11 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if err := m.backend.Remove(ctx, rec.BackendName); err != nil && err != ErrNotFound {
 		return err
 	}
+	// GC the sandbox's proxy-injected custom secrets. The daemon keys them by
+	// scope (BackendName) and does NOT drop them when the sandbox is removed, so
+	// they orphan in `secret ls`. Best-effort: a cleanup failure must not fail
+	// the delete — the sandbox is already gone.
+	m.removeCustomSecrets(ctx, rec.BackendName)
 	m.mu.Lock()
 	err = m.store.Delete(bucket, id)
 	m.mu.Unlock()
@@ -250,6 +255,20 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	m.emit("sandbox.deleted", id, nil)
 	m.notifyOwnedChanged()
 	return nil
+}
+
+// removeCustomSecrets best-effort deletes every proxy-injected custom secret
+// scoped to a sandbox (keyed on its BackendName). Errors are swallowed:
+// orphaned secrets are a minor leak, but a failed cleanup must never block
+// sandbox deletion.
+func (m *Manager) removeCustomSecrets(ctx context.Context, scope string) {
+	secs, err := m.backend.SecretList(ctx, scope)
+	if err != nil {
+		return
+	}
+	for _, c := range secs.Custom {
+		_ = m.backend.SecretRemove(ctx, scope, c.Host)
+	}
 }
 
 // SetLastPublish records a successful publish time on the sandbox record.
