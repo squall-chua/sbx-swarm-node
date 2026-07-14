@@ -3,6 +3,7 @@ package apiserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -236,9 +237,24 @@ func (s *SandboxService) CreateSandbox(ctx context.Context, r *sbxv1.CreateSandb
 	if err != nil {
 		return nil, err
 	}
-	op, existed, err := s.ops.Start(ctx, "provision", idempotencyKey(ctx))
+	idemKey := idempotencyKey(ctx)
+	op, existed, err := s.ops.Start(ctx, "provision", idemKey)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if existed && s.provisionSandboxGone(ctx, op) {
+		// A keyed retry normally returns the original provision op. But if that
+		// op's sandbox has been deleted or marked lost (e.g. force-deleted or
+		// crashed under a still-live node), returning it strands a rebind on a
+		// dead sandbox. Drop the stale mapping and provision fresh so the caller
+		// gets a new sandbox under the same identity.
+		if cerr := s.ops.ClearIdempotency(idemKey); cerr != nil {
+			return nil, status.Error(codes.Internal, cerr.Error())
+		}
+		op, existed, err = s.ops.Start(ctx, "provision", idemKey)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 	}
 	if existed {
 		return opProto(op), nil
@@ -257,6 +273,21 @@ func (s *SandboxService) CreateSandbox(ctx context.Context, r *sbxv1.CreateSandb
 		return rec.ID, nil
 	})
 	return opProto(op), nil
+}
+
+// provisionSandboxGone reports whether a completed provision op's sandbox no
+// longer exists or has been marked lost — the signal that a same-idempotency-key
+// retry must re-provision instead of returning the dead op. A pending/running op
+// is a genuine in-flight create and is never treated as stale.
+func (s *SandboxService) provisionSandboxGone(ctx context.Context, op *ops.Operation) bool {
+	if op == nil || op.State != "done" || op.SandboxID == "" {
+		return false
+	}
+	rec, err := s.mgr.Get(ctx, op.SandboxID)
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return true
+	}
+	return err == nil && rec.Status == "lost"
 }
 
 func (s *SandboxService) GetSandbox(ctx context.Context, r *sbxv1.GetSandboxRequest) (*sbxv1.Sandbox, error) {

@@ -18,6 +18,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -429,6 +430,55 @@ func TestKeepAlive_BumpsAndNotFound(t *testing.T) {
 
 	_, err = svc.KeepAlive(ctx, &sbxv1.IdRequest{Id: "n1.missing"})
 	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
+// A same-idempotency-key CreateSandbox retry must re-provision when the keyed
+// op's sandbox is gone/lost (force-deleted or crashed under a still-live node),
+// instead of returning the dead op. Without the fix a hibernated durable Agent
+// whose sandbox is lost can never rebind — the retry resurrects the dead id.
+func TestCreateSandbox_ReprovisionsWhenKeyedSandboxLost(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := metadata.NewIncomingContext(context.Background(),
+		metadata.Pairs("idempotency-key", "agent:x"))
+
+	waitDone := func(opID string) string {
+		var sbID string
+		require.Eventually(t, func() bool {
+			got, _ := svc.ops.Get(opID)
+			if got != nil && got.State == "done" {
+				sbID = got.SandboxID
+				return true
+			}
+			return false
+		}, time.Second, 10*time.Millisecond)
+		return sbID
+	}
+
+	op1, err := svc.CreateSandbox(ctx, &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1 << 30})
+	require.NoError(t, err)
+	sb1 := waitDone(op1.Id)
+	require.NotEmpty(t, sb1)
+
+	// Lose the sandbox out-of-band: remove it from the backend, then Reconcile
+	// marks the node record "lost" (the exact state after an out-of-band delete).
+	rec, err := svc.mgr.Get(ctx, sb1)
+	require.NoError(t, err)
+	require.NoError(t, svc.mgr.Backend().(*sandbox.Fake).Remove(ctx, rec.BackendName))
+	require.NoError(t, svc.mgr.Reconcile(ctx))
+	lost, err := svc.mgr.Get(ctx, sb1)
+	require.NoError(t, err)
+	require.Equal(t, "lost", lost.Status)
+
+	// Same key retry must re-provision, not return the dead op.
+	op2, err := svc.CreateSandbox(ctx, &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1 << 30})
+	require.NoError(t, err)
+	require.NotEqual(t, op1.Id, op2.Id, "stale-sandbox retry must mint a fresh op")
+	sb2 := waitDone(op2.Id)
+	require.NotEqual(t, sb1, sb2, "retry must land on a new sandbox")
+
+	got, err := svc.GetSandbox(ctx, &sbxv1.GetSandboxRequest{Id: sb2})
+	require.NoError(t, err)
+	require.Equal(t, "running", got.Status)
 }
 
 func TestSandboxService_ListOperations(t *testing.T) {
