@@ -64,6 +64,27 @@ func TestManager_DeleteGCsCustomSecrets(t *testing.T) {
 	require.Empty(t, secs.Custom)
 }
 
+// A node that restarts with a fresh identity/store (new node id) leaves the sbx
+// daemon holding the old container with no matching record. Terminate for that
+// id must still reap the live container by name, not orphan it on a store miss.
+func TestManager_DeleteReapsRecordlessOrphan(t *testing.T) {
+	m, f := newMgr(t)
+	ctx := context.Background()
+
+	rec, err := m.Create(ctx, CreateSpec{})
+	require.NoError(t, err)
+
+	// Simulate the restart: drop the store record, keep the backend container.
+	require.NoError(t, m.store.Delete(bucket, rec.ID))
+	_, live := f.sandboxes[rec.BackendName]
+	require.True(t, live, "backend container should still be alive")
+
+	// Terminate must reach through to the daemon and remove it.
+	require.NoError(t, m.Delete(ctx, rec.ID))
+	_, live = f.sandboxes[rec.BackendName]
+	require.False(t, live, "orphaned container must be removed")
+}
+
 // fakeNotifier records the owned-id sets pushed by the Manager.
 type fakeNotifier struct{ sets [][]string }
 
