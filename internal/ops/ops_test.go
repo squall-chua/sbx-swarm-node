@@ -46,6 +46,23 @@ func TestOps_IdempotencyReturnsSameOp(t *testing.T) {
 	require.Equal(t, a.ID, b.ID) // same op for same idempotency key
 }
 
+func TestOps_ClearIdempotencyStartsFresh(t *testing.T) {
+	m := newMgr(t)
+	a, _, err := m.Start(context.Background(), "provision", "key-1")
+	require.NoError(t, err)
+
+	require.NoError(t, m.ClearIdempotency("key-1"))
+
+	// After clearing, the same key must yield a NEW op, not the old one.
+	b, existedB, err := m.Start(context.Background(), "provision", "key-1")
+	require.NoError(t, err)
+	require.False(t, existedB, "cleared key must not report existed")
+	require.NotEqual(t, a.ID, b.ID, "cleared key must create a fresh op")
+
+	require.NoError(t, m.ClearIdempotency(""))   // empty key is a no-op
+	require.NoError(t, m.ClearIdempotency("no")) // absent key is a no-op
+}
+
 type fakeOpCounter struct {
 	mu    sync.Mutex
 	calls [][2]string

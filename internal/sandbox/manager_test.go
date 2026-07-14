@@ -43,6 +43,27 @@ func TestManager_CreateGetListDelete(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestManager_DeleteGCsCustomSecrets(t *testing.T) {
+	m, f := newMgr(t)
+	ctx := context.Background()
+
+	rec, err := m.Create(ctx, CreateSpec{CPUs: 1, MemoryBytes: 1 << 30})
+	require.NoError(t, err)
+
+	// A proxy-injected custom secret is scoped to the sandbox's BackendName.
+	require.NoError(t, f.SecretSet(ctx, rec.BackendName, CustomSecret{Host: "api.minimax.io", Env: "MINIMAX_API_KEY", Value: "sk-secret"}))
+	secs, err := f.SecretList(ctx, rec.BackendName)
+	require.NoError(t, err)
+	require.Len(t, secs.Custom, 1)
+
+	require.NoError(t, m.Delete(ctx, rec.ID))
+
+	// The secret must not orphan once the sandbox is gone.
+	secs, err = f.SecretList(ctx, rec.BackendName)
+	require.NoError(t, err)
+	require.Empty(t, secs.Custom)
+}
+
 // fakeNotifier records the owned-id sets pushed by the Manager.
 type fakeNotifier struct{ sets [][]string }
 

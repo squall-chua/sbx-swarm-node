@@ -103,6 +103,20 @@ func (m *Manager) Start(_ context.Context, opType, idempKey string) (*Operation,
 	return op, false, nil
 }
 
+// ClearIdempotency drops an idempotency-key mapping so the next Start with the
+// same key creates a fresh operation instead of returning the old one. Used when
+// the keyed operation's target sandbox is gone (deleted/lost under a still-live
+// node): a same-key rebind must re-provision rather than resurrect the dead
+// sandbox. No-op for an empty key or an already-absent mapping.
+func (m *Manager) ClearIdempotency(key string) error {
+	if key == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.store.Delete(idemBucket, key)
+}
+
 // Run executes fn in the background, recording the result on the operation.
 func (m *Manager) Run(opID string, fn func() (sandboxID string, err error)) {
 	go func() {

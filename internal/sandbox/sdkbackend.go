@@ -489,11 +489,28 @@ func (b *SDKBackend) PolicyProfiles(ctx context.Context) ([]string, error) {
 // Values are NEVER stored or returned (spec §11).
 
 func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret) error {
-	return sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
+	err := sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
 		Host:  s.Host,
 		Env:   s.Env,
 		Value: s.Value, // passed to the CLI; never stored or logged here
 	})
+	// The underlying sbx CLI echoes the full "--value <key>" argv in its error;
+	// scrub the raw value so it never reaches logs or the caller.
+	return scrubSecretValue(err, s.Value)
+}
+
+// scrubSecretValue replaces every occurrence of value in err's message with a
+// placeholder. Returns the original error when there is nothing to scrub, to
+// preserve the unwrap chain.
+func scrubSecretValue(err error, value string) error {
+	if err == nil || value == "" {
+		return err
+	}
+	msg := strings.ReplaceAll(err.Error(), value, "<redacted>")
+	if msg == err.Error() {
+		return err
+	}
+	return errors.New(msg)
 }
 
 // SecretList returns the secret inventory with values masked (the SDK already

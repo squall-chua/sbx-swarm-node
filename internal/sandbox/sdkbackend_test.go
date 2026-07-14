@@ -1,10 +1,25 @@
 package sandbox
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestScrubSecretValue(t *testing.T) {
+	// The sbx CLI echoes the raw value in its error argv; it must be scrubbed.
+	err := errors.New(`sbx [secret set-custom sb --env K --value sk-SECRET] failed`)
+	got := scrubSecretValue(err, "sk-SECRET")
+	require.NotContains(t, got.Error(), "sk-SECRET")
+	require.Contains(t, got.Error(), "<redacted>")
+
+	// Nothing to scrub → original error is preserved (unwrap chain intact).
+	orig := errors.New("some other failure")
+	require.Equal(t, orig, scrubSecretValue(orig, "sk-SECRET"))
+	require.Equal(t, orig, scrubSecretValue(orig, ""))
+	require.Nil(t, scrubSecretValue(nil, "sk-SECRET"))
+}
 
 // workspaceArg applies sbx's "primary workspace must be read/write" rule. These
 // cases pin the behaviour discovered against the live daemon: the primary (first)
