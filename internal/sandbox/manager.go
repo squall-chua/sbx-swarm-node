@@ -235,6 +235,17 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 // Delete removes the sandbox from the backend and the store.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	rec, err := m.Get(ctx, id)
+	if err == ErrNotFound {
+		// No record for this id. This node may have restarted with a fresh
+		// identity/store while the daemon kept the container alive, so terminate
+		// would otherwise orphan it. The backend name equals the id (see Create),
+		// so reap the container directly by name; a daemon miss is a no-op, and
+		// Remove can only touch a container that is physically on this daemon.
+		if rerr := m.backend.Remove(ctx, id); rerr != nil && rerr != ErrNotFound {
+			return rerr
+		}
+		return nil
+	}
 	if err != nil {
 		return err
 	}
