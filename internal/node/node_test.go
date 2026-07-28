@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -24,6 +25,36 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+// TestBuildBackend_FakeWithKitsWarns proves a fake-backend node with kits
+// declared in config gets a boot-time warning that the kits are advertised
+// but will not be applied (review Minor #7): the fake admits every configured
+// name unchecked and Fake.Create accepts a known name while doing nothing
+// with it, so such a node is a silent kit-less-create trap for a
+// kit-constrained placement.
+func TestBuildBackend_FakeWithKitsWarns(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	cfg := config.Default()
+	cfg.Kits = []config.KitConfig{{Name: "tools", Ref: "/opt/kits/tools"}}
+
+	_, err := buildBackend(cfg, log)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "kits", "expected a boot warning naming the unapplied kits")
+	require.Contains(t, buf.String(), "level=WARN")
+}
+
+func TestBuildBackend_FakeWithNoKitsIsQuiet(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	cfg := config.Default()
+
+	_, err := buildBackend(cfg, log)
+	require.NoError(t, err)
+	require.Empty(t, buf.String())
+}
 
 func TestKitMap(t *testing.T) {
 	got := kitMap([]config.KitConfig{

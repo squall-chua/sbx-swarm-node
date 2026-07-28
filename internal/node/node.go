@@ -629,6 +629,9 @@ func buildBackend(cfg *config.Config, log *slog.Logger) (sandbox.Backend, error)
 		defer cancel()
 		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir), kitMap(cfg.Kits), log)
 	}
+	if len(cfg.Kits) > 0 {
+		log.Warn("backend: fake advertises configured kits but does not apply them to created sandboxes", "kits", kitNamesFromConfig(cfg.Kits))
+	}
 	return sandbox.NewFake(kitNamesFromConfig(cfg.Kits)...), nil
 }
 
