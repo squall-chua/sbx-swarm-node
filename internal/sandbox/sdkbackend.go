@@ -526,10 +526,26 @@ func (b *SDKBackend) PolicyProfiles(ctx context.Context) ([]string, error) {
 // Values are NEVER stored or returned (spec §11).
 
 func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret) error {
+	// The daemon rejects a second write to the same (scope, env) unless the caller
+	// re-supplies the existing placeholder, so an update needs a read first. Reusing
+	// it is also what makes rotation safe: the sandbox env value stays put and only
+	// the real secret behind the proxy changes.
+	//
+	// ponytail: on a read failure, fall through and let SetCustom report the real
+	// error. That is today's behaviour, so no new failure mode.
+	if cur, err := b.SecretList(ctx, scope); err == nil {
+		for _, c := range cur.Custom {
+			if c.Env == s.Env {
+				s.Placeholder = c.Placeholder
+				break
+			}
+		}
+	}
 	err := sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
-		Host:  s.Host,
-		Env:   s.Env,
-		Value: s.Value, // passed to the CLI; never stored or logged here
+		Host:        s.Host,
+		Env:         s.Env,
+		Value:       s.Value, // passed to the CLI; never stored or logged here
+		Placeholder: s.Placeholder,
 	})
 	// The underlying sbx CLI echoes the full "--value <key>" argv in its error;
 	// scrub the raw value so it never reaches logs or the caller.

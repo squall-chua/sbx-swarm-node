@@ -284,6 +284,30 @@ func TestSDKBackend_SecretRoundTrip(t *testing.T) {
 	require.Equal(t, "API_TOKEN", found.Env)
 	require.Empty(t, found.Value, "secret value must be masked on read")
 
+	// Rotation: a second write to the same (scope, env) must land. The daemon
+	// rejects it unless the existing placeholder is re-supplied, which SecretSet
+	// looks up for us. The placeholder must NOT change — it is the value the
+	// sandbox already holds in its env var, so changing it would break the
+	// sandbox rather than rotate the secret.
+	firstPlaceholder := found.Placeholder
+	require.NotEmpty(t, firstPlaceholder, "daemon did not report a placeholder")
+
+	require.NoError(t,
+		b.SecretSet(ctx, scope, CustomSecret{Host: "api.example.com", Env: "API_TOKEN", Value: "rotated"}),
+		"second write to the same env must succeed")
+
+	after, err := b.SecretList(ctx, scope)
+	require.NoError(t, err)
+	var rotated *CustomSecret
+	for i := range after.Custom {
+		if after.Custom[i].Env == "API_TOKEN" {
+			rotated = &after.Custom[i]
+		}
+	}
+	require.NotNil(t, rotated, "secret not listed after rotation")
+	require.Equal(t, firstPlaceholder, rotated.Placeholder, "rotation must reuse the placeholder")
+	require.Empty(t, rotated.Value, "secret value must stay masked after rotation")
+
 	// A global list must NOT carry this sandbox's secret. Bare `sbx secret ls`
 	// lists every scope, so SecretList filters rows to the requested scope.
 	global, err := b.SecretList(ctx, "")
