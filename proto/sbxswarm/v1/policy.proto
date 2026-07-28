@@ -114,7 +114,9 @@ message ListSecretsResponse {
 // (scope, env): a second call for the same env replaces that entry, including
 // its host, rather than adding a host. The placeholder is preserved across a
 // replace, so a running sandbox keeps the env value it already holds and only
-// the real secret behind the proxy changes.
+// the real secret behind the proxy changes. An entry created outside the node
+// (directly with `sbx`, or by a kit) may cover several hosts; a replace through
+// this RPC collapses it down to the single host given here.
 //
 // value is write-only: not stored, not returned, not logged.
 message SetSecretRequest {
