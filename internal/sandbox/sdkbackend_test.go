@@ -2,10 +2,28 @@ package sandbox
 
 import (
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestLoggerNeverNil(t *testing.T) {
+	// A construction path that adds a struct field and forgets to set log would
+	// otherwise panic on the first warning, on a path rare enough to ship unnoticed.
+	// Swap the default logger so the fallback's own output stays out of the test log.
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	var b SDKBackend
+	require.NotNil(t, b.logger())
+	require.NotPanics(t, func() { b.logger().Warn("no logger set") })
+
+	own := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	require.Same(t, own, (&SDKBackend{log: own}).logger(), "a set logger must be used as-is")
+}
 
 func TestScrubSecretValue(t *testing.T) {
 	// The sbx CLI echoes the raw value in its error argv; it must be scrubbed.

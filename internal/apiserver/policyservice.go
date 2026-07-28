@@ -149,8 +149,14 @@ func (s *PolicyService) ListPolicy(ctx context.Context, r *sbxv1.ScopeRequest) (
 	return out, nil
 }
 
-// SetSecret stores a custom proxy-injected secret. The value is passed through
-// to the backend only and is never stored, logged, or returned (spec §11).
+// SetSecret creates or replaces a custom proxy-injected secret. The entry is
+// keyed on (scope, env), so a second call for the same env replaces that entry
+// including its host — it does not add a host. The backend reuses the existing
+// placeholder on a replace, which is what makes a rotation invisible inside a
+// running sandbox.
+//
+// The value is passed through to the backend only and is never stored, logged,
+// or returned (spec §11).
 func (s *PolicyService) SetSecret(ctx context.Context, r *sbxv1.SetSecretRequest) (*sbxv1.Empty, error) {
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
