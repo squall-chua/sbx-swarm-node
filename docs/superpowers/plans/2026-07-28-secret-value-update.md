@@ -329,7 +329,7 @@ EOF
 Called out so nobody adds them mid-flight. Each is a separate decision.
 
 - No proto field for a caller-supplied placeholder. The lookup covers every caller the node has.
-- No model of the daemon's collision rule in the `Fake` backend.
+- No model of the daemon's *rejection* rule in the `Fake` backend. (The review fix wave did make the `Fake` *replace* on a matching env, which needs no placeholder tracking. Only the rejection is still unmodelled.)
 - No `findPlaceholder` helper with its own unit test. The risk here is the daemon contract, not a four-line loop.
 - No audit change. A create and a replace both record `secret.set` with the host as the target.
 - Nothing about the `SecretSet` keys-on-env versus `SecretRemove` keys-on-host asymmetry. Both work, and a caller reads the list before deleting, so it always holds the current host.

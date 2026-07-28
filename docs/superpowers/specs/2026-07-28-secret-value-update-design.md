@@ -151,25 +151,37 @@ loss.
 
 Extend `TestSDKBackend_SecretRoundTrip`
 (`internal/sandbox/sdkbackend_integration_test.go:267`) with a second
-`SecretSet` at a new value. Assert two things:
+`SecretSet` at a new value. Assert three things:
 
 - the second write returns no error,
-- the placeholder read back afterwards is unchanged.
+- the placeholder read back afterwards is unchanged,
+- the masked value read back afterwards has changed.
+
+The third assertion is the one that matters. Exit 0 alone cannot tell a real
+replacement from a silent cancel, so the test reads the masked value through
+`sdksecret.List` directly — `SDKBackend.SecretList` drops it on purpose. See
+probe 5 above.
 
 That test today runs Set, List, Remove and never writes twice. That gap is how
 the bug survived.
 
-The test is behind the `integration` build tag and an env gate, so it does not
-run in CI. This host has no docker and no `sbx` in CI, and every other
-daemon-touching test in the repo sits behind the same gate. No new precedent.
+The test is behind the `integration` build tag, so it does not run in CI. This
+host has no docker and no `sbx` in CI, and every other daemon-touching test in
+the repo sits behind the same tag. No new precedent.
+
+There is one CI-runnable check as well: `TestFake_SecretSetReplacesSameEnv`
+(`internal/sandbox/policy_fake_test.go`) holds the `Fake` to the same
+create-or-replace contract, with no daemon needed.
 
 ## Deliberately not doing
 
 - **No proto field for a caller-supplied placeholder.** The lookup covers every
   caller the node has.
-- **No fake-backend model of the daemon's collision rule.** The fake would then
-  need to track placeholders, and the integration test already covers the real
-  contract.
+- **No fake-backend model of the daemon's *rejection* rule.** Making the `Fake`
+  reject a placeholder-less second write would mean tracking placeholders there.
+  The `Fake` does now *replace* on a matching env, which needs no such tracking
+  and gives the create-or-replace contract its one CI-runnable test. Review
+  found the original wording here declined more than it meant to.
 - **No `findPlaceholder` helper with its own unit test.** The risk here is the
   daemon contract, not a four-line loop.
 - **No audit change.** A create and an update both record `secret.set` with the
