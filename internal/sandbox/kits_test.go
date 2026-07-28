@@ -149,7 +149,10 @@ func TestHasResources(t *testing.T) {
 		{"absent field is no resources", nil, false},
 		{"explicit null is no resources", []byte("null"), false},
 		{"empty object is no resources", []byte("{}"), false},
+		{"empty object with a space is no resources", []byte("{ }"), false},
+		{"a list is resources (no list form here; fails closed)", []byte("[]"), true},
 		{"a populated object is resources", []byte(`{"cpu":2}`), true},
+		{"unparseable garbage is resources", []byte(`{"cpu":`), true}, // fail closed
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,8 +190,10 @@ func TestHasVolumes(t *testing.T) {
 		{"absent field is no volumes", nil, false},
 		{"explicit null is no volumes", []byte("null"), false},
 		{"empty object is no volumes", []byte("{}"), false},
+		{"empty object with a space is no volumes", []byte("{ }"), false},
 		{"empty list is no volumes", []byte("[]"), false},
 		{"a populated list is volumes", []byte(`[{"host":"/x"}]`), true},
+		{"unparseable garbage is volumes", []byte(`[{"host":`), true}, // fail closed
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

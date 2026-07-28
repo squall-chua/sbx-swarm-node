@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -74,28 +75,41 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 // hasResources reports whether a kit's raw resources block declares anything.
 // The field is raw JSON, so its byte length is not a count: an absent field,
 // an explicit null, and an empty object all mean "no resources" despite
-// having different lengths.
+// having different lengths (e.g. "{}" vs "{ }"). The shape is always an
+// object, so emptiness is decided by unmarshalling into a map and counting
+// keys; anything that fails to unmarshal as an object (including a list, which
+// has no meaning here) is treated as "declares resources" -- fail closed,
+// since an unparseable or unexpectedly-shaped block must not be read as safe.
 func hasResources(raw []byte) bool {
 	raw = bytes.TrimSpace(raw)
-	return len(raw) > 0 && !bytes.Equal(raw, []byte("null")) && !bytes.Equal(raw, []byte("{}"))
-}
-
-// hasVolumes reports whether a kit's raw volumes block declares anything. The
-// field is raw JSON like resources, but upstream's schema also lets a kit
-// author write volumes as a list (the modern form) or a legacy map, so an
-// empty list means "no volumes" here too, alongside an absent field, an
-// explicit null, and an empty object.
-func hasVolumes(raw []byte) bool {
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		return false
 	}
-	switch string(raw) {
-	case "null", "{}", "[]":
-		return false
-	default:
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
 		return true
 	}
+	return len(m) > 0
+}
+
+// hasVolumes reports whether a kit's raw volumes block declares anything, the
+// same emptiness test as hasResources, except upstream's schema also lets a
+// kit author write volumes as a list (the modern form) alongside the legacy
+// map, so an empty list also reads as "no volumes" here.
+func hasVolumes(raw []byte) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return len(list) > 0
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return true
+	}
+	return len(m) > 0
 }
 
 // AdmittedKits returns the sorted names of the kits this node advertises.
