@@ -33,6 +33,10 @@ type Fake struct {
 	// KitPorts is seeded into a sandbox's ports when its create spec names a kit,
 	// standing in for ports a real kit publishes by itself.
 	KitPorts []PublishedPort
+
+	// PortsErr, when set, makes Ports fail instead of returning the recorded
+	// list -- standing in for a transient daemon read failure.
+	PortsErr error
 }
 
 // NewFake returns an empty fake backend advertising the given kit names. It is
@@ -181,6 +185,9 @@ func (f *Fake) PublishPort(_ context.Context, name string, cp int) (PublishedPor
 func (f *Fake) Ports(_ context.Context, name string) ([]PublishedPort, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.PortsErr != nil {
+		return nil, f.PortsErr
+	}
 	return f.ports[name], nil
 }
 

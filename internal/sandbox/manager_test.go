@@ -1,7 +1,10 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -104,6 +107,30 @@ func TestCreate_RecordsPortsWhenAKitIsUsed(t *testing.T) {
 	reread, err := m.Get(context.Background(), rec.ID)
 	require.NoError(t, err)
 	require.Len(t, reread.Ports, 1, "the ports must be persisted, not only returned")
+}
+
+// TestCreate_KitPortsReadFailureIsLogged proves the best-effort Ports() read in
+// Create does not swallow a transient failure silently: the create must still
+// succeed (best-effort), but a warning naming the sandbox and the error must be
+// logged, since a swallowed failure here leaves the record's ports silently
+// disagreeing with a live ListPorts read.
+func TestCreate_KitPortsReadFailureIsLogged(t *testing.T) {
+	f := NewFake("tools")
+	f.PortsErr = errors.New("daemon unreachable")
+	m := newMgrWith(t, f)
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	rec, err := m.Create(context.Background(), CreateSpec{Agent: "shell", Kits: []string{"tools"}})
+	require.NoError(t, err, "create must still succeed on a best-effort ports-read failure")
+	require.Empty(t, rec.Ports)
+
+	logged := buf.String()
+	require.Contains(t, logged, rec.ID, "warning must name the sandbox")
+	require.Contains(t, logged, "daemon unreachable", "warning must carry the read error")
 }
 
 func TestCreate_NoKitNoPortLookup(t *testing.T) {

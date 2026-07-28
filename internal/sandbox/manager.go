@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -169,6 +170,9 @@ func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) 
 	if len(spec.Kits) > 0 {
 		if ports, perr := m.backend.Ports(ctx, backendName); perr == nil {
 			rec.Ports = ports
+		} else {
+			slog.Default().Warn("sandbox: kit ports read failed, record's ports may disagree with a live read",
+				"sandbox_id", id, "err", perr)
 		}
 	}
 	if err := m.save(rec); err != nil {
