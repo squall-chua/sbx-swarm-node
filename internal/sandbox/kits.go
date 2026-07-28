@@ -1,0 +1,99 @@
+package sandbox
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sort"
+	"sync"
+	"time"
+)
+
+// kitInspectTimeout bounds boot-time kit inspection as a whole. Kits are
+// inspected concurrently, so N slow references cost one timeout, not N.
+const kitInspectTimeout = 15 * time.Second
+
+// KitInfo is the part of a kit's manifest the node checks before advertising the
+// kit. It is deliberately not the SDK's kit.Info: the node needs three facts, and
+// the SDK's shape tracks an EXPERIMENTAL upstream schema.
+type KitInfo struct {
+	Kind          string // "mixin" | "sandbox"
+	HasResources  bool   // manifest.resources is non-empty
+	HasRunOptions bool   // manifest.runOptions is non-empty
+}
+
+// admit reports why a kit must not be advertised, or nil when it may be.
+//
+// Only kind "mixin" is supported: a "sandbox" kit supplies the base image, which
+// would make the scheduler's template constraint a lie. resources and runOptions
+// are documented upstream as meaningful only for a "sandbox" kit and empty for a
+// mixin, which is an expectation and not a promise; if that ever changes, a kit
+// could hand a sandbox more than the node admitted, so a mixin carrying either is
+// refused rather than trusted.
+func admit(i KitInfo) error {
+	if i.Kind != "mixin" {
+		return fmt.Errorf("kind is %q, want \"mixin\"", i.Kind)
+	}
+	if i.HasResources {
+		return fmt.Errorf("mixin declares resources, which could exceed admitted capacity")
+	}
+	if i.HasRunOptions {
+		return fmt.Errorf("mixin declares runOptions, which could exceed admitted capacity")
+	}
+	return nil
+}
+
+// admitKits inspects every configured kit concurrently and returns the name to
+// reference map this node resolves and advertises.
+//
+// The two failures are treated differently on purpose. A kit that inspects
+// cleanly and fails admit() is dropped: that is an operator mistake and it will
+// never fix itself. A kit whose reference fails to LOAD is kept: a typo and a
+// briefly unreachable registry look identical from here, and dropping it would
+// quietly shrink this node's advertised capacity. A kept-but-broken kit fails at
+// create instead, carrying the CLI's own message.
+//
+// This runs to completion before boot continues. The gossiped NodeState is built
+// once at boot and nothing re-gossips it, so a later advertisement would never
+// reach the swarm.
+func admitKits(ctx context.Context, inspect func(context.Context, string) (KitInfo, error), kits map[string]string, log *slog.Logger) map[string]string {
+	admitted := make(map[string]string, len(kits))
+	if len(kits) == 0 {
+		return admitted
+	}
+	ctx, cancel := context.WithTimeout(ctx, kitInspectTimeout)
+	defer cancel()
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+	for name, ref := range kits {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			info, err := inspect(ctx, ref)
+			if err != nil {
+				log.Warn("kit: inspect failed, advertising anyway", "kit", name, "ref", ref, "err", err)
+			} else if rejected := admit(info); rejected != nil {
+				log.Error("kit: refused, not advertised", "kit", name, "ref", ref, "reason", rejected)
+				return
+			}
+			mu.Lock()
+			admitted[name] = ref
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return admitted
+}
+
+// kitNames returns a kit map's names, sorted, so the advertisement is stable.
+func kitNames(kits map[string]string) []string {
+	out := make([]string, 0, len(kits))
+	for name := range kits {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
