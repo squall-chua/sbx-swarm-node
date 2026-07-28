@@ -666,8 +666,13 @@ func (x *ListSecretsResponse) GetStored() []*StoredSecretMsg {
 	return nil
 }
 
-// SetSecretRequest sets a custom secret. value is write-only: not stored, not
-// returned, not logged.
+// SetSecretRequest creates or replaces a custom secret. The entry is keyed on
+// (scope, env): a second call for the same env replaces that entry, including
+// its host, rather than adding a host. The placeholder is preserved across a
+// replace, so a running sandbox keeps the env value it already holds and only
+// the real secret behind the proxy changes.
+//
+// value is write-only: not stored, not returned, not logged.
 type SetSecretRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
