@@ -135,7 +135,7 @@ func requestFromSpec(spec *sbxv1.CreateSandboxRequest, strategy, requestID strin
 	}
 	return scheduler.Request{
 		CPU: float64(spec.Cpus), Mem: float64(spec.MemoryBytes) / 1024, Disk: spec.DiskGb,
-		Workspaces: ws, Template: spec.Template, Capabilities: caps,
+		Workspaces: ws, Template: spec.Template, Kits: spec.Kits, Capabilities: caps,
 		Affinity: spec.NodeAffinity, AntiAffinity: spec.NodeAntiAffinity,
 		Strategy: strategy, RequestID: requestID,
 	}

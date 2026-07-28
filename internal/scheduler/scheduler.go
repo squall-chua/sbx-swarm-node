@@ -19,6 +19,7 @@ type Candidate struct {
 	NodeID       string
 	Workspaces   map[string]bool
 	Templates    map[string]bool
+	Kits         map[string]bool
 	Capabilities map[string]bool
 	Labels       map[string]string
 	LimitCPU     float64
@@ -38,6 +39,7 @@ type Request struct {
 	CPU, Mem, Disk float64
 	Workspaces     []string
 	Template       string
+	Kits           []string
 	Capabilities   []string
 	Affinity       map[string]string
 	AntiAffinity   map[string]string
@@ -92,6 +94,11 @@ func fits(req Request, c Candidate) bool {
 	}
 	if req.Template != "" && !c.Templates[req.Template] {
 		return false
+	}
+	for _, k := range req.Kits {
+		if !c.Kits[k] {
+			return false
+		}
 	}
 	for _, cap := range req.Capabilities {
 		if !c.Capabilities[cap] {
