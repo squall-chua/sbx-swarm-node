@@ -28,6 +28,7 @@ type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok boo
 type SDKBackend struct {
 	cl      *sdkclient.Client
 	resolve WorkspaceResolver
+	log     *slog.Logger
 }
 
 // NewSDKBackend connects to the local daemon (auto-starting it if needed).
@@ -47,7 +48,7 @@ func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, log *slog.Log
 			"daemon_version", h.Version, "daemon_api_version", h.APIVersion,
 			"sdk_client_version", sdkclient.ClientVersion, "sdk_tested_api_version", sdkclient.TestedAPIVersion)
 	}
-	return &SDKBackend{cl: cl, resolve: resolve}, nil
+	return &SDKBackend{cl: cl, resolve: resolve, log: log}, nil
 }
 
 // translateNotFound maps the SDK's not-found sentinel to sandbox.ErrNotFound.
@@ -532,14 +533,26 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 	// the real secret behind the proxy changes.
 	//
 	// ponytail: on a read failure, fall through and let SetCustom report the real
-	// error. That is today's behaviour, so no new failure mode.
+	// error. That is today's behaviour, so no new failure mode. The failure is
+	// logged below so a table-format drift (which has happened before) doesn't
+	// fail silently.
 	if cur, err := b.SecretList(ctx, scope); err == nil {
 		for _, c := range cur.Custom {
 			if c.Env == s.Env {
+				if c.Host != s.Host {
+					// A create-or-replace under a different host destroys the old
+					// host's credential: values are write-only, so it cannot be
+					// recovered. None of these fields is a secret value.
+					b.log.Warn("secret set: replacing host on existing entry",
+						"env", s.Env, "old_host", c.Host, "new_host", s.Host, "placeholder", c.Placeholder)
+				}
 				s.Placeholder = c.Placeholder
 				break
 			}
 		}
+	} else {
+		b.log.Warn("secret set: placeholder lookup skipped, update may fail",
+			"scope", scope, "err", err)
 	}
 	err := sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
 		Host:        s.Host,
