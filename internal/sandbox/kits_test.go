@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -156,6 +157,24 @@ func TestHasResources(t *testing.T) {
 				t.Fatalf("hasResources(%s): want %v, got %v", tc.raw, tc.want, got)
 			}
 		})
+	}
+}
+
+// TestSDKBackend_Create_UnknownKit proves the unknown-kit check on the SDK
+// backend (the branch that actually enforces ADR-0022: a name the operator
+// did not declare is not usable) runs before the backend touches the SDK
+// client. It constructs an SDKBackend with a nil client and no workspaces, so
+// a client call anywhere in Create's path before the kits loop would panic
+// instead of returning the expected error.
+func TestSDKBackend_Create_UnknownKit(t *testing.T) {
+	b := &SDKBackend{kits: map[string]string{"known": "/known"}}
+
+	_, err := b.Create(context.Background(), CreateSpec{Name: "s1", Kits: []string{"nope"}})
+	if err == nil {
+		t.Fatal("create with an unknown kit: want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), `unknown kit "nope"`) {
+		t.Fatalf("want an unknown-kit error, got %v", err)
 	}
 }
 

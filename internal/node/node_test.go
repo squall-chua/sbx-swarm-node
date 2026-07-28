@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -226,6 +227,46 @@ func TestNode_BootWithIdleTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, n.Stop(ctx))
+}
+
+// TestNode_BootAdvertisesConfiguredKits boots a node (default backend: fake,
+// no daemon needed) with a kit declared in config and checks the name reaches
+// the ListNodes-advertised set, i.e. the full config.Kits -> NodeSummary.kits
+// wiring at the three AdmittedKits() call sites in node.go, not just the
+// kitMap helper (TestKitMap).
+func TestNode_BootAdvertisesConfiguredKits(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = "127.0.0.1:0"
+	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}}
+	cfg.Kits = []config.KitConfig{{Name: "tools", Ref: "/opt/kits/tools"}}
+	require.NoError(t, cfg.Validate())
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	require.NoError(t, n.Start())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	req, _ := http.NewRequest(http.MethodGet, "https://"+n.Addr()+"/v1/nodes", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Nodes []struct {
+			Kits []string `json:"kits"`
+		} `json:"nodes"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body.Nodes, 1)
+	require.Equal(t, []string{"tools"}, body.Nodes[0].Kits)
 }
 
 func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
