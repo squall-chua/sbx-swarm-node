@@ -17,6 +17,13 @@ import (
 // ErrNoCapacity means the node cannot admit the request within its provision limit.
 var ErrNoCapacity = errors.New("insufficient capacity")
 
+// ErrUnknownKit means the target node's admitted kit set does not have the
+// requested name. This is usually stale gossip -- a peer restarted with the
+// kit removed from its config after the caller's placement snapshot was taken
+// -- so the coordinator treats it as a NACK: placement retries the next
+// candidate instead of hard-failing.
+var ErrUnknownKit = errors.New("unknown kit")
+
 const bucket = "sandboxes"
 
 // OwnedIDsNotifier is notified when this node's owned-sandbox set changes, so

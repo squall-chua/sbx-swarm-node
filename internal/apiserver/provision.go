@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -110,6 +111,9 @@ func (s *InternalService) Provision(ctx context.Context, r *sbxv1.ProvisionReque
 	rec, err := ProvisionLocal(ctx, s.mgr, s.gitWS, spec)
 	if err == sandbox.ErrNoCapacity {
 		return &sbxv1.ProvisionReply{Accepted: false, Reason: "no capacity"}, nil
+	}
+	if errors.Is(err, sandbox.ErrUnknownKit) {
+		return &sbxv1.ProvisionReply{Accepted: false, Reason: "unknown kit"}, nil
 	}
 	if err != nil {
 		return nil, err

@@ -76,7 +76,7 @@ func (f *Fake) Create(_ context.Context, spec CreateSpec) (BackendSandbox, error
 	}
 	for _, k := range spec.Kits {
 		if !f.kits[k] {
-			return BackendSandbox{}, fmt.Errorf("unknown kit %q", k)
+			return BackendSandbox{}, fmt.Errorf("unknown kit %q: %w", k, ErrUnknownKit)
 		}
 	}
 	sb := &BackendSandbox{Name: spec.Name, Status: "running"}

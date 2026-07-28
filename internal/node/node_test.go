@@ -19,9 +19,12 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
 	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -236,6 +239,25 @@ func TestAttemptFor_DialFailureNacks(t *testing.T) {
 	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
 		"op-x", nil, nil, tbl, pool, obs.NewLogger("error", io.Discard))
 	_, err = attempt(context.Background(), "peerB")
+	require.ErrorIs(t, err, coordinator.ErrNack)
+}
+
+// TestAttemptFor_LocalUnknownKitNacks proves the LOCAL branch of attemptFor
+// (self == nodeID) NACKs on sandbox.ErrUnknownKit exactly like it already does
+// on sandbox.ErrNoCapacity, instead of surfacing a hard error that aborts the
+// whole placement. Combined with the coordinator package's existing proof that
+// ErrNack causes a retry against the next candidate, this shows a stale-gossip
+// unknown kit does not abort placement when another node could serve it.
+func TestAttemptFor_LocalUnknownKitNacks(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("self", sandbox.NewFake(), st, ids.NewGen("self")) // no kits admitted
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+
+	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1, Kits: []string{"nope"}},
+		"op-x", mgr, nil, nil, nil, obs.NewLogger("error", io.Discard))
+	_, err = attempt(context.Background(), "self")
 	require.ErrorIs(t, err, coordinator.ErrNack)
 }
 

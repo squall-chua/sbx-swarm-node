@@ -777,7 +777,7 @@ func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, requestID string,
 	return func(ctx context.Context, nodeID string) (string, error) {
 		if nodeID == self {
 			rec, err := apiserver.ProvisionLocal(ctx, mgr, gitWS, apiserver.ToSpecForProvision(spec))
-			if err == sandbox.ErrNoCapacity {
+			if err == sandbox.ErrNoCapacity || errors.Is(err, sandbox.ErrUnknownKit) {
 				return "", coordinator.ErrNack
 			}
 			if err != nil {

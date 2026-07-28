@@ -196,7 +196,7 @@ func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbo
 	for _, name := range spec.Kits {
 		ref, ok := b.kits[name]
 		if !ok {
-			return BackendSandbox{}, fmt.Errorf("unknown kit %q", name)
+			return BackendSandbox{}, fmt.Errorf("unknown kit %q: %w", name, ErrUnknownKit)
 		}
 		// The SDK makes a local reference absolute when it builds the argument
 		// vector; an OCI reference passes through. The node does no path work.

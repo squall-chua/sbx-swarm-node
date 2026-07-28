@@ -53,6 +53,25 @@ func TestInternalProvision_AdmitsThenNacks(t *testing.T) {
 	require.Equal(t, "no capacity", r2.Reason)
 }
 
+// TestInternalProvision_UnknownKitNacks proves a forwarded provision for a kit
+// the target does not have admitted (stale gossip: the target restarted with
+// the kit removed from its config) NACKs instead of hard-failing, so the
+// coordinator's placement retries the next candidate.
+func TestInternalProvision_UnknownKitNacks(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1")) // no kits admitted
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	svc := NewInternalService(mgr, nil, nil)
+
+	r, err := svc.Provision(context.Background(), &sbxv1.ProvisionRequest{
+		Spec: &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1, Kits: []string{"nope"}},
+	})
+	require.NoError(t, err)
+	require.False(t, r.Accepted)
+	require.Equal(t, "unknown kit", r.Reason)
+}
+
 func TestInternalProvision_CordonedTargetNacks(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
 	require.NoError(t, err)
