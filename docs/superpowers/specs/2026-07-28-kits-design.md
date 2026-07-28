@@ -58,8 +58,12 @@ name. Nothing else: the CLI is the authority on what a reference is.
 
 ## Admission at boot
 
-The node runs one `kit.Inspect` per configured kit at boot, in a goroutine, so a slow registry
-never delays boot. There are two outcomes, and they are deliberately different:
+The node runs one `kit.Inspect` per configured kit at boot. The inspections run concurrently under
+one bounded context, so N slow references cost one timeout rather than N. They must finish before
+boot continues: the gossiped `NodeState` is built once at boot and nothing re-gossips it, so an
+advertisement assembled after that point would never reach the swarm.
+
+There are two outcomes, and they are deliberately different:
 
 - **`Inspect` succeeded and the manifest is bad** — `kind != "mixin"`, or `resources` or
   `runOptions` is non-empty → **rejected**. The kit is dropped from both the resolver and the
@@ -80,8 +84,8 @@ The `resources` / `runOptions` check is the reason this gate exists at all. The 
 those fields as meaningful only for `kind: sandbox` kits and empty for a mixin, which is an
 upstream expectation and not a promise. If upstream ever honours them on a mixin, a kit could
 hand a sandbox more CPU or memory than the node admitted — and "no over-admit" has been this
-repo's line since M5. Both fields are `json.RawMessage`, so the check is a length test: no
-schema, no unmarshalling.
+repo's line since M5. `resources` is a `json.RawMessage` and `runOptions` is a `[]string`, so the
+check is a length test either way: no schema, no unmarshalling.
 
 `backend: fake` has no SDK client, so it admits every configured kit unchecked. Kits are a
 real-daemon feature; the fake exists for tests and daemonless nodes.
@@ -197,7 +201,8 @@ Unit:
   rejected; non-empty `runOptions` rejected.
 - An `Inspect` failure leaves the kit advertised (the transient case).
 - Resolver: a known name maps to its reference; an unknown name is an error.
-- Fake create records the kit names.
+- Create accepts a configured kit name and rejects an unknown one.
+- `Record.Ports` holds a kit-published port after create, and is persisted.
 - Scheduler: a node not advertising a requested kit is filtered out — copy
   `TestSchedule_CapabilityAndTemplateFilter`.
 - `authz.go` needs no change: no new method, and `CreateSandbox` is already classified. The
@@ -205,9 +210,14 @@ Unit:
 
 Integration, `//go:build integration` and env-gated, against a live daemon:
 
-- Create with a real mixin kit; assert `sb.Kits()` holds the absolute reference.
-- Assert `Record.Ports` and `ListPorts` agree.
-- Settle the open question: does a kit's `credentials` block appear in `SecretList`?
+- Create with a real mixin kit; assert `sb.Kits()` holds the absolute reference, and read the
+  kit's environment variable from inside the sandbox — proof it was applied, not merely accepted.
+- Assert a `kind: sandbox` kit is refused and never advertised, against real daemon output.
+
+Two things the live test does **not** settle, and the plan says so rather than implying coverage:
+the `credentials`-in-`SecretList` question needs a fixture declaring a real credential, and proving
+the ports agreement live needs a kit declaring `publishedPorts`, which would fight over host ports.
+The ports agreement is covered by unit tests instead.
 
 ## Two sibling items, declined
 
