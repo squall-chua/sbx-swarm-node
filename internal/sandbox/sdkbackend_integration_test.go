@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
 )
 
 // These integration tests need a running sbx daemon (NewSDKBackend uses
@@ -425,6 +427,56 @@ func TestSDKBackend_ExecInteractive(t *testing.T) {
 		}
 	}
 	t.Fatalf("did not see terminal echo; got: %q", out)
+}
+
+// TestSDKBackend_CreateWithKit proves the whole kit path against a live daemon: a
+// configured mixin is admitted, resolved by name, and applied at create. The
+// environment variable read from inside the sandbox is the proof it was applied,
+// not merely accepted.
+func TestSDKBackend_CreateWithKit(t *testing.T) {
+	ref, err := filepath.Abs("testdata/mixin-kit")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	b := dialKits(t, func(name string) (string, bool, bool) {
+		if name == "ws" {
+			return dir, false, true
+		}
+		return "", false, false
+	}, map[string]string{"testkit": ref})
+
+	require.Equal(t, []string{"testkit"}, b.AdmittedKits(), "the fixture mixin must be admitted")
+
+	sb := mkSandbox(t, b, CreateSpec{
+		Name:       "swarmkit-create",
+		Workspaces: []WorkspaceMount{{Name: "ws"}},
+		Kits:       []string{"testkit"},
+	})
+
+	ctx := context.Background()
+
+	// The daemon records the kit list on the sandbox, as absolute references.
+	h, err := sdksandbox.Get(ctx, b.cl, sb.Name)
+	require.NoError(t, err)
+	kits, err := h.Kits(ctx)
+	require.NoError(t, err)
+	require.Contains(t, kits, ref, "the recorded reference must be the absolute one")
+
+	out, err := b.Exec(ctx, sb.Name, []string{"printenv", "SWARM_KIT_TEST"}, ExecOpts{})
+	require.NoError(t, err)
+	require.Equal(t, "1", strings.TrimSpace(string(out.Stdout)), "the kit's environment variable must be applied")
+}
+
+// TestSDKBackend_RefusesASandboxKindKit proves the admission gate against real
+// daemon output. A kind: sandbox kit supplies the base image, which would make
+// the scheduler's template constraint a lie, so it must never be advertised.
+func TestSDKBackend_RefusesASandboxKindKit(t *testing.T) {
+	dir := t.TempDir()
+	spec := "schemaVersion: \"2\"\nkind: sandbox\nname: swarm-node-bad-kit\nversion: 0.0.1\nsandbox:\n  image: alpine:3\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "spec.yaml"), []byte(spec), 0o644))
+
+	b := dialKits(t, noWorkspaces, map[string]string{"badkit": dir})
+	require.Empty(t, b.AdmittedKits(), "a sandbox-kind kit must not be advertised")
 }
 
 // TestSDKBackend_ReadOnlyWorkspaceRules pins sbx's positional read-only rule

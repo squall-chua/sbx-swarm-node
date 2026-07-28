@@ -1,0 +1,13 @@
+# A minimal mixin kit for the live create-with-kit test.
+#
+# It must stay inside what admit() accepts and what `sbx create --kit` applies:
+# kind mixin, no resources, no runOptions. environment.variables is applied by
+# both create and add, so it is a safe payload to assert on.
+schemaVersion: "2"
+kind: mixin
+name: swarm-node-test-kit
+version: 0.0.1
+description: Fixture kit for sbx-swarm-node integration tests.
+environment:
+  variables:
+    SWARM_KIT_TEST: "1"
