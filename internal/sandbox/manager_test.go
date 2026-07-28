@@ -14,11 +14,18 @@ import (
 
 func newMgr(t *testing.T) (*Manager, *Fake) {
 	t.Helper()
+	f := NewFake()
+	return newMgrWith(t, f), f
+}
+
+// newMgrWith is newMgr with a caller-supplied fake, for tests that need one
+// configured before the manager sees it (kits, test hooks).
+func newMgrWith(t *testing.T, f *Fake) *Manager {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	f := NewFake()
-	return NewManager("node1", f, st, ids.NewGen("node1")), f
+	return NewManager("node1", f, st, ids.NewGen("node1"))
 }
 
 func TestManager_CreateGetListDelete(t *testing.T) {
@@ -83,6 +90,30 @@ func TestManager_DeleteReapsRecordlessOrphan(t *testing.T) {
 	require.NoError(t, m.Delete(ctx, rec.ID))
 	_, live = f.sandboxes[rec.BackendName]
 	require.False(t, live, "orphaned container must be removed")
+}
+
+func TestCreate_RecordsPortsWhenAKitIsUsed(t *testing.T) {
+	f := NewFake("tools")
+	f.KitPorts = []PublishedPort{{ContainerPort: 8080, HostPort: 32768}}
+	m := newMgrWith(t, f)
+
+	rec, err := m.Create(context.Background(), CreateSpec{Agent: "shell", Kits: []string{"tools"}})
+	require.NoError(t, err)
+	require.Equal(t, []PublishedPort{{ContainerPort: 8080, HostPort: 32768}}, rec.Ports)
+
+	reread, err := m.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.Len(t, reread.Ports, 1, "the ports must be persisted, not only returned")
+}
+
+func TestCreate_NoKitNoPortLookup(t *testing.T) {
+	f := NewFake()
+	f.KitPorts = []PublishedPort{{ContainerPort: 9999, HostPort: 1}}
+	m := newMgrWith(t, f)
+
+	rec, err := m.Create(context.Background(), CreateSpec{Agent: "shell"})
+	require.NoError(t, err)
+	require.Empty(t, rec.Ports, "no kits means no port read")
 }
 
 // fakeNotifier records the owned-id sets pushed by the Manager.
