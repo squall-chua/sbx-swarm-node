@@ -298,10 +298,11 @@ function onClose() {
 
         <!-- Workspaces multi-select -->
         <div>
-          <label class="block text-sm font-medium text-default mb-1">
+          <label class="block text-sm font-medium text-default mb-1" for="prov-workspaces">
             Workspaces
           </label>
           <USelectMenu
+            id="prov-workspaces"
             v-model="selectedWorkspaceNames"
             :items="workspaceOptions"
             multiple
@@ -334,10 +335,11 @@ function onClose() {
 
         <!-- Kits multi-select -->
         <div v-if="kitOptions.length > 0">
-          <label class="block text-sm font-medium text-default mb-1">
+          <label class="block text-sm font-medium text-default mb-1" for="prov-kits">
             Kits
           </label>
           <USelectMenu
+            id="prov-kits"
             v-model="form.kits"
             :items="kitOptions"
             multiple
