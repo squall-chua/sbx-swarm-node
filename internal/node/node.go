@@ -207,6 +207,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Workspaces:      workspaceNames(cfg.Workspaces),
 		GitWorkspaces:   gitWorkspaceNames(cfg.Workspaces),
 		Templates:       tmpls,
+		Kits:            backend.AdmittedKits(),
 		PubKey:          id.PublicKey,
 	}
 
@@ -250,6 +251,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			Workspaces:    workspaceNames(cfg.Workspaces),
 			GitWorkspaces: gitWorkspaceNames(cfg.Workspaces),
 			Templates:     tmpls,
+			Kits:          mgr.Backend().AdmittedKits(),
 			LimitCPU:      lc, LimitMemKB: lm, LimitDiskGB: ld,
 			AllocCPU: ac, AllocMemKB: am, AllocDiskGB: ad,
 		}
@@ -614,16 +616,40 @@ func buildGitWorkspaces(ws []config.WorkspaceConfig, dataDir string) map[string]
 }
 
 // buildBackend selects the sandbox backend from config. "sdk" connects to the
-// local sbx daemon (auto-starting it; a version mismatch only warns); a connect
+// local sbx daemon (auto-starting it) and admits the configured kits; a connect
 // failure fails boot rather than silently falling back to the fake.
-// Default/"fake" boots without a daemon (tests, daemonless nodes).
+// Default/"fake" boots without a daemon (tests, daemonless nodes) and admits
+// every configured kit unchecked — it has no daemon to inspect them with.
+//
+// The 60s bound covers the daemon connect AND kit admission, which has its own
+// 15s bound inside.
 func buildBackend(cfg *config.Config, log *slog.Logger) (sandbox.Backend, error) {
 	if cfg.Backend == "sdk" {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir), nil, log)
+		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir), kitMap(cfg.Kits), log)
 	}
-	return sandbox.NewFake(), nil
+	return sandbox.NewFake(kitNamesFromConfig(cfg.Kits)...), nil
+}
+
+// kitMap maps configured kits to the name-to-reference map the backend admits.
+// A kit reference never leaves this process (ADR-0022).
+func kitMap(ks []config.KitConfig) map[string]string {
+	m := make(map[string]string, len(ks))
+	for _, k := range ks {
+		m[k.Name] = k.Ref
+	}
+	return m
+}
+
+// kitNamesFromConfig lists configured kit names, for the fake backend, which
+// admits them unchecked.
+func kitNamesFromConfig(ks []config.KitConfig) []string {
+	out := make([]string, 0, len(ks))
+	for _, k := range ks {
+		out = append(out, k.Name)
+	}
+	return out
 }
 
 // workspaceResolver maps a workspace name to its host path + read-only flag for
@@ -677,6 +703,7 @@ func rowFromState(ns membership.NodeState) apiserver.NodeRow {
 	return apiserver.NodeRow{
 		NodeID: ns.NodeID, Cordoned: ns.Cordoned, Labels: ns.Labels,
 		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, GitWorkspaces: ns.GitWorkspaces, Templates: ns.Templates,
+		Kits:     ns.Kits,
 		LimitCPU: ns.LimitCPU, LimitMemKB: ns.LimitMemKB, LimitDiskGB: ns.LimitDiskGB,
 		AllocCPU: ns.AllocCPU, AllocMemKB: ns.AllocMemKB, AllocDiskGB: ns.AllocDiskGB,
 		ActualCPU: ns.ActualCPU, ActualMem: ns.ActualMem,
@@ -698,6 +725,7 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 		NodeID:       self,
 		Workspaces:   nameSet(workspaceNames(cfg.Workspaces)),
 		Templates:    nameSet(selfTmpls),
+		Kits:         nameSet(mgr.Backend().AdmittedKits()),
 		Capabilities: map[string]bool{"clone": true, "stats": true, "exec": true},
 		Labels:       cfg.Labels,
 		LimitCPU:     lc, LimitMem: lm, LimitDisk: ld,
@@ -714,6 +742,7 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 			NodeID:       ns.NodeID,
 			Workspaces:   nameSet(ns.Workspaces),
 			Templates:    nameSet(ns.Templates),
+			Kits:         nameSet(ns.Kits),
 			Capabilities: nameSet(ns.Capabilities),
 			Labels:       ns.Labels,
 			LimitCPU:     ns.LimitCPU, LimitMem: ns.LimitMemKB, LimitDisk: ns.LimitDiskGB,

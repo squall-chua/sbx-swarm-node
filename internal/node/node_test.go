@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -22,6 +23,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+func TestKitMap(t *testing.T) {
+	got := kitMap([]config.KitConfig{
+		{Name: "tools", Ref: "/opt/kits/tools"},
+		{Name: "extras", Ref: "ghcr.io/acme/extras:v1"},
+	})
+	want := map[string]string{
+		"tools":  "/opt/kits/tools",
+		"extras": "ghcr.io/acme/extras:v1",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
+}
 
 func TestNode_BootServeStop(t *testing.T) {
 	cfg := config.Default()

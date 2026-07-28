@@ -1,6 +1,7 @@
 package membership
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -40,4 +41,15 @@ func TestNodeState_MetaTinyAndBulkRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"n1.aaa", "n1.bbb"}, gotBulk.OwnedSandboxIDs)
 	require.Equal(t, []string{"clone", "stats"}, gotBulk.Capabilities)
+}
+
+func TestBulk_CarriesKits(t *testing.T) {
+	in := NodeState{NodeID: "n1", Kits: []string{"extras", "tools"}}
+	out, err := DecodeBulk(in.EncodeBulk())
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got, want := out.Kits, []string{"extras", "tools"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
 }
