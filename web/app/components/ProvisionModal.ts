@@ -9,6 +9,7 @@ export type ProvisionForm = {
   name: string; agent: string; template: string; cpus: number; memory_bytes: number; disk_gb: number
   workspaces: { name: string; read_only: boolean }[]
   clone: boolean; branch: string; strategy: string
+  kits: string[]
   env: KVRow[]; labels: KVRow[]
   node_affinity: KVRow[]; node_anti_affinity: KVRow[]
 }
@@ -23,6 +24,7 @@ export function buildCreateBody(f: ProvisionForm): Record<string, any> {
   if (f.workspaces.length) body.workspaces = f.workspaces
   if (f.clone) { body.clone = true; if (f.branch) body.branch = f.branch }
   if (f.strategy) body.strategy = f.strategy
+  if (f.kits.length) body.kits = f.kits // kit NAMES; the node resolves each to a reference
   for (const k of ['env', 'labels', 'node_affinity', 'node_anti_affinity'] as const) {
     const rec: Record<string, string> = {}
     for (const { k: key, v } of f[k]) {
