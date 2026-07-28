@@ -61,15 +61,14 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 	// re-supplies the existing placeholder, so an update needs a read first. Reusing
 	// it is also what makes rotation safe: the sandbox env value stays put and only
 	// the real secret behind the proxy changes.
-	if s.Placeholder == "" {
-		// ponytail: on a read failure, fall through and let SetCustom report the
-		// real error. That is today's behaviour, so no new failure mode.
-		if cur, err := b.SecretList(ctx, scope); err == nil {
-			for _, c := range cur.Custom {
-				if c.Env == s.Env {
-					s.Placeholder = c.Placeholder
-					break
-				}
+	//
+	// ponytail: on a read failure, fall through and let SetCustom report the real
+	// error. That is today's behaviour, so no new failure mode.
+	if cur, err := b.SecretList(ctx, scope); err == nil {
+		for _, c := range cur.Custom {
+			if c.Env == s.Env {
+				s.Placeholder = c.Placeholder
+				break
 			}
 		}
 	}
@@ -81,7 +80,12 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 ```
 
 `CustomSecret` already carries a `Placeholder` field
-(`internal/sandbox/backend.go:134`), so no type changes.
+(`internal/sandbox/backend.go:136`), so no type changes.
+
+The lookup is unconditional. There is no way to know whether a write is a create
+or an update without reading first, so a "skip the read if the caller already
+supplied a placeholder" guard would never fire — no node caller sets that field
+on a write, and the proto has no field for it.
 
 `SecretList` already filters rows to the exact scope, and the daemon's
 uniqueness rule is per scope, so the two agree.

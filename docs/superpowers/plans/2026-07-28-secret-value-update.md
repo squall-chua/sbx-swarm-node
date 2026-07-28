@@ -113,15 +113,14 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 	// re-supplies the existing placeholder, so an update needs a read first. Reusing
 	// it is also what makes rotation safe: the sandbox env value stays put and only
 	// the real secret behind the proxy changes.
-	if s.Placeholder == "" {
-		// ponytail: on a read failure, fall through and let SetCustom report the
-		// real error. That is today's behaviour, so no new failure mode.
-		if cur, err := b.SecretList(ctx, scope); err == nil {
-			for _, c := range cur.Custom {
-				if c.Env == s.Env {
-					s.Placeholder = c.Placeholder
-					break
-				}
+	//
+	// ponytail: on a read failure, fall through and let SetCustom report the real
+	// error. That is today's behaviour, so no new failure mode.
+	if cur, err := b.SecretList(ctx, scope); err == nil {
+		for _, c := range cur.Custom {
+			if c.Env == s.Env {
+				s.Placeholder = c.Placeholder
+				break
 			}
 		}
 	}
@@ -137,14 +136,19 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 }
 ```
 
-Three things to notice, so you do not "tidy" them away:
+Four things to notice, so you do not "tidy" them away:
 
 - The lookup keys on `Env`, not `Host`. The daemon's uniqueness rule is per
   `(scope, env)`, and a write may legitimately change the host.
-- The `if s.Placeholder == ""` guard keeps the existing struct field honest as a
-  pass-through. Do not delete it.
+- The lookup is unconditional, on purpose. Do not add a "skip the read if
+  `s.Placeholder` is already set" guard: no node caller sets that field on a
+  write, the proto has no field for it, and you cannot tell a create from an
+  update without reading first. This was ruled on before implementation.
 - The `SecretList` error is swallowed on purpose. See the comment. Do not turn
-  it into a returned error.
+  it into a returned error, and do not add logging for it. This was also ruled
+  on before implementation.
+- On a create the loop finds nothing, `s.Placeholder` stays `""`, and the SDK
+  omits the `--placeholder` flag. That is the correct create path.
 
 - [ ] **Step 4: Run the test and check it passes**
 
