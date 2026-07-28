@@ -73,6 +73,34 @@ func TestPolicyService_SetPolicyWritesAudit(t *testing.T) {
 	require.Equal(t, "evil.example", entries[0].Target)
 }
 
+func TestPolicyService_CheckPolicy(t *testing.T) {
+	svc, a := buildPolicySvc(t)
+	ctx := context.Background()
+
+	// Nothing configured: default deny, and the response says why.
+	got, err := svc.CheckPolicy(ctx, &sbxv1.CheckPolicyRequest{Scope: "", Target: "api.example.com"})
+	require.NoError(t, err)
+	require.False(t, got.Allowed)
+	require.Equal(t, "implicit", got.DenyKind)
+	require.NotEmpty(t, got.Reason)
+
+	// After an allow rule the same target is authorized, naming the rule.
+	_, err = svc.SetPolicy(ctx, &sbxv1.SetPolicyRequest{Scope: "", Decision: "allow", Host: "api.example.com"})
+	require.NoError(t, err)
+	got, err = svc.CheckPolicy(ctx, &sbxv1.CheckPolicyRequest{Scope: "", Target: "api.example.com:443"})
+	require.NoError(t, err)
+	require.True(t, got.Allowed)
+	require.Equal(t, "api.example.com", got.Rule)
+
+	// A check is read-only: only the SetPolicy above is audited.
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+
+	_, err = svc.CheckPolicy(ctx, &sbxv1.CheckPolicyRequest{Scope: "", Target: ""})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
 func TestPolicyService_AuditActorFromGRPCPrincipal(t *testing.T) {
 	svc, a := buildPolicySvc(t)
 	// Context carrying the gRPC principal as the authn interceptor attaches it.

@@ -253,10 +253,10 @@ stateDiagram-v2
 ### Prerequisites
 
 - **Go 1.25+** (see [go.mod](go.mod)).
-- For `backend: sdk` — a running, **version-compatible `sbx` daemon** on the same host
-  (this code targets `sbx-go-sdk v0.1.7` / daemon `v0.34.0`, api ≈ v0.16.0; the SDK does a strict
-  version handshake and the node fails to boot on mismatch). For everything else,
-  `backend: fake` needs no daemon.
+- For `backend: sdk` — a running **`sbx` daemon** on the same host (this code
+  targets `sbx-go-sdk v0.1.9` / daemon `v0.37.0`, api `0.24.0`). The version is no
+  longer enforced: a daemon on a different version logs a warning at boot and the
+  node keeps running. For everything else, `backend: fake` needs no daemon.
 - To rebuild the console: **Node.js + npm** (Nuxt 4). The repo ships a prebuilt
   `web/dist`, so this is only needed if you change the UI.
 

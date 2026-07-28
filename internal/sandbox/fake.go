@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -266,6 +267,33 @@ func (f *Fake) PolicyList(_ context.Context, _ string) ([]PolicyRule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]PolicyRule(nil), f.rules...), nil
+}
+
+// PolicyCheck mirrors the daemon's default-deny: the target is allowed only when
+// an allow rule names it, and an explicit deny always wins.
+// ponytail: exact host match only — no wildcards, no ports. The real daemon
+// normalises; the Fake just needs a deterministic allow/deny for tests.
+func (f *Fake) PolicyCheck(_ context.Context, _, target string) (PolicyDecision, error) {
+	host, _, found := strings.Cut(target, ":")
+	if !found {
+		host = target
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	d := PolicyDecision{Resource: host, Origin: "local"}
+	for _, r := range f.rules {
+		if r.Rule != host {
+			continue
+		}
+		if r.Decision == "deny" {
+			return PolicyDecision{Resource: host, Origin: "local", Rule: r.Rule, Reason: "denied by rule"}, nil
+		}
+		d.Allowed, d.Rule = true, r.Rule
+	}
+	if !d.Allowed {
+		d.DenyKind, d.Reason = "implicit", "no rule matched; default deny"
+	}
+	return d, nil
 }
 
 func (f *Fake) PolicyProfiles(_ context.Context) ([]string, error) {

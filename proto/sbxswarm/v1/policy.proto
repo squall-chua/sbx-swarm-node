@@ -16,6 +16,9 @@ service PolicyService {
   rpc DeletePolicyRule(DeletePolicyRuleRequest) returns (Empty) {
     option (google.api.http) = {delete: "/v1/sandboxes/{scope}/policy/{resource}"};
   }
+  rpc CheckPolicy(CheckPolicyRequest) returns (CheckPolicyResponse) {
+    option (google.api.http) = {post: "/v1/sandboxes/{scope}/policy/check" body: "*"};
+  }
   rpc ListSecrets(ScopeRequest) returns (ListSecretsResponse) {
     option (google.api.http) = {get: "/v1/sandboxes/{scope}/secrets"};
   }
@@ -64,6 +67,25 @@ message SetPolicyRequest {
 message DeletePolicyRuleRequest {
   string scope = 1;
   string resource = 2;
+}
+
+// CheckPolicyRequest asks whether the policy would authorize network access to
+// target, without connecting. target is a hostname, host:port, IP or URL; a bare
+// host is evaluated at port 443.
+message CheckPolicyRequest {
+  string scope = 1;
+  string target = 2;
+}
+
+// CheckPolicyResponse is the daemon's verdict for the whole policy, not one
+// rule's own decision.
+message CheckPolicyResponse {
+  bool allowed = 1;
+  string reason = 2; // the daemon's explanation for a denial
+  string rule = 3; // the deciding rule, when there is one
+  string origin = 4; // where the deciding rule came from: "local" | "org" | "kit"
+  string resource = 5; // the normalised resource, e.g. "api.example.com:443"
+  string deny_kind = 6; // "implicit" when nothing matched and the default deny applied
 }
 
 // SecretMsg describes a custom secret entry. The secret value is NEVER included
