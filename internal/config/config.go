@@ -43,6 +43,7 @@ type Config struct {
 	Backend                 string            `yaml:"backend"`          // "fake" (default) | "sdk"
 	IdleTimeout             string            `yaml:"idle_timeout"`     // Go duration, e.g. "30m"; "" or <=0 disables idle-stop
 	MaxUploadBytes          int64             `yaml:"max_upload_bytes"` // 0 → 100 MiB; per-request file-upload ceiling
+	Kits                    []KitConfig       `yaml:"kits"`             // operator-declared kits; a caller names one, never a reference (ADR-0022)
 }
 
 // ProvisionLimits caps how much CPU/memory/disk this node offers to the swarm.
@@ -58,6 +59,14 @@ type WorkspaceConfig struct {
 	HostPath string     `yaml:"host_path"` // optional for a provider workspace: empty => node auto-manages the mirror base from remote_url (ADR-0020)
 	ReadOnly bool       `yaml:"read_only"`
 	Git      *GitConfig `yaml:"git,omitempty"` // non-nil => git-backed (clone-only, ADR-0015)
+}
+
+// KitConfig is a kit artifact this node offers, declared by the operator. Name is
+// what a caller puts in a create request; Ref is a local directory, a ZIP, or an
+// OCI reference, and never crosses the API (ADR-0022).
+type KitConfig struct {
+	Name string `yaml:"name"`
+	Ref  string `yaml:"ref"`
 }
 
 // GitConfig configures a git-backed workspace's pre/publish pipelines (ADR-0003).
@@ -254,6 +263,19 @@ func (c *Config) Validate() error {
 		if w.Git != nil && w.HostPath == "" && w.Git.RemoteURL == "" {
 			return fmt.Errorf("workspace %q is git-backed but has neither host_path nor remote_url", w.Name)
 		}
+	}
+	seenKit := make(map[string]bool, len(c.Kits))
+	for _, k := range c.Kits {
+		if k.Name == "" {
+			return fmt.Errorf("kits: empty name")
+		}
+		if k.Ref == "" {
+			return fmt.Errorf("kit %q: ref must not be empty", k.Name)
+		}
+		if seenKit[k.Name] {
+			return fmt.Errorf("kits: duplicate name %q", k.Name)
+		}
+		seenKit[k.Name] = true
 	}
 	switch c.Backend {
 	case "", "fake", "sdk":

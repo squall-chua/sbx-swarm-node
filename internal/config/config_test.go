@@ -267,3 +267,38 @@ func TestIdleTimeout_ValidateAndDuration(t *testing.T) {
 	c.IdleTimeout = "-5m"
 	require.Error(t, c.Validate())
 }
+
+func TestValidate_Kits(t *testing.T) {
+	base := func(kits []KitConfig) *Config {
+		c := Default()
+		c.Kits = kits
+		return c
+	}
+
+	t.Run("accepts a named kit with a ref", func(t *testing.T) {
+		if err := base([]KitConfig{{Name: "tools", Ref: "/opt/kits/tools"}}).Validate(); err != nil {
+			t.Fatalf("want nil, got %v", err)
+		}
+	})
+	t.Run("rejects an empty name", func(t *testing.T) {
+		err := base([]KitConfig{{Ref: "/opt/kits/tools"}}).Validate()
+		if err == nil {
+			t.Fatal("want an error for an empty kit name")
+		}
+	})
+	t.Run("rejects an empty ref", func(t *testing.T) {
+		err := base([]KitConfig{{Name: "tools"}}).Validate()
+		if err == nil {
+			t.Fatal("want an error for an empty kit ref")
+		}
+	})
+	t.Run("rejects a duplicate name", func(t *testing.T) {
+		err := base([]KitConfig{
+			{Name: "tools", Ref: "/a"},
+			{Name: "tools", Ref: "/b"},
+		}).Validate()
+		if err == nil {
+			t.Fatal("want an error for a duplicate kit name")
+		}
+	})
+}
