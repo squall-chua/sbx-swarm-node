@@ -298,12 +298,18 @@ func (b *SDKBackend) UnpublishPort(ctx context.Context, name string, containerPo
 	}
 	// The daemon requires a HOST_PORT:SANDBOX_PORT spec for unpublish, so resolve
 	// the host port(s) currently mapped to this container port and unpublish each.
-	ports, err := sb.Ports(ctx)
+	//
+	// Read them through b.Ports, NOT the raw sb.Ports: the daemon lists one row per
+	// host IP (127.0.0.1 and ::1), and one unpublish removes every IP row for that
+	// mapping. Iterating the raw rows issues the same spec twice and the second call
+	// fails with "no published port matches". b.Ports applies dedupePorts, so each
+	// host port appears once.
+	ports, err := b.Ports(ctx, name)
 	if err != nil {
 		return err
 	}
 	for _, p := range ports {
-		if p.SandboxPort == containerPort {
+		if p.ContainerPort == containerPort {
 			if err := sb.UnpublishPort(ctx, strconv.Itoa(p.HostPort)+":"+strconv.Itoa(containerPort)); err != nil {
 				return err
 			}
