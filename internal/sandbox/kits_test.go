@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -63,38 +64,52 @@ func TestAdmitKits_DropsARejectedKitAndKeepsAnUnloadableOne(t *testing.T) {
 	}
 }
 
-// TestAdmitKits_TimeoutIsPerKit proves the inspect bound applies to each kit
-// independently, not to the whole set. A parent deadline shorter than
-// kitInspectTimeout still governs each kit's own child context (the shorter
-// of the two wins), which keeps this test fast without waiting out the real
-// 15s constant. The slow kit blocks on <-ctx.Done() instead of sleeping. The
-// fast kit returns immediately with a kind:sandbox manifest, which admit()
-// must still refuse -- an aggregate bound shared by one ctx for the whole
-// batch would have been just as capable of proving this, but the point is
-// that a per-kit bound does NOT regress it: the fast kit's own verdict does
-// not depend on whether some other kit in the batch is still hung.
+// TestAdmitKits_TimeoutIsPerKit proves each kit's inspect call receives its
+// OWN context (its own timer), not one context shared by the whole batch.
+//
+// An earlier version of this test blocked one kit on <-ctx.Done() and had a
+// second kit check its own ctx.Err() once signaled by the first. A reviewer
+// found that version passed under the OLD aggregate-bound code too (both
+// designs resolve to the same deadline there), so a revert would not be
+// caught. Rebuilding it to prove the deadline had actually fired uncovered a
+// deeper problem: with two per-kit timers of the same duration started
+// microseconds apart, which one fires first is a genuine race -- in local
+// testing that construction passed only ~40% of the time under -race,
+// regardless of how generous the timeout was (the raciness is about relative
+// goroutine scheduling order, not duration).
+//
+// Comparing each kit's own ctx.Deadline() sidesteps the race entirely: under
+// the old bug every kit shares the identical context.WithTimeout call (made
+// once for the whole batch), so every kit observes the byte-identical
+// deadline value. Under the per-kit bound, each kit's context.WithTimeout
+// call runs in its own goroutine and computes its deadline from its own
+// time.Now(), so the two deadlines are virtually certain to differ even
+// though both goroutines start within microseconds of each other. No
+// deadline needs to actually fire.
 func TestAdmitKits_TimeoutIsPerKit(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
+	prev := kitInspectTimeout
+	kitInspectTimeout = 50 * time.Millisecond // fast test; the value itself doesn't matter here
+	t.Cleanup(func() { kitInspectTimeout = prev })
 
+	var mu sync.Mutex
+	deadlines := map[string]time.Time{}
 	inspect := func(ctx context.Context, ref string) (KitInfo, error) {
-		if ref == "/slow" {
-			<-ctx.Done() // simulate a reference whose fetch outlives the deadline
-			return KitInfo{}, ctx.Err()
+		dl, ok := ctx.Deadline()
+		if !ok {
+			t.Errorf("inspect(%s): context has no deadline", ref)
 		}
-		// "/fast": resolves before any deadline and must be judged on its
-		// own manifest.
-		return KitInfo{Kind: "sandbox"}, nil
+		mu.Lock()
+		deadlines[ref] = dl
+		mu.Unlock()
+		return KitInfo{Kind: "mixin"}, nil
 	}
 
-	got := admitKits(ctx, inspect, map[string]string{
-		"slow": "/slow",
-		"fast": "/fast",
-	}, quietLog())
+	admitKits(context.Background(), inspect, map[string]string{"a": "/a", "b": "/b"}, quietLog())
 
-	want := map[string]string{"slow": "/slow"} // fast refused; slow kept (timeout)
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("want %v, got %v", want, got)
+	mu.Lock()
+	defer mu.Unlock()
+	if deadlines["/a"].Equal(deadlines["/b"]) {
+		t.Fatalf("kit deadlines are identical (%v): inspection is sharing one context for the whole batch instead of bounding each kit independently", deadlines["/a"])
 	}
 }
 

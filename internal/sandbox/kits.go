@@ -12,8 +12,8 @@ import (
 
 // kitInspectTimeout bounds each kit's boot-time inspection independently.
 // Kits are inspected concurrently, so one slow reference costs its own
-// timeout, not the whole set's.
-const kitInspectTimeout = 15 * time.Second
+// timeout, not the whole set's. A var, not a const, so a test can shorten it.
+var kitInspectTimeout = 15 * time.Second
 
 // KitInfo is the part of a kit's manifest the node checks before advertising the
 // kit. It is deliberately not the SDK's kit.Info: the node needs a handful of
