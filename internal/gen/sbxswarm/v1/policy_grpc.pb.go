@@ -22,6 +22,7 @@ const (
 	PolicyService_ListPolicy_FullMethodName         = "/sbxswarm.v1.PolicyService/ListPolicy"
 	PolicyService_SetPolicy_FullMethodName          = "/sbxswarm.v1.PolicyService/SetPolicy"
 	PolicyService_DeletePolicyRule_FullMethodName   = "/sbxswarm.v1.PolicyService/DeletePolicyRule"
+	PolicyService_CheckPolicy_FullMethodName        = "/sbxswarm.v1.PolicyService/CheckPolicy"
 	PolicyService_ListSecrets_FullMethodName        = "/sbxswarm.v1.PolicyService/ListSecrets"
 	PolicyService_SetSecret_FullMethodName          = "/sbxswarm.v1.PolicyService/SetSecret"
 	PolicyService_DeleteSecret_FullMethodName       = "/sbxswarm.v1.PolicyService/DeleteSecret"
@@ -35,6 +36,7 @@ type PolicyServiceClient interface {
 	ListPolicy(ctx context.Context, in *ScopeRequest, opts ...grpc.CallOption) (*ListPolicyResponse, error)
 	SetPolicy(ctx context.Context, in *SetPolicyRequest, opts ...grpc.CallOption) (*Empty, error)
 	DeletePolicyRule(ctx context.Context, in *DeletePolicyRuleRequest, opts ...grpc.CallOption) (*Empty, error)
+	CheckPolicy(ctx context.Context, in *CheckPolicyRequest, opts ...grpc.CallOption) (*CheckPolicyResponse, error)
 	ListSecrets(ctx context.Context, in *ScopeRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error)
 	SetSecret(ctx context.Context, in *SetSecretRequest, opts ...grpc.CallOption) (*Empty, error)
 	DeleteSecret(ctx context.Context, in *DeleteSecretRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -73,6 +75,16 @@ func (c *policyServiceClient) DeletePolicyRule(ctx context.Context, in *DeletePo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, PolicyService_DeletePolicyRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *policyServiceClient) CheckPolicy(ctx context.Context, in *CheckPolicyRequest, opts ...grpc.CallOption) (*CheckPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckPolicyResponse)
+	err := c.cc.Invoke(ctx, PolicyService_CheckPolicy_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +138,7 @@ type PolicyServiceServer interface {
 	ListPolicy(context.Context, *ScopeRequest) (*ListPolicyResponse, error)
 	SetPolicy(context.Context, *SetPolicyRequest) (*Empty, error)
 	DeletePolicyRule(context.Context, *DeletePolicyRuleRequest) (*Empty, error)
+	CheckPolicy(context.Context, *CheckPolicyRequest) (*CheckPolicyResponse, error)
 	ListSecrets(context.Context, *ScopeRequest) (*ListSecretsResponse, error)
 	SetSecret(context.Context, *SetSecretRequest) (*Empty, error)
 	DeleteSecret(context.Context, *DeleteSecretRequest) (*Empty, error)
@@ -148,6 +161,9 @@ func (UnimplementedPolicyServiceServer) SetPolicy(context.Context, *SetPolicyReq
 }
 func (UnimplementedPolicyServiceServer) DeletePolicyRule(context.Context, *DeletePolicyRuleRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeletePolicyRule not implemented")
+}
+func (UnimplementedPolicyServiceServer) CheckPolicy(context.Context, *CheckPolicyRequest) (*CheckPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckPolicy not implemented")
 }
 func (UnimplementedPolicyServiceServer) ListSecrets(context.Context, *ScopeRequest) (*ListSecretsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSecrets not implemented")
@@ -232,6 +248,24 @@ func _PolicyService_DeletePolicyRule_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PolicyServiceServer).DeletePolicyRule(ctx, req.(*DeletePolicyRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PolicyService_CheckPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).CheckPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_CheckPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).CheckPolicy(ctx, req.(*CheckPolicyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -326,6 +360,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePolicyRule",
 			Handler:    _PolicyService_DeletePolicyRule_Handler,
+		},
+		{
+			MethodName: "CheckPolicy",
+			Handler:    _PolicyService_CheckPolicy_Handler,
 		},
 		{
 			MethodName: "ListSecrets",

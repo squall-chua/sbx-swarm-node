@@ -82,7 +82,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 
 	gen := ids.NewGen(id.NodeID)
 	bus := events.NewBus(id.NodeID, 1024)
-	backend, err := buildBackend(cfg)
+	backend, err := buildBackend(cfg, log)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -614,14 +614,14 @@ func buildGitWorkspaces(ws []config.WorkspaceConfig, dataDir string) map[string]
 }
 
 // buildBackend selects the sandbox backend from config. "sdk" connects to the
-// local sbx daemon (auto-starting it, version-checked); a connect failure fails
-// boot rather than silently falling back to the fake. Default/"fake" boots
-// without a daemon (tests, daemonless nodes).
-func buildBackend(cfg *config.Config) (sandbox.Backend, error) {
+// local sbx daemon (auto-starting it; a version mismatch only warns); a connect
+// failure fails boot rather than silently falling back to the fake.
+// Default/"fake" boots without a daemon (tests, daemonless nodes).
+func buildBackend(cfg *config.Config, log *slog.Logger) (sandbox.Backend, error) {
 	if cfg.Backend == "sdk" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir))
+		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir), log)
 	}
 	return sandbox.NewFake(), nil
 }

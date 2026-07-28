@@ -97,6 +97,38 @@ async function doRemoveRule(rule: PolicyRule) {
   }
 }
 
+// ── Policy check ──────────────────────────────────────────────────────────────
+// Asks the daemon how the WHOLE policy would rule on one target, without
+// connecting. Read-only, so it is not gated on the admin role.
+interface PolicyCheckResult {
+  allowed: boolean
+  reason?: string
+  rule?: string       // the deciding rule, when there is one
+  origin?: string     // "local" | "org" | "kit"
+  resource?: string   // normalised, e.g. "api.example.com:443"
+  deny_kind?: string  // "implicit" = nothing matched, default deny
+}
+
+const checkTarget = ref('')
+const checkLoading = ref(false)
+const checkResult = ref<PolicyCheckResult | null>(null)
+
+async function doCheck() {
+  if (!checkTarget.value) return
+  checkLoading.value = true
+  checkResult.value = null
+  try {
+    checkResult.value = await api.post('/v1/sandboxes/_node/policy/check', {
+      scope: '_node',
+      target: checkTarget.value,
+    })
+  } catch (e: any) {
+    toast.add({ title: 'Policy check failed', description: e?.message, color: 'error' })
+  } finally {
+    checkLoading.value = false
+  }
+}
+
 // ── Secrets ───────────────────────────────────────────────────────────────────
 interface CustomSecret { host: string; env: string; placeholder?: string }
 interface StoredSecret { name: string; type: string; scope?: string } // type: "service" | "registry"; scope: "" = node-global, else owning sandbox id
@@ -299,6 +331,48 @@ onMounted(() => {
           </UCollapsible>
         </div>
         <p v-else class="text-sm text-muted">No policy rules configured.</p>
+
+        <!-- Test a target against the whole policy (read-only, any role) -->
+        <USeparator />
+        <div class="flex flex-col gap-2">
+          <p class="text-xs font-medium text-muted">Test a target</p>
+          <div class="flex gap-2 flex-wrap">
+            <UInput
+              v-model="checkTarget"
+              data-test="policy-check-target"
+              placeholder="host, host:port or URL"
+              size="sm"
+              class="flex-1 min-w-40"
+              aria-label="Policy check target"
+              @keyup.enter="doCheck"
+            />
+            <UButton
+              label="Check"
+              data-test="policy-check"
+              icon="i-lucide-search-check"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :loading="checkLoading"
+              :disabled="!checkTarget"
+              @click="doCheck"
+            />
+          </div>
+          <div v-if="checkResult" data-test="policy-check-result" class="flex items-center gap-2 flex-wrap text-xs">
+            <UBadge
+              :label="checkResult.allowed ? 'allowed' : 'denied'"
+              :icon="checkResult.allowed ? 'i-lucide-check' : 'i-lucide-ban'"
+              :color="checkResult.allowed ? 'success' : 'error'"
+              variant="subtle"
+              size="xs"
+            />
+            <span v-if="checkResult.resource" class="font-mono text-toned">{{ checkResult.resource }}</span>
+            <span v-if="checkResult.rule" class="text-muted">rule <span class="font-mono">{{ checkResult.rule }}</span></span>
+            <UBadge v-if="checkResult.origin" :label="checkResult.origin" color="neutral" variant="subtle" size="xs" />
+            <span v-if="checkResult.deny_kind" class="text-muted">{{ checkResult.deny_kind }}</span>
+            <span v-if="checkResult.reason" class="text-muted">{{ checkResult.reason }}</span>
+          </div>
+        </div>
 
         <UAlert
           color="neutral"

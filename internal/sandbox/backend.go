@@ -115,6 +115,18 @@ type PolicyRule struct {
 	Resources  string `json:"resources"`
 }
 
+// PolicyDecision is the verdict of the WHOLE policy for one access check
+// (policy.Check), unlike a PolicyRule's Decision, which is one rule's own
+// allow/deny. Carries no secret.
+type PolicyDecision struct {
+	Allowed  bool   `json:"allowed"`
+	Reason   string `json:"reason"`    // the daemon's explanation for a denial
+	Rule     string `json:"rule"`      // the deciding rule, when there is one
+	Origin   string `json:"origin"`    // local|org|kit
+	Resource string `json:"resource"`  // normalised, e.g. "api.example.com:443"
+	DenyKind string `json:"deny_kind"` // "implicit" = nothing matched, default deny
+}
+
 // CustomSecret is a proxy-injected credential. Value is write-only and never
 // returned by reads. Placeholder is the non-secret injection token (returned by
 // reads — it is visible inside every sandbox, not a secret).
@@ -194,6 +206,9 @@ type Backend interface {
 	PolicyReset(ctx context.Context) error
 	PolicyList(ctx context.Context, scope string) ([]PolicyRule, error)
 	PolicyProfiles(ctx context.Context) ([]string, error)
+	// PolicyCheck asks whether policy would authorize network access to target,
+	// without connecting. Read-only.
+	PolicyCheck(ctx context.Context, scope, target string) (PolicyDecision, error)
 
 	// Secret management (values write-only; reads always mask them).
 	SecretSet(ctx context.Context, scope string, s CustomSecret) error

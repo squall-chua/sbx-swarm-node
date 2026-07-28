@@ -174,6 +174,30 @@ func (s *PolicyService) SetSecret(ctx context.Context, r *sbxv1.SetSecretRequest
 	return &sbxv1.Empty{}, nil
 }
 
+// CheckPolicy asks the daemon whether the policy would authorize network access
+// to a target, without connecting. Read-only: no audit entry, like ListPolicy.
+func (s *PolicyService) CheckPolicy(ctx context.Context, r *sbxv1.CheckPolicyRequest) (*sbxv1.CheckPolicyResponse, error) {
+	if r.Target == "" {
+		return nil, status.Error(codes.InvalidArgument, "target must not be empty")
+	}
+	name, err := s.scopeName(ctx, r.Scope)
+	if err != nil {
+		return nil, scopeStatusErr(err)
+	}
+	d, err := s.mgr.Backend().PolicyCheck(ctx, name, r.Target)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &sbxv1.CheckPolicyResponse{
+		Allowed:  d.Allowed,
+		Reason:   d.Reason,
+		Rule:     d.Rule,
+		Origin:   d.Origin,
+		Resource: d.Resource,
+		DenyKind: d.DenyKind,
+	}, nil
+}
+
 // ListSecrets returns the secret inventory. Values are never included in any
 // response field (spec §11).
 func (s *PolicyService) ListSecrets(ctx context.Context, r *sbxv1.ScopeRequest) (*sbxv1.ListSecretsResponse, error) {

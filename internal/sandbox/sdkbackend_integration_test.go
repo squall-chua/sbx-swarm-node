@@ -4,6 +4,7 @@ package sandbox
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These integration tests need a running, version-compatible sbx daemon
-// (NewSDKBackend uses WithAutoStart + WithStrictVersion). There is no sbx/docker
+// These integration tests need a running sbx daemon (NewSDKBackend uses
+// WithAutoStart; a version mismatch only warns). There is no sbx/docker
 // in CI, so they are gated behind the `integration` build tag and are the only
 // place the REAL backend translation is exercised — everything else runs against
 // the in-memory Fake. Run: go test -tags integration ./internal/sandbox/
@@ -33,13 +34,13 @@ import (
 
 func noWorkspaces(string) (string, bool, bool) { return "", false, false }
 
-// dial connects to the local daemon. It FAILS (not skips) on a connect/version
-// error: that failure is the signal this scaffolding exists to surface — an
-// absent or version-incompatible daemon (the long-standing post-M7 gap).
+// dial connects to the local daemon. It FAILS (not skips) on a connect error:
+// that failure is the signal this scaffolding exists to surface — an absent
+// daemon (the long-standing post-M7 gap).
 func dial(t *testing.T, resolve WorkspaceResolver) *SDKBackend {
 	t.Helper()
-	b, err := NewSDKBackend(context.Background(), resolve)
-	require.NoError(t, err, "connect daemon: need a version-compatible sbx daemon")
+	b, err := NewSDKBackend(context.Background(), resolve, slog.Default())
+	require.NoError(t, err, "connect daemon: need a running sbx daemon")
 	return b
 }
 
@@ -282,6 +283,17 @@ func TestSDKBackend_SecretRoundTrip(t *testing.T) {
 	require.NotNil(t, found, "secret not listed after set")
 	require.Equal(t, "API_TOKEN", found.Env)
 	require.Empty(t, found.Value, "secret value must be masked on read")
+
+	// A global list must NOT carry this sandbox's secret. Bare `sbx secret ls`
+	// lists every scope, so SecretList filters rows to the requested scope.
+	global, err := b.SecretList(ctx, "")
+	require.NoError(t, err)
+	for _, c := range global.Custom {
+		require.NotEqual(t, "api.example.com", c.Host, "per-sandbox secret leaked into the global listing")
+	}
+	for _, st := range global.Stored {
+		require.Empty(t, st.Scope, "global listing must only carry global-scope rows")
+	}
 
 	require.NoError(t, b.SecretRemove(ctx, scope, "api.example.com"))
 }

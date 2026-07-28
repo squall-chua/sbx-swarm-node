@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -20,7 +21,7 @@ import (
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
 type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok bool)
 
-// SDKBackend implements Backend over sbx-go-sdk v0.1.7. Workspaces are resolved
+// SDKBackend implements Backend over sbx-go-sdk v0.1.9. Workspaces are resolved
 // to host paths via the resolver (config-provided). It is a thin translation
 // layer: lifecycle/exec/ports/files all resolve a *sandbox.Sandbox handle by
 // name and call the SDK, mapping the SDK's not-found sentinel to ErrNotFound.
@@ -29,12 +30,22 @@ type SDKBackend struct {
 	resolve WorkspaceResolver
 }
 
-// NewSDKBackend connects to the local daemon (auto-starting it if needed) and
-// requires a compatible daemon version.
-func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver) (*SDKBackend, error) {
-	cl, err := sdkclient.New(ctx, sdkclient.WithAutoStart(), sdkclient.WithStrictVersion())
+// NewSDKBackend connects to the local daemon (auto-starting it if needed).
+//
+// The daemon version is NOT enforced. The SDK's WithStrictVersion compared
+// api_version by exact string equality, and api_version bumps on every sbx
+// release — so a release with byte-identical wire types still blocked node
+// boot. A drifted daemon is logged once here and left running.
+// ponytail: warn-only; add a floor check if a real incompatibility shows up.
+func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, log *slog.Logger) (*SDKBackend, error) {
+	cl, err := sdkclient.New(ctx, sdkclient.WithAutoStart())
 	if err != nil {
 		return nil, fmt.Errorf("connect daemon: %w", err)
+	}
+	if h, err := cl.DaemonHealth(ctx); err == nil && h.APIVersion != sdkclient.TestedAPIVersion {
+		log.Warn("sbx daemon version differs from the one this SDK was tested against",
+			"daemon_version", h.Version, "daemon_api_version", h.APIVersion,
+			"sdk_client_version", sdkclient.ClientVersion, "sdk_tested_api_version", sdkclient.TestedAPIVersion)
 	}
 	return &SDKBackend{cl: cl, resolve: resolve}, nil
 }
@@ -160,12 +171,16 @@ func (b *SDKBackend) Stop(ctx context.Context, name string) error {
 	return sb.Stop(ctx)
 }
 
+// Remove force-deletes. sbx v0.37.0 enables SSH by default, so a sandbox with an
+// open session refuses a plain Remove — and a delete that fails here leaves an
+// orphan the node still has a record for. Delete is always a deliberate request,
+// so an attached session must not be able to block it.
 func (b *SDKBackend) Remove(ctx context.Context, name string) error {
 	sb, err := b.handle(ctx, name)
 	if err != nil {
 		return err
 	}
-	return sb.Remove(ctx)
+	return sb.Remove(ctx, sdksandbox.WithForce())
 }
 
 func (b *SDKBackend) Exec(ctx context.Context, name string, cmd []string, opts ExecOpts) (ExecResult, error) {
@@ -444,6 +459,28 @@ func (b *SDKBackend) PolicyReset(ctx context.Context) error {
 	return sdkpolicy.Reset(ctx, b.cl)
 }
 
+// PolicyCheck evaluates one access request against the policy. An empty scope
+// evaluates globally; a scope names a sandbox context (the daemon rejects an
+// unknown name).
+func (b *SDKBackend) PolicyCheck(ctx context.Context, scope, target string) (PolicyDecision, error) {
+	var opts []sdkpolicy.CheckOption
+	if scope != "" {
+		opts = append(opts, sdkpolicy.WithCheckSandbox(scope))
+	}
+	auth, err := sdkpolicy.Check(ctx, b.cl, target, opts...)
+	if err != nil {
+		return PolicyDecision{}, err
+	}
+	return PolicyDecision{
+		Allowed:  auth.Allowed,
+		Reason:   auth.Reason,
+		Rule:     auth.Rule,
+		Origin:   auth.Origin,
+		Resource: auth.ResourceValue,
+		DenyKind: auth.DenyKind,
+	}, nil
+}
+
 // PolicyList returns parsed rules. On ErrUnexpectedFormat it falls back to
 // ListRaw and returns a single synthetic rule with Type:"raw".
 func (b *SDKBackend) PolicyList(ctx context.Context, scope string) ([]PolicyRule, error) {
@@ -515,6 +552,12 @@ func scrubSecretValue(err error, value string) error {
 
 // SecretList returns the secret inventory with values masked (the SDK already
 // returns ValueMasked, never the real value).
+//
+// Rows are filtered to the requested scope. An empty scope means node-global,
+// but `sbx secret ls` with no scope lists EVERY scope — the CLI's `-g` is the
+// only way to ask for global-only and the SDK cannot pass it — so a global
+// listing would otherwise leak every sandbox's secret names. Both sides use the
+// same "" == global convention, so the comparison is exact.
 func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, error) {
 	secs, err := sdksecret.List(ctx, b.cl, scope)
 	if err != nil {
@@ -522,9 +565,15 @@ func (b *SDKBackend) SecretList(ctx context.Context, scope string) (Secrets, err
 	}
 	out := Secrets{}
 	for _, st := range secs.Stored {
+		if st.Scope != scope {
+			continue
+		}
 		out.Stored = append(out.Stored, StoredSecret{Name: st.Name, Type: st.Type, Scope: st.Scope})
 	}
 	for _, c := range secs.Custom {
+		if c.Scope != scope {
+			continue
+		}
 		// Value field is intentionally empty — write-only (spec §11). Placeholder
 		// is the non-secret injection token and IS surfaced. Targets is comma-joined
 		// when one secret covers several hosts (SDK v0.1.5); we set single-host
