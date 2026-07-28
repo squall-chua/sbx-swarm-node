@@ -45,6 +45,20 @@ A separate probe settled the target-host question. Writing
 placeholder, left **only** `b.example.com`. The host list is replaced, not
 appended.
 
+5. Exit 0 alone does not prove the value changed. `sbx secret ls` masks the
+   value, but the mask keeps a prefix (and sometimes a suffix), so a real
+   change is visible there:
+
+   ```
+   value "AAAAAAAA-first-0001"   -> mask  AAAAAA*************
+   value "ZZZZZZZZ-second-9999"  -> mask  ZZZZZZ**********9999   (same placeholder, exit 0)
+   ```
+
+   The masked value changed. This closes the gap left by probe 4: an exit
+   code of 0 was being read as proof the value was replaced, but exit 0 alone
+   cannot tell a real replacement from a silent cancel. The masked value
+   changing is the proof.
+
 ### Note on the earlier guess
 
 An earlier note suspected `SetCustom` of hitting a non-interactive overwrite
@@ -121,6 +135,17 @@ could reasonably guess the other meaning:
 
 This is safe because a caller reads the list before deleting, so it always holds
 the current host. The console does exactly that. Not worth changing.
+
+### A time-of-check-to-time-of-use window
+
+The read-then-write in `SecretSet` is not atomic. Two concurrent `SetSecret`
+calls for the same env both read the same placeholder, both write, and both
+report success. One update is silently lost. Nothing serialises the secret
+path today.
+
+Accepted for now. These writes are admin-driven and rare, so the odds of two
+landing at once are low, and the cost of losing one is a re-run, not data
+loss.
 
 ## The check
 

@@ -20,6 +20,7 @@
 - Editing a `.proto` file means running `buf generate` from the repo root, then `go build ./...`, then committing the regenerated `internal/gen/sbxswarm/v1/*` files (they are git-tracked). `buf generate` needs network access for the remote BSR plugins.
 - Ignore gopls "undefined / redeclared / MissingLitField" warnings after codegen. Trust the `go` toolchain.
 - `go build` does not compile tests. Run `go vet ./...` to catch test breakage.
+- `go vet ./...` does not apply the `integration` build tag, so it cannot compile `sdkbackend_integration_test.go`. Also run `go vet -tags integration ./internal/sandbox/`.
 
 ## File Structure
 
@@ -167,11 +168,14 @@ Run:
 ```bash
 gofmt -l internal/sandbox/sdkbackend.go internal/sandbox/sdkbackend_integration_test.go
 go build ./... && go vet ./... && go test ./...
+go vet -tags integration ./internal/sandbox/
 ```
 
 Expected: `gofmt -l` prints nothing. Build, vet and the normal test suite all
 pass. The normal suite runs against the in-memory `Fake` backend and does not
-touch this code path, so nothing there should change.
+touch this code path, so nothing there should change. `go vet ./...` alone does
+not apply the `integration` tag, so the tagged vet run is needed to compile
+`sdkbackend_integration_test.go`, the file this task edited.
 
 - [ ] **Step 6: Commit**
 
@@ -285,6 +289,7 @@ Run:
 ```bash
 gofmt -l internal/apiserver/policyservice.go
 go build ./... && go vet ./... && go test ./...
+go vet -tags integration ./internal/sandbox/
 ```
 
 Expected: `gofmt -l` prints nothing, and build, vet and tests all pass. No
@@ -314,7 +319,10 @@ EOF
 
 - `go test -tags integration ./internal/sandbox/ -run TestSDKBackend_SecretRoundTrip` passes on a host with a live `sbx` daemon.
 - `go build ./... && go vet ./... && go test ./...` all pass.
-- The branch holds two commits on top of `main` @ `7909669`, plus the design doc commit `777002b`.
+- The branch holds five commits on top of `main` @ `7909669`: the design doc
+  (`777002b`), the plan (`9c18043`), a docs fix (`9900ede`), the fix itself
+  (`6802d76`), and the docs follow-up (`cda7164`) — plus whatever a later
+  review fix wave adds.
 
 ## Not in this plan
 
