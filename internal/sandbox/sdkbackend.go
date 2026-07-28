@@ -64,9 +64,18 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 	}
 	return KitInfo{
 		Kind:          info.Manifest.Kind,
-		HasResources:  len(info.Manifest.Resources) > 0,
+		HasResources:  hasResources(info.Manifest.Resources),
 		HasRunOptions: len(info.Manifest.RunOptions) > 0,
 	}, nil
+}
+
+// hasResources reports whether a kit's raw resources block declares anything.
+// The field is raw JSON, so its byte length is not a count: an absent field,
+// an explicit null, and an empty object all mean "no resources" despite
+// having different lengths.
+func hasResources(raw []byte) bool {
+	raw = bytes.TrimSpace(raw)
+	return len(raw) > 0 && !bytes.Equal(raw, []byte("null")) && !bytes.Equal(raw, []byte("{}"))
 }
 
 // AdmittedKits returns the sorted names of the kits this node advertises.

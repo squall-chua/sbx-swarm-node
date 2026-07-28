@@ -100,3 +100,23 @@ func TestFake_NoKitsConfigured(t *testing.T) {
 		t.Fatalf("want no kits, got %v", got)
 	}
 }
+
+func TestHasResources(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []byte
+		want bool
+	}{
+		{"absent field is no resources", nil, false},
+		{"explicit null is no resources", []byte("null"), false},
+		{"empty object is no resources", []byte("{}"), false},
+		{"a populated object is resources", []byte(`{"cpu":2}`), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasResources(tc.raw); got != tc.want {
+				t.Fatalf("hasResources(%s): want %v, got %v", tc.raw, tc.want, got)
+			}
+		})
+	}
+}
