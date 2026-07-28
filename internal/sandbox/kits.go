@@ -14,22 +14,30 @@ import (
 const kitInspectTimeout = 15 * time.Second
 
 // KitInfo is the part of a kit's manifest the node checks before advertising the
-// kit. It is deliberately not the SDK's kit.Info: the node needs three facts, and
-// the SDK's shape tracks an EXPERIMENTAL upstream schema.
+// kit. It is deliberately not the SDK's kit.Info: the node needs a handful of
+// facts, and the SDK's shape tracks an EXPERIMENTAL upstream schema.
 type KitInfo struct {
 	Kind          string // "mixin" | "sandbox"
 	HasResources  bool   // manifest.resources is non-empty
 	HasRunOptions bool   // manifest.runOptions is non-empty
+	HasTemplate   bool   // manifest.template is set: would swap the sandbox's base image
+	HasVolumes    bool   // manifest.volumes is non-empty: host mounts bypassing workspaceResolver's read-only guarantee (ADR-0015)
 }
 
 // admit reports why a kit must not be advertised, or nil when it may be.
 //
 // Only kind "mixin" is supported: a "sandbox" kit supplies the base image, which
-// would make the scheduler's template constraint a lie. resources and runOptions
-// are documented upstream as meaningful only for a "sandbox" kit and empty for a
-// mixin, which is an expectation and not a promise; if that ever changes, a kit
-// could hand a sandbox more than the node admitted, so a mixin carrying either is
-// refused rather than trusted.
+// would make the scheduler's template constraint a lie. The SDK documents nine
+// further Manifest fields as meaningful only for a "sandbox" kit and empty for a
+// mixin -- an expectation, not a promise. Four of those nine are checked here,
+// because each could hand a sandbox more than the node admitted if that
+// expectation ever breaks: resources and runOptions could exceed the capacity
+// this node advertised to the swarm; template would change the base image, the
+// exact harm the Kind check above exists to prevent, reached by a different
+// field; and volumes would mount host paths outside workspaceResolver, bypassing
+// the ADR-0015 read-only guarantee. The remaining five (sourceURL, binary,
+// aiFilename, build, security) carry no capacity or isolation harm and are not
+// checked.
 func admit(i KitInfo) error {
 	if i.Kind != "mixin" {
 		return fmt.Errorf("kind is %q, want \"mixin\"", i.Kind)
@@ -39,6 +47,12 @@ func admit(i KitInfo) error {
 	}
 	if i.HasRunOptions {
 		return fmt.Errorf("mixin declares runOptions, which could exceed admitted capacity")
+	}
+	if i.HasTemplate {
+		return fmt.Errorf("mixin declares a template, which would change the sandbox's base image")
+	}
+	if i.HasVolumes {
+		return fmt.Errorf("mixin declares volumes, which would mount host paths outside the workspace resolver")
 	}
 	return nil
 }

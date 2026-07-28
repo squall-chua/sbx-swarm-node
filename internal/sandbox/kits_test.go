@@ -22,6 +22,8 @@ func TestAdmit(t *testing.T) {
 		{"an empty kind is refused", KitInfo{}, true},
 		{"a mixin with resources is refused", KitInfo{Kind: "mixin", HasResources: true}, true},
 		{"a mixin with runOptions is refused", KitInfo{Kind: "mixin", HasRunOptions: true}, true},
+		{"a mixin with a template is refused", KitInfo{Kind: "mixin", HasTemplate: true}, true},
+		{"a mixin with volumes is refused", KitInfo{Kind: "mixin", HasVolumes: true}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -116,6 +118,27 @@ func TestHasResources(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := hasResources(tc.raw); got != tc.want {
 				t.Fatalf("hasResources(%s): want %v, got %v", tc.raw, tc.want, got)
+			}
+		})
+	}
+}
+
+func TestHasVolumes(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []byte
+		want bool
+	}{
+		{"absent field is no volumes", nil, false},
+		{"explicit null is no volumes", []byte("null"), false},
+		{"empty object is no volumes", []byte("{}"), false},
+		{"empty list is no volumes", []byte("[]"), false},
+		{"a populated list is volumes", []byte(`[{"host":"/x"}]`), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasVolumes(tc.raw); got != tc.want {
+				t.Fatalf("hasVolumes(%s): want %v, got %v", tc.raw, tc.want, got)
 			}
 		})
 	}

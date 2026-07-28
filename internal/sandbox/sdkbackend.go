@@ -66,6 +66,8 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 		Kind:          info.Manifest.Kind,
 		HasResources:  hasResources(info.Manifest.Resources),
 		HasRunOptions: len(info.Manifest.RunOptions) > 0,
+		HasTemplate:   info.Manifest.Template != "",
+		HasVolumes:    hasVolumes(info.Manifest.Volumes),
 	}, nil
 }
 
@@ -76,6 +78,24 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 func hasResources(raw []byte) bool {
 	raw = bytes.TrimSpace(raw)
 	return len(raw) > 0 && !bytes.Equal(raw, []byte("null")) && !bytes.Equal(raw, []byte("{}"))
+}
+
+// hasVolumes reports whether a kit's raw volumes block declares anything. The
+// field is raw JSON like resources, but upstream's schema also lets a kit
+// author write volumes as a list (the modern form) or a legacy map, so an
+// empty list means "no volumes" here too, alongside an absent field, an
+// explicit null, and an empty object.
+func hasVolumes(raw []byte) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return false
+	}
+	switch string(raw) {
+	case "null", "{}", "[]":
+		return false
+	default:
+		return true
+	}
 }
 
 // AdmittedKits returns the sorted names of the kits this node advertises.
