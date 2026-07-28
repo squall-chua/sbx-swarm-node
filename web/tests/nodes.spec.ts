@@ -11,7 +11,7 @@ vi.mock('../app/composables/useSwarm', () => ({
   useSwarm: () => ({
     nodes: ref([{ node_id: 'n1', node_name: 'alpha', cordoned: false, draining: false,
       limit_cpu: 8, alloc_cpu: 0, actual_cpu: 0, limit_mem_kb: 1, alloc_mem_kb: 0,
-      templates: [], workspaces: [], labels: {}, capabilities: [] }]),
+      templates: [], workspaces: [], labels: {}, capabilities: [], kits: ['tools', 'extras'] }]),
     refreshNodes: vi.fn(),
   }),
 }))
@@ -21,5 +21,11 @@ describe('Nodes', () => {
     const w = await mountSuspended(Nodes)
     await w.find('[data-test="cordon-n1"]').trigger('click')
     expect(post).toHaveBeenCalledWith('/v1/node/cordon', { node_id: 'n1' })
+  })
+
+  it('shows a badge per advertised kit', async () => {
+    const w = await mountSuspended(Nodes)
+    expect(w.text()).toContain('tools')
+    expect(w.text()).toContain('extras')
   })
 })

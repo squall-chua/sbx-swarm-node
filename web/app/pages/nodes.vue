@@ -12,6 +12,7 @@ interface NodeSummary {
   actual_mem: number
   templates: string[]
   workspaces: string[]
+  kits: string[]
   labels: Record<string, string>
   capabilities: string[]
 }
@@ -278,6 +279,22 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
                 v-for="t in node.templates"
                 :key="t"
                 :label="t"
+                color="neutral"
+                variant="subtle"
+                size="xs"
+                class="font-mono"
+              />
+            </div>
+          </div>
+
+          <!-- Kits -->
+          <div v-if="(node.kits ?? []).length" class="flex flex-col gap-1">
+            <span class="text-xs text-muted uppercase tracking-wide font-medium">Kits</span>
+            <div class="flex flex-wrap gap-1">
+              <UBadge
+                v-for="k in node.kits"
+                :key="k"
+                :label="k"
                 color="neutral"
                 variant="subtle"
                 size="xs"
