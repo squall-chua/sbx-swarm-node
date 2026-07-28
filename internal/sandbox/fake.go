@@ -302,11 +302,22 @@ func (f *Fake) PolicyProfiles(_ context.Context) ([]string, error) {
 
 // Secret methods.
 
+// SecretSet creates or replaces the entry for (scope, s.Env), mirroring the
+// real daemon's rule that a custom secret is keyed on (scope, env) and a
+// second write for the same env replaces rather than duplicates. A replace
+// preserves the existing entry's placeholder, same as SDKBackend.SecretSet.
 func (f *Fake) SecretSet(_ context.Context, scope string, s CustomSecret) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.secrets == nil {
 		f.secrets = map[string][]CustomSecret{}
+	}
+	for i, c := range f.secrets[scope] {
+		if c.Env == s.Env {
+			s.Placeholder = c.Placeholder
+			f.secrets[scope][i] = s
+			return nil
+		}
 	}
 	f.secrets[scope] = append(f.secrets[scope], s)
 	return nil
