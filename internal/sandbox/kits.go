@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -9,8 +10,9 @@ import (
 	"time"
 )
 
-// kitInspectTimeout bounds boot-time kit inspection as a whole. Kits are
-// inspected concurrently, so N slow references cost one timeout, not N.
+// kitInspectTimeout bounds each kit's boot-time inspection independently.
+// Kits are inspected concurrently, so one slow reference costs its own
+// timeout, not the whole set's.
 const kitInspectTimeout = 15 * time.Second
 
 // KitInfo is the part of a kit's manifest the node checks before advertising the
@@ -75,8 +77,6 @@ func admitKits(ctx context.Context, inspect func(context.Context, string) (KitIn
 	if len(kits) == 0 {
 		return admitted
 	}
-	ctx, cancel := context.WithTimeout(ctx, kitInspectTimeout)
-	defer cancel()
 
 	var (
 		mu sync.Mutex
@@ -86,9 +86,17 @@ func admitKits(ctx context.Context, inspect func(context.Context, string) (KitIn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			info, err := inspect(ctx, ref)
+
+			kctx, kcancel := context.WithTimeout(ctx, kitInspectTimeout)
+			info, err := inspect(kctx, ref)
+			kcancel()
+
 			if err != nil {
-				log.Warn("kit: inspect failed, advertising anyway", "kit", name, "ref", ref, "err", err)
+				if errors.Is(err, context.DeadlineExceeded) {
+					log.Warn("kit: inspect timed out, advertising anyway", "kit", name, "ref", ref, "timeout", kitInspectTimeout)
+				} else {
+					log.Warn("kit: inspect failed, advertising anyway", "kit", name, "ref", ref, "err", err)
+				}
 			} else if rejected := admit(info); rejected != nil {
 				log.Error("kit: refused, not advertised", "kit", name, "ref", ref, "reason", rejected)
 				return

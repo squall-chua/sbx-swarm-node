@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -56,6 +57,41 @@ func TestAdmitKits_DropsARejectedKitAndKeepsAnUnloadableOne(t *testing.T) {
 	}, quietLog())
 
 	want := map[string]string{"good": "/good", "unloadable": "/typo"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
+}
+
+// TestAdmitKits_TimeoutIsPerKit proves the inspect bound applies to each kit
+// independently, not to the whole set. A parent deadline shorter than
+// kitInspectTimeout still governs each kit's own child context (the shorter
+// of the two wins), which keeps this test fast without waiting out the real
+// 15s constant. The slow kit blocks on <-ctx.Done() instead of sleeping. The
+// fast kit returns immediately with a kind:sandbox manifest, which admit()
+// must still refuse -- an aggregate bound shared by one ctx for the whole
+// batch would have been just as capable of proving this, but the point is
+// that a per-kit bound does NOT regress it: the fast kit's own verdict does
+// not depend on whether some other kit in the batch is still hung.
+func TestAdmitKits_TimeoutIsPerKit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	inspect := func(ctx context.Context, ref string) (KitInfo, error) {
+		if ref == "/slow" {
+			<-ctx.Done() // simulate a reference whose fetch outlives the deadline
+			return KitInfo{}, ctx.Err()
+		}
+		// "/fast": resolves before any deadline and must be judged on its
+		// own manifest.
+		return KitInfo{Kind: "sandbox"}, nil
+	}
+
+	got := admitKits(ctx, inspect, map[string]string{
+		"slow": "/slow",
+		"fast": "/fast",
+	}, quietLog())
+
+	want := map[string]string{"slow": "/slow"} // fast refused; slow kept (timeout)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("want %v, got %v", want, got)
 	}
