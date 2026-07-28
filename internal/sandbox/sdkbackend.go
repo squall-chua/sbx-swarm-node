@@ -51,6 +51,17 @@ func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, log *slog.Log
 	return &SDKBackend{cl: cl, resolve: resolve, log: log}, nil
 }
 
+// logger never returns nil. Only NewSDKBackend sets log, so a construction path
+// that adds a field and forgets the assignment would otherwise panic on the first
+// warning — and the warnings here sit on rare paths, so it would ship unnoticed.
+// A missing logger costs a log line, not the process.
+func (b *SDKBackend) logger() *slog.Logger {
+	if b.log == nil {
+		return slog.Default()
+	}
+	return b.log
+}
+
 // translateNotFound maps the SDK's not-found sentinel to sandbox.ErrNotFound.
 func translateNotFound(err error) error {
 	if errors.Is(err, sdkclient.ErrSandboxNotFound) {
@@ -543,7 +554,7 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 					// A create-or-replace under a different host destroys the old
 					// host's credential: values are write-only, so it cannot be
 					// recovered. None of these fields is a secret value.
-					b.log.Warn("secret set: replacing host on existing entry",
+					b.logger().Warn("secret set: replacing host on existing entry",
 						"env", s.Env, "old_host", c.Host, "new_host", s.Host, "placeholder", c.Placeholder)
 				}
 				s.Placeholder = c.Placeholder
@@ -551,7 +562,7 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 			}
 		}
 	} else {
-		b.log.Warn("secret set: placeholder lookup skipped, update may fail",
+		b.logger().Warn("secret set: placeholder lookup skipped, update may fail",
 			"scope", scope, "err", err)
 	}
 	err := sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
