@@ -32,6 +32,7 @@ type CreateSpec struct {
 	Workspaces  []WorkspaceMount
 	Env         map[string]string
 	Labels      map[string]string // sandbox's own labels (e.g. idle-stop: off)
+	Kits        []string          // kit NAMES; the backend resolves each to a configured reference (ADR-0022)
 }
 
 // ReviewRef identifies a Review whose head a clone-mode sandbox should check out.
@@ -178,6 +179,8 @@ type Backend interface {
 	ListTemplates(ctx context.Context) ([]string, error)
 	// ListTemplateInfo returns the local daemon's templates with metadata.
 	ListTemplateInfo(ctx context.Context) ([]TemplateInfo, error)
+	// AdmittedKits returns the sorted names of the kits this node advertises.
+	AdmittedKits() []string
 	Start(ctx context.Context, name string) error
 	Stop(ctx context.Context, name string) error
 	Remove(ctx context.Context, name string) error

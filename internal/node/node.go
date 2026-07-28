@@ -621,7 +621,7 @@ func buildBackend(cfg *config.Config, log *slog.Logger) (sandbox.Backend, error)
 	if cfg.Backend == "sdk" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir), log)
+		return sandbox.NewSDKBackend(ctx, workspaceResolver(cfg.Workspaces, cfg.DataDir), nil, log)
 	}
 	return sandbox.NewFake(), nil
 }

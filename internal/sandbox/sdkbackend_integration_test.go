@@ -39,7 +39,13 @@ func noWorkspaces(string) (string, bool, bool) { return "", false, false }
 // daemon (the long-standing post-M7 gap).
 func dial(t *testing.T, resolve WorkspaceResolver) *SDKBackend {
 	t.Helper()
-	b, err := NewSDKBackend(context.Background(), resolve, slog.Default())
+	return dialKits(t, resolve, nil)
+}
+
+// dialKits is dial with configured kits, for the kit tests.
+func dialKits(t *testing.T, resolve WorkspaceResolver, kits map[string]string) *SDKBackend {
+	t.Helper()
+	b, err := NewSDKBackend(context.Background(), resolve, kits, slog.Default())
 	require.NoError(t, err, "connect daemon: need a running sbx daemon")
 	return b
 }

@@ -76,3 +76,27 @@ func TestKitNames_SortedForAStableAdvertisement(t *testing.T) {
 		t.Fatalf("want %v, got %v", want, got)
 	}
 }
+
+func TestFake_AdmittedKitsAndCreate(t *testing.T) {
+	f := NewFake("tools", "extras")
+
+	if got, want := f.AdmittedKits(), []string{"extras", "tools"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("AdmittedKits: want %v, got %v", got, want)
+	}
+
+	if _, err := f.Create(context.Background(), CreateSpec{Name: "s1", Kits: []string{"tools"}}); err != nil {
+		t.Fatalf("create with a known kit: want nil, got %v", err)
+	}
+
+	_, err := f.Create(context.Background(), CreateSpec{Name: "s2", Kits: []string{"nope"}})
+	if err == nil {
+		t.Fatal("create with an unknown kit: want an error, got nil")
+	}
+}
+
+func TestFake_NoKitsConfigured(t *testing.T) {
+	f := NewFake()
+	if got := f.AdmittedKits(); len(got) != 0 {
+		t.Fatalf("want no kits, got %v", got)
+	}
+}
