@@ -20,6 +20,7 @@ type NodeRow struct {
 	Labels                              map[string]string
 	Capabilities, Workspaces, Templates []string
 	GitWorkspaces                       []string
+	Kits                                []string
 	LimitCPU, LimitMemKB, LimitDiskGB   float64
 	AllocCPU, AllocMemKB, AllocDiskGB   float64
 	ActualCPU, ActualMem                float64
@@ -182,6 +183,7 @@ func (s *NodeService) ListNodes(_ context.Context, _ *sbxv1.ListNodesRequest) (*
 		out.Nodes = append(out.Nodes, &sbxv1.NodeSummary{
 			NodeId: r.NodeID, NodeName: r.NodeName, Cordoned: r.Cordoned, Draining: r.Draining,
 			Labels: r.Labels, Capabilities: r.Capabilities, Workspaces: r.Workspaces, Templates: r.Templates, GitWorkspaces: r.GitWorkspaces,
+			Kits:     r.Kits,
 			LimitCpu: r.LimitCPU, LimitMemKb: r.LimitMemKB, LimitDiskGb: r.LimitDiskGB,
 			AllocCpu: r.AllocCPU, AllocMemKb: r.AllocMemKB, AllocDiskGb: r.AllocDiskGB,
 			ActualCpu: r.ActualCPU, ActualMem: r.ActualMem,

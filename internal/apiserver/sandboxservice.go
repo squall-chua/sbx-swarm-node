@@ -162,6 +162,7 @@ func toSpec(r *sbxv1.CreateSandboxRequest) sandbox.CreateSpec {
 		Agent: r.Agent, Template: r.Template, CPUs: int(r.Cpus),
 		MemoryBytes: r.MemoryBytes, DiskGB: r.DiskGb, Clone: r.Clone, Branch: r.Branch, ReviewRef: reviewRef, Workspaces: ws, Env: r.Env, Labels: r.Labels,
 		DisplayName: r.Name,
+		Kits:        r.Kits,
 	}
 }
 
@@ -187,6 +188,7 @@ func toProto(rec *sandbox.Record) *sbxv1.Sandbox {
 		Branch: rec.Spec.Branch, LastPublish: lastPub, Agent: rec.Spec.Agent,
 		Name: displayName(rec), Workspaces: ws, CreatedAt: createdAt,
 		Cpus: int32(rec.Spec.CPUs), MemoryBytes: rec.Spec.MemoryBytes, DiskGb: rec.Spec.DiskGB,
+		Kits: rec.Spec.Kits,
 	}
 }
 

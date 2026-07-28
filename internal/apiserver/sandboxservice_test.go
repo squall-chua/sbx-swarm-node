@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -492,4 +493,19 @@ func TestSandboxService_ListOperations(t *testing.T) {
 	require.NotEmpty(t, resp.Operations)
 	require.Equal(t, "provision", resp.Operations[0].Type)
 	require.NotEmpty(t, resp.Operations[0].CreatedAt)
+}
+
+func TestToSpecAndToProto_CarryKits(t *testing.T) {
+	spec := ToSpecForProvision(&sbxv1.CreateSandboxRequest{
+		Agent: "shell",
+		Kits:  []string{"tools", "extras"},
+	})
+	if got, want := spec.Kits, []string{"tools", "extras"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("toSpec kits: want %v, got %v", want, got)
+	}
+
+	msg := toProto(&sandbox.Record{ID: "n1.s1", Spec: spec})
+	if got, want := msg.Kits, []string{"tools", "extras"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("toProto kits: want %v, got %v", want, got)
+	}
 }
