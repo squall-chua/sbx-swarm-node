@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/ids"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 )
 
 // These integration tests need a running sbx daemon (NewSDKBackend uses
@@ -477,6 +479,87 @@ func TestSDKBackend_RefusesASandboxKindKit(t *testing.T) {
 
 	b := dialKits(t, noWorkspaces, map[string]string{"badkit": dir})
 	require.Empty(t, b.AdmittedKits(), "a sandbox-kind kit must not be advertised")
+}
+
+// TestSDKBackend_KitCredentialsNotInSecretList settles the credentials-in-
+// SecretList question the design doc (and this file, before this test existed)
+// left open. A `credentials` entry declares a NEED ({service, description,
+// required}) — there is no value/token/env field on it — so there is nothing
+// for the daemon to materialise into the secret store, at any scope. required:
+// true with no matching secret present must also not block the create; a
+// credentials block is informational, not enforced. Verified against sbx
+// v0.37.0.
+func TestSDKBackend_KitCredentialsNotInSecretList(t *testing.T) {
+	ref, err := filepath.Abs("testdata/credential-kit")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	b := dialKits(t, func(name string) (string, bool, bool) {
+		if name == "ws" {
+			return dir, false, true
+		}
+		return "", false, false
+	}, map[string]string{"credkit": ref})
+
+	require.Equal(t, []string{"credkit"}, b.AdmittedKits(), "a credentials block must not block admission")
+
+	sb := mkSandbox(t, b, CreateSpec{
+		Name:       "it-kit-cred",
+		Workspaces: []WorkspaceMount{{Name: "ws"}},
+		Kits:       []string{"credkit"},
+	})
+	ctx := context.Background()
+
+	scoped, err := b.SecretList(ctx, sb.Name)
+	require.NoError(t, err)
+	require.Empty(t, scoped.Stored, "a credentials entry declares a need, not a value; nothing to store")
+	require.Empty(t, scoped.Custom, "a credentials entry declares a need, not a value; nothing to store")
+
+	global, err := b.SecretList(ctx, "")
+	require.NoError(t, err)
+	require.Empty(t, global.Stored, "a credentials entry declares a need, not a value; nothing to store")
+	require.Empty(t, global.Custom, "a credentials entry declares a need, not a value; nothing to store")
+}
+
+// TestSDKBackend_KitPortsMatchLiveRead settles the Record.Ports-vs-live-read
+// question the design doc left open, against a kit that really publishes a
+// port. It goes through Manager.Create, not just the backend, because the
+// actual claim is that the node's best-effort post-create snapshot
+// (Record.Ports) does not lag a live ListPorts read. Verified against sbx
+// v0.37.0: no timing gap observed.
+func TestSDKBackend_KitPortsMatchLiveRead(t *testing.T) {
+	ref, err := filepath.Abs("testdata/ports-kit")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	b := dialKits(t, func(name string) (string, bool, bool) {
+		if name == "ws" {
+			return dir, false, true
+		}
+		return "", false, false
+	}, map[string]string{"portkit": ref})
+
+	require.Equal(t, []string{"portkit"}, b.AdmittedKits(), "a publishedPorts block must not block admission")
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	m := NewManager("node1", b, st, ids.NewGen("node1"))
+
+	ctx := context.Background()
+	rec, err := m.Create(ctx, CreateSpec{
+		Agent:      "shell",
+		Workspaces: []WorkspaceMount{{Name: "ws"}},
+		Kits:       []string{"portkit"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Remove(context.Background(), rec.BackendName) })
+
+	require.True(t, hasContainerPort(rec.Ports, 18081), "Manager.Create must snapshot the kit's published port")
+
+	live, err := b.Ports(ctx, rec.BackendName)
+	require.NoError(t, err)
+	require.Equal(t, rec.Ports, live, "the snapshot taken at create must agree with a live ListPorts read")
 }
 
 // TestSDKBackend_ReadOnlyWorkspaceRules pins sbx's positional read-only rule

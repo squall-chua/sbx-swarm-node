@@ -1,0 +1,17 @@
+# Proves the Record.Ports-vs-live-ListPorts question (see the design doc's
+# "Ports" section). `publishedPorts` is a top-level LIST; each entry is
+# {name, container, protocol} — the field is `container`, NOT `port` or
+# `containerPort` (both rejected by the daemon's strict YAML decoder).
+#
+# Container port 18081 is arbitrary but must not collide with a port another
+# fixture or test in this package publishes; the host port the daemon assigns
+# is ephemeral and never asserted on.
+schemaVersion: "2"
+kind: mixin
+name: swarm-node-ports-kit
+version: 0.0.1
+description: Fixture kit for the Record.Ports-vs-live-read integration test.
+publishedPorts:
+  - name: probe
+    container: 18081
+    protocol: tcp
