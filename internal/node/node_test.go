@@ -334,6 +334,14 @@ func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
 	require.Equal(t, kA, kB)
 }
 
+// TestRowFromState_CarriesNodeName proves a peer's gossiped node name reaches
+// its NodeRow, so a peer's node card shows a name instead of rendering blank.
+func TestRowFromState_CarriesNodeName(t *testing.T) {
+	ns := membership.NodeState{NodeID: "n2", NodeName: "worker-2"}
+	row := rowFromState(ns)
+	require.Equal(t, "worker-2", row.NodeName)
+}
+
 func TestGitWorkspaceNames(t *testing.T) {
 	ws := []config.WorkspaceConfig{
 		{Name: "repo", Git: &config.GitConfig{}},

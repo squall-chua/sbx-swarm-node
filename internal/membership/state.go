@@ -14,6 +14,7 @@ type NodeState struct {
 	// bulk (TCP push/pull)
 	SwarmID         string            `json:"swarm_id,omitempty"`
 	SwarmName       string            `json:"swarm_name,omitempty"`
+	NodeName        string            `json:"node_name,omitempty"` // display name; not used for routing, so it rides bulk, not meta
 	PubKey          []byte            `json:"pubkey,omitempty"`
 	Capabilities    []string          `json:"caps,omitempty"`
 	OwnedSandboxIDs []string          `json:"owned,omitempty"`

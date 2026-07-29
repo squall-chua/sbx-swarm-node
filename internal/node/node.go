@@ -170,6 +170,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		OwnedSandboxIDs: ownedIDs,
 		SwarmID:         si.SwarmID,
 		SwarmName:       swarmName,
+		NodeName:        cfg.NodeName,
 		Labels:          cfg.Labels,
 		LimitCPU:        lc,
 		LimitMemKB:      lm,
@@ -812,10 +813,12 @@ func nameSet(ss []string) map[string]bool {
 	return m
 }
 
-// rowFromState maps a gossiped NodeState to a NodeRow (peer view: no name/draining).
+// rowFromState maps a gossiped NodeState to a NodeRow (peer view: no draining --
+// that's local-only, not gossiped). NodeName now rides the bulk gossip tier
+// (see ADR-0005), so a peer's name shows instead of rendering blank.
 func rowFromState(ns membership.NodeState) apiserver.NodeRow {
 	return apiserver.NodeRow{
-		NodeID: ns.NodeID, Cordoned: ns.Cordoned, Labels: ns.Labels,
+		NodeID: ns.NodeID, NodeName: ns.NodeName, Cordoned: ns.Cordoned, Labels: ns.Labels,
 		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, GitWorkspaces: ns.GitWorkspaces, Templates: ns.Templates,
 		Kits:     ns.Kits,
 		LimitCPU: ns.LimitCPU, LimitMemKB: ns.LimitMemKB, LimitDiskGB: ns.LimitDiskGB,
