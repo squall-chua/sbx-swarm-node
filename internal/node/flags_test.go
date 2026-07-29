@@ -1,0 +1,36 @@
+package node
+
+import (
+	"io"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
+)
+
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "node.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
+func TestNodeFlags_AbsentReadsFalse(t *testing.T) {
+	log := obs.NewLogger("error", io.Discard)
+	require.Equal(t, nodeFlags{}, loadNodeFlags(openTestStore(t), log))
+}
+
+func TestNodeFlags_RoundTrip(t *testing.T) {
+	log := obs.NewLogger("error", io.Discard)
+	st := openTestStore(t)
+	saveNodeFlags(st, log, nodeFlags{Cordoned: true, Draining: true})
+	require.Equal(t, nodeFlags{Cordoned: true, Draining: true}, loadNodeFlags(st, log))
+
+	// Uncordon writes both back to false, not just the cordon.
+	saveNodeFlags(st, log, nodeFlags{})
+	require.Equal(t, nodeFlags{}, loadNodeFlags(st, log))
+}
