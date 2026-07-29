@@ -2,41 +2,44 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stop a node restart from silently un-cordoning the node across the whole swarm.
+**Goal:** Make the node's out-of-service switch tell the truth. A restart must not
+silently un-cordon the node, a cordon must work without a cluster, and `Drain`
+must actually empty the node.
 
-**Architecture:** Persist the cordon and drain flags to the existing bbolt store,
-and restore them at boot by calling the cluster's existing `SetCordoned`. Four
-tasks: storage helpers, the `NodeService` write hook, the `node.go` wiring, then
-the docs.
+**Architecture:** Persist the cordon and drain flags to the existing bbolt store.
+Make the cordon a local flag on `NodeService` and the single source of truth for
+this node, so it works standalone and the routing table can drop its copy. Give
+`Drain` a background sweep that publishes and stops everything running. Six
+tasks: storage helpers, the `NodeService` write hook, the local flag and the
+table deletion, the boot restore, the drain sweep, then the docs.
 
 **Tech Stack:** Go 1.x, bbolt via `internal/store`, memberlist via `internal/membership`.
 
 **Spec:** `docs/superpowers/specs/2026-07-29-cordon-survives-restart-design.md`
-**ADR:** `docs/adr/0023-a-cordon-survives-a-restart.md` (already committed)
+**ADR:** `docs/adr/0023-a-cordon-survives-a-restart.md` (already committed, and
+amended by the same session that amended the spec)
 
 ## Global Constraints
 
-- Base is `main` @ `f74f347` or later.
-- **`feat/small-gaps` is in flight** in a second worktree at
-  `/home/mwchua/sbx-swarm-node-small-gaps`. It also edits `CONTEXT.md`, adding a
-  **Custom secret** term after **Workspace credential** (around line 110). Task 4
-  adds terms after **Revoke / Revoked** (around line 24), far away, so the two
-  should merge cleanly. Do not touch any other file that branch changes:
-  `internal/sandbox/sdkbackend.go`, `internal/apiserver/sandboxservice.go`,
-  `proto/sbxswarm/v1/sandbox.proto`, `internal/gen/sbxswarm/v1/sandbox.pb.go`,
-  `web/app/components/drawer/SecretsTab.vue`, `web/tests/drawer-secrets.spec.ts`.
+- **Rebase first.** This plan was written against local `main` @ `f74f347`, which
+  is now 6 commits behind `origin/main` — `feat/small-gaps` merged as `cb02a51`.
+  Start from `origin/main` and re-check every line number in this plan; they were
+  taken before that merge.
 - The repo is gofmt-dirty but does not enforce it. Format only files you touch.
 - `go vet ./...` does not apply the `integration` tag. Also run
   `go vet -tags integration ./internal/...`.
 - `TestNode_Gerrit_Publish` is red unless the local Gerrit stack is running (see
   `dev/gerrit/README.md`). Environmental, not yours.
 - Plain, short English in comments and commit messages. One idea per sentence.
-- **Cordon is inert on a standalone node.** No `cluster_secret` means no cluster
-  (`internal/node/node.go:217`), so `cordoner` is nil and `SetCordoned` is never
-  reached. Every test that must observe a cordon has to set both `GossipAddr` and
-  `ClusterSecret`.
+- **Cordon is inert on a standalone node until Task 3.** Before that task, no
+  `cluster_secret` means no cluster (`internal/node/node.go:217`), `cordoner` is
+  nil and `SetCordoned` is never reached, so a test that must observe a cordon
+  needs both `GossipAddr` and `ClusterSecret`. Task 3 removes that requirement,
+  and later tasks should not carry it forward out of habit.
 - Do not add `StateVersion` arbitration to `routing.Table.Upsert`. The spec
   rejects it with reasons.
+- Do not build sandbox migration. The spec explains why it cannot work without a
+  stable sandbox handle.
 
 ## File Structure
 
@@ -45,12 +48,17 @@ the docs.
 | `internal/store/store.go` | 1 | Declare the `node` bucket |
 | `internal/node/flags.go` (new) | 1 | Load and save the operator flags |
 | `internal/node/flags_test.go` (new) | 1 | Round trip, including the absent case |
-| `internal/apiserver/nodeservice.go` | 2, 4 | Persist hook; honest `Drain` comment |
-| `internal/apiserver/nodeservice_test.go` | 2 | The hook fires with the right pair |
-| `internal/node/node.go` | 3 | Restore at boot, wire the persister |
-| `internal/node/node_test.go` | 3 | A cordoned node boots cordoned |
-| `CONTEXT.md` | 4 | Define **Cordon** and **Drain** |
-| `README.md` | 4 | State that config is restart-only |
+| `internal/apiserver/nodeservice.go` | 2, 3, 5, 6 | Persist hook; the local cordon flag; the drain hook; honest `Drain` comment |
+| `internal/apiserver/nodeservice_test.go` | 2, 3, 5 | Hook fires; a cordon without a cluster is real; drain calls the sweep |
+| `internal/routing/table.go` | 3 | Delete the cordon field, parameter and getter |
+| `internal/routing/table_test.go` | 3 | Drop the cordon assertions |
+| `internal/membership/cluster.go` | 3 | Shrink `SetCordoned`; fix four `Upsert` calls |
+| `internal/node/node.go` | 3, 4, 5 | Three self reads; boot restore; wire the sweep |
+| `internal/node/node_test.go` | 3, 4 | A standalone cordon bites; a cordoned node boots cordoned |
+| `internal/apiserver/sandboxservice.go` | 5 | The drain sweep |
+| `internal/apiserver/sandboxservice_test.go` | 5 | Sweep stops everything, and cancels |
+| `CONTEXT.md` | 6 | Define **Cordon** and **Drain** |
+| `README.md` | 6 | State that config is restart-only |
 
 ---
 
@@ -374,29 +382,192 @@ marker. Nothing wires it yet."
 
 ---
 
-### Task 3: Restore at boot, and save on change
+### Task 3: The cordon becomes a local flag
 
 **Files:**
-- Modify: `internal/node/node.go` — inside the cluster block that starts at line
-  217, next to `nodeSvc.SetCordoner(cl)` at line 233
+- Modify: `internal/apiserver/nodeservice.go` — the struct near line 50, the three
+  RPCs at lines 97, 111 and 128
+- Modify: `internal/node/node.go` — three self reads, at lines 246, 304 and 738
+- Modify: `internal/routing/table.go` — delete the cordon
+- Modify: `internal/membership/cluster.go` — `SetCordoned` and four `Upsert` calls
+- Test: `internal/apiserver/nodeservice_test.go`, `internal/node/node_test.go`,
+  `internal/routing/table_test.go`
+
+**Interfaces:**
+- Produces, used by Tasks 4 and 5: `func (s *NodeService) Cordoned() bool`
+- Removes: `func (t *Table) IsCordoned(nodeID string) bool`, and the `cordoned`
+  parameter of `Table.Upsert`
+
+**Why.** `Cordon` returns `Cordoned: true` whether or not anything was cordoned.
+On a standalone node nothing is, so the console shows a cordon that does not
+exist and the node keeps taking work. The fix is not to refuse the RPC; it is to
+make the flag local, so it works with or without a cluster.
+
+**The deletion is safe, and here is the proof to re-run before you rely on it:**
+
+```bash
+grep -rn "IsCordoned" --include=*.go . | grep -v gen/
+```
+
+Every non-test caller asks about **self** (`node.go:304`, `node.go:738`). A
+peer's cordon reaches the scheduler through gossip — `ns.Cordoned` in
+`buildCandidates` and `rowFromState` — never through the table. Once self reads
+the flag, the table's copy has no readers left.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `internal/apiserver/nodeservice_test.go`:
+
+```go
+func TestNodeService_CordonWithoutClusterIsReal(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test") // no cordoner: standalone
+	require.False(t, s.Cordoned())
+
+	info, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	require.True(t, info.Cordoned)
+	require.True(t, s.Cordoned(), "the reply must not claim a cordon the node did not take")
+
+	_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	require.False(t, s.Cordoned())
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `go test ./internal/apiserver/ -run TestNodeService_CordonWithoutCluster -v`
+
+Expected: FAIL to compile, `s.Cordoned undefined`.
+
+- [ ] **Step 3: Add the flag**
+
+In `internal/apiserver/nodeservice.go`, beside `draining` (line 50):
+
+```go
+	cordoned                  atomic.Bool
+```
+
+And a getter beside `Draining()`:
+
+```go
+// Cordoned reports this node's cordon. This flag is the single source of truth
+// about self: the cluster publishes it to peers but does not own it, so a
+// standalone node can be cordoned like any other.
+func (s *NodeService) Cordoned() bool { return s.cordoned.Load() }
+```
+
+In `Cordon` set `s.cordoned.Store(true)` before the `s.cordoner` call, in
+`Uncordon` `s.cordoned.Store(false)`, and in `Drain` `s.cordoned.Store(true)`.
+Each reply reports `s.cordoned.Load()` rather than a literal.
+
+Simplify `saveFlags` from Task 2 while you are here: it can read both flags off
+the struct now, so drop its parameter and update the three call sites.
+
+- [ ] **Step 4: Switch the three self reads**
+
+In `internal/node/node.go`:
+
+| Line | From | To |
+|---|---|---|
+| 246 | `Cordoned: clusterInstance != nil && clusterInstance.LocalNodeState().Cordoned` | `Cordoned: nodeSvc.Cordoned()` |
+| 304 | `func() bool { return tbl.IsCordoned(id.NodeID) }` | `nodeSvc.Cordoned` |
+| 738 | `Cordoned: tbl.IsCordoned(self)` | see below |
+
+`buildCandidates` is a package-level function that does not have `nodeSvc`. Give
+it a `selfCordoned bool` parameter and pass `nodeSvc.Cordoned()` at the call site
+in the `coordinator.New` closure (line 273), so the value is read fresh on each
+placement. Do not pass a captured `bool` from outside the closure; it would go
+stale the moment the operator cordons.
+
+- [ ] **Step 5: Delete the cordon from the routing table**
+
+In `internal/routing/table.go`: remove the `cordoned` field from the entry, the
+`cordoned` parameter from `Upsert`, and `IsCordoned` entirely.
+
+In `internal/membership/cluster.go`: fix the four `Upsert` calls (lines 156, 297,
+329, 339) and delete the self-upsert inside `SetCordoned` with them —
+`cluster.go:156` existed only to publish the cordon locally, and nothing reads
+self's address or public key out of the table. `SetCordoned` is then three lines:
+set `local.Cordoned`, bump `StateVersion`, call `UpdateNode`.
+
+Update `internal/routing/table_test.go`, which asserts `IsCordoned` in two places
+(lines 26 and 42). Delete those assertions rather than reworking them; the
+behaviour they covered no longer exists.
+
+- [ ] **Step 6: Add the standalone end-to-end test**
+
+Add to `internal/node/node_test.go`. This is the test that proves the point, so
+do not skip it if it is fiddly:
+
+```go
+func TestNode_StandaloneCordonBlocksPlacement(t *testing.T) {
+	// No GossipAddr and no ClusterSecret: this node builds no cluster at all.
+	// ... boot as TestNode_BootServeStop does ...
+	// cordon through the NodeService, then ask for a sandbox and expect the
+	// placement to fail with scheduler.ErrNoEligibleNode.
+}
+```
+
+Reach the placement the way the node itself does. If driving `CreateSandbox` and
+polling its operation proves awkward, the acceptable smaller version is to assert
+that the self candidate from `buildCandidates` comes back `Cordoned: true` after
+a cordon — but say in a comment which one you did and why.
+
+- [ ] **Step 7: Full verification**
+
+```bash
+go build ./...
+go vet ./...
+go vet -tags integration ./internal/...
+go test ./...
+```
+
+Expected: PASS, Gerrit aside. The compiler finds every `Upsert` and `IsCordoned`
+call site for you; if anything outside the files listed above needs changing,
+stop and say so rather than widening the change quietly.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add internal/apiserver/nodeservice.go internal/apiserver/nodeservice_test.go \
+        internal/node/node.go internal/node/node_test.go \
+        internal/routing/table.go internal/routing/table_test.go \
+        internal/membership/cluster.go
+git commit -m "feat(node): a cordon works without a cluster
+
+The cordon flag moves onto NodeService and becomes the single source of
+truth about this node. Cordon used to answer true while doing nothing on
+a standalone node, which builds no cluster.
+
+The routing table drops its cordon copy. Both callers asked about self,
+and a peer's cordon has always come from gossip, so nothing read it."
+```
+
+---
+
+### Task 4: Restore at boot, and save on change
+
+**Files:**
+- Modify: `internal/node/node.go` — before and inside the cluster block that
+  starts at line 217
 - Test: `internal/node/node_test.go`
 
 **Interfaces:**
-- Consumes: `loadNodeFlags` / `saveNodeFlags` / `nodeFlags` from Task 1, and
-  `(*NodeService).SetFlagPersister` from Task 2.
+- Consumes: `loadNodeFlags` / `saveNodeFlags` / `nodeFlags` from Task 1,
+  `(*NodeService).SetFlagPersister` and `SetDraining` from Task 2, and
+  `(*NodeService).Cordoned` from Task 3.
 - Produces: nothing.
 
-**Restore by calling `cl.SetCordoned(true)`. Do not set `localNS.Cordoned`.**
-This is the whole point of the task. Enforcement reads the *routing table* —
-`tbl.IsCordoned(id.NodeID)` at `node.go:304`, and the scheduler's candidate
-filter — and `NewCluster` (`internal/membership/cluster.go:42-55`) never seeds a
-self entry. The only self-upsert in that file is inside `SetCordoned`
-(`cluster.go:156`). Seeding `localNS` alone would tell every peer the node is
-cordoned while leaving its own table entry absent, so it would place sandboxes on
-itself while advertising that it would not.
+**Restore the local flag first, then mirror to the cluster.** An earlier draft of
+this plan said the opposite — restore only through `cl.SetCordoned(true)`,
+because enforcement read the routing table. Task 3 deleted the table's copy, so
+that reasoning is gone. Setting `localNS.Cordoned` before construction is still
+wrong: it would put the value on the gossip wire while the local flag stayed
+false, so the node and its peers would disagree.
 
 `SetCordoned` is nil-safe on the memberlist handle (`cluster.go:159`), so calling
-it here, before gossip is up, is safe.
+it before gossip is up is safe.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -416,7 +587,8 @@ func TestNode_BootRestoresCordon(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = dir
 	cfg.ListenAddr = "127.0.0.1:0"
-	// Cordon is inert without a cluster, so both of these are required.
+	// A cluster is no longer needed to observe a cordon (Task 3), but keep one
+	// here so the mirror-to-cluster half is covered too.
 	cfg.GossipAddr = "127.0.0.1:0"
 	cfg.ClusterSecret = "test-secret"
 
@@ -428,27 +600,25 @@ func TestNode_BootRestoresCordon(t *testing.T) {
 		_ = n.Stop(ctx)
 	})
 
-	require.True(t, n.cluster.LocalNodeState().Cordoned,
-		"a stored cordon must be restored at boot")
+	require.True(t, n.nodeSvc.Cordoned(), "a stored cordon must be restored at boot")
+	require.True(t, n.cluster.LocalNodeState().Cordoned, "and it must reach the peers")
 }
 ```
 
 Two things to sort out while writing it, both by reading `node.go` rather than
 guessing:
 
-- The `Node` field holding the cluster may not be named `cluster`, and may not be
-  reachable from the test. Use whatever `node.go` actually declares; the test is
-  in the same package, so an unexported field is fine.
+- The `Node` fields holding the cluster and the `NodeService` may not be named
+  `cluster` and `nodeSvc`, and may not be reachable from the test. Use whatever
+  `node.go` actually declares; the test is in the same package, so unexported
+  fields are fine. If neither is reachable, add the field rather than asserting
+  something weaker.
 - If `config.Default()` does not exist or the field names differ, copy exactly
   what `TestNode_BootServeStop` uses.
 
-**Why asserting `LocalNodeState().Cordoned` is enough.** It looks like it only
-proves the gossiped state, not the routing table. It proves both, because after
-this task nothing else sets `local.Cordoned` at boot — `localNS` is left alone
-deliberately — so the only way it can be true is if `SetCordoned` ran, and
-`SetCordoned` upserts the routing table in the same function. If a later change
-starts seeding `localNS.Cordoned` again, this test stops being sufficient; say so
-in a comment on the assertion.
+Both assertions matter. The first proves enforcement, which after Task 3 reads
+the local flag. The second proves the peers are told. A restore that does one and
+not the other is the bug this whole branch exists to prevent.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -458,33 +628,40 @@ Expected: FAIL, the cordon is false because nothing restores it yet.
 
 - [ ] **Step 3: Restore and wire**
 
-In `internal/node/node.go`, inside the
-`if cfg.GossipAddr != "" && cfg.ClusterSecret != ""` block, immediately after
-`nodeSvc.SetCordoner(cl)` (line 233):
+In `internal/node/node.go`, **before** the
+`if cfg.GossipAddr != "" && cfg.ClusterSecret != ""` block, right after
+`nodeSvc` is built (line 215):
 
 ```go
-		// A restart must not put a cordoned node back into service (ADR-0023).
-		// Restore through SetCordoned, not localNS: enforcement reads the routing
-		// table and NewCluster never seeds a self entry, so seeding localNS alone
-		// would advertise the cordon to peers while this node kept placing
-		// sandboxes on itself.
-		flags := loadNodeFlags(st, log)
-		if flags.Cordoned {
-			cl.SetCordoned(true)
-			log.Info("restored cordon from a previous run", "draining", flags.Draining)
-		}
-		nodeSvc.SetDraining(flags.Draining)
-		nodeSvc.SetFlagPersister(func(cordoned, draining bool) {
-			saveNodeFlags(st, log, nodeFlags{Cordoned: cordoned, Draining: draining})
-		})
+	// A restart must not put a cordoned node back into service (ADR-0023). The
+	// flag is restored locally and unconditionally: it is what enforcement reads,
+	// with or without a cluster.
+	flags := loadNodeFlags(st, log)
+	nodeSvc.SetCordonedFlag(flags.Cordoned)
+	nodeSvc.SetDraining(flags.Draining)
+	nodeSvc.SetFlagPersister(func(cordoned, draining bool) {
+		saveNodeFlags(st, log, nodeFlags{Cordoned: cordoned, Draining: draining})
+	})
+	if flags.Cordoned {
+		log.Info("restored cordon from a previous run", "draining", flags.Draining)
+	}
 ```
 
-`SetDraining` and `SetFlagPersister` both come from Task 2. This task adds no
-code to `internal/apiserver/`.
+Then inside the cluster block, after `nodeSvc.SetCordoner(cl)` (line 233), mirror
+it to the peers:
 
-The persister is wired only inside the cluster block. That is correct: without a
-cluster there is no cordon to persist, and the spec records that cordon is inert
-on a standalone node.
+```go
+		if flags.Cordoned {
+			cl.SetCordoned(true) // tell the peers what we already know
+		}
+```
+
+`SetCordonedFlag` is a boot-time setter in the same family as `SetDraining` from
+Task 2; add it beside that one, in `internal/apiserver/nodeservice.go`. It is the
+only apiserver code this task adds.
+
+The persister is wired unconditionally now. A standalone node has a real cordon
+to persist.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -509,17 +686,148 @@ Expected: PASS, `TestNode_Gerrit_Publish` aside.
 git add internal/node/node.go internal/node/node_test.go
 git commit -m "feat(node): a cordon now survives a restart
 
-Restores the stored cordon through Cluster.SetCordoned, which also
-upserts this node's own routing entry. Seeding the boot NodeState would
-have told peers the node was cordoned while it kept placing sandboxes on
-itself, because NewCluster never seeds a self entry.
+Restores the stored flags onto NodeService before the cluster is built,
+then mirrors the cordon to the peers when there is a cluster. Seeding the
+boot NodeState instead would tell peers the node was cordoned while the
+node's own flag stayed false.
 
 The cordon is sticky: only an explicit uncordon clears it (ADR-0023)."
 ```
 
 ---
 
-### Task 4: Say what cordon and drain actually mean
+### Task 5: Drain publishes and stops everything here
+
+**Files:**
+- Modify: `internal/apiserver/sandboxservice.go` — the sweep, beside `ReapIdle`
+  (line 388)
+- Modify: `internal/apiserver/nodeservice.go` — a `drainer` hook, called by `Drain`
+- Modify: `internal/node/node.go` — wire the hook
+- Test: `internal/apiserver/sandboxservice_test.go`,
+  `internal/apiserver/nodeservice_test.go`
+
+**Interfaces:**
+- Produces: `func (s *SandboxService) DrainAll(ctx context.Context, actor string, keepGoing func() bool) int`
+- Produces: `func (s *NodeService) SetDrainer(fn func(actor string, keepGoing func() bool))`
+
+**What it does.** `Drain` sets both flags, returns at once, and starts a
+goroutine that publishes and stops every record with `Status == "running"`. It is
+the `ReapIdle` loop over a different list. `Drain` returns `NodeInfo`, which is
+shipped API with a console control, so it cannot wait for a sweep that takes
+minutes; the per-sandbox events already tell the console what is happening.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `internal/apiserver/sandboxservice_test.go`. Match how the existing
+`ReapIdle` tests build a service over the sandbox fake.
+
+```go
+func TestSandboxService_DrainAllStopsEverythingRunning(t *testing.T) {
+	// Two running sandboxes, one labelled idle-stop: off.
+	// DrainAll stops both: that label protects against the idle timer, not
+	// against an operator.
+}
+
+func TestSandboxService_DrainAllStopsWhenCancelled(t *testing.T) {
+	// keepGoing returns false after the first sandbox. The second is left
+	// running, because Uncordon during a sweep must cancel it.
+}
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `go test ./internal/apiserver/ -run TestSandboxService_DrainAll -v`
+
+Expected: FAIL to compile, `s.DrainAll undefined`.
+
+- [ ] **Step 3: Write the sweep**
+
+Beside `ReapIdle` in `internal/apiserver/sandboxservice.go`:
+
+```go
+// DrainAll publishes and stops every running sandbox on this node. It is what
+// Drain does after cordoning: the node ends up empty and git-backed work is
+// saved on the way out. Nothing is migrated — a sandbox id names its owner node,
+// so a sandbox cannot move without changing identity.
+//
+// keepGoing is re-checked before each sandbox so an uncordon cancels the sweep.
+// actor is carried in because the caller's context dies with its RPC, and the
+// audit should not record a bulk operator action as "system".
+func (s *SandboxService) DrainAll(ctx context.Context, actor string, keepGoing func() bool) int {
+```
+
+List with `s.mgr.List(ctx)`, skip anything whose `Status` is not `"running"`,
+and for each: check `keepGoing()`, publish, then `s.mgr.Stop`. Reuse the
+publish-then-stop order and the "a publish failure does not skip the stop" rule
+from `ReapIdle`; say so in a comment rather than repeating the reasoning.
+
+`maybeAutoPublish` reads the actor from the context (`sandboxservice.go:374`).
+Give it an explicit actor instead, either by adding a parameter or by lifting the
+publish call out; keep the existing behaviour for its two current callers.
+
+- [ ] **Step 4: Call it from Drain**
+
+In `internal/apiserver/nodeservice.go`, add the hook beside the other setters and
+call it at the end of `Drain`:
+
+```go
+	if s.drainer != nil {
+		go s.drainer(principalOrSystem(ctx), s.draining.Load)
+	}
+```
+
+`s.draining.Load` is a method value, so the sweep reads the live flag rather than
+a copy. Reuse whatever helper already turns a context into an actor string; if
+there is none, `principalFromContext(ctx).userRole` with a `"system"` fallback
+matches `maybeAutoPublish` exactly. Note that this actor is a role, not a person
+— that is what the audit records everywhere else.
+
+Add a `NodeService` test that `Drain` calls the hook and `Cordon` does not.
+
+- [ ] **Step 5: Wire it**
+
+In `internal/node/node.go`, beside the other `nodeSvc.Set*` calls:
+
+```go
+	nodeSvc.SetDrainer(func(actor string, keepGoing func() bool) {
+		n := sandboxes.DrainAll(nctx, actor, keepGoing)
+		log.Info("drain finished", "stopped", n)
+	})
+```
+
+Use the node's own long-lived context, not a request context. Check the name of
+the context in scope there; the reaper ticker at line 149 uses `nctx`.
+
+- [ ] **Step 6: Verify**
+
+```bash
+go build ./...
+go vet ./...
+go vet -tags integration ./internal/...
+go test ./...
+```
+
+Expected: PASS, Gerrit aside.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add internal/apiserver/sandboxservice.go internal/apiserver/sandboxservice_test.go \
+        internal/apiserver/nodeservice.go internal/apiserver/nodeservice_test.go \
+        internal/node/node.go
+git commit -m "feat(apiserver): Drain now empties the node
+
+Drain cordons the node, then publishes and stops every running sandbox in
+the background. It used to set a flag nothing read.
+
+The sweep stops sandboxes labelled idle-stop: off as well. That label
+protects against the idle timer, not against an operator. An uncordon
+during a sweep cancels it."
+```
+
+---
+
+### Task 6: Say what cordon and drain actually mean
 
 **Files:**
 - Modify: `CONTEXT.md` — insert after the **Revoke / Revoked** block, which ends
@@ -536,16 +844,14 @@ The cordon is sticky: only an explicit uncordon clears it (ADR-0023)."
 `internal/apiserver/nodeservice.go:141-143` currently claims Drain "sets a
 draining flag so the M5 scheduler can gracefully migrate sandboxes away".
 
-Nothing migrates. `internal/scheduler` and `internal/apiserver/provision.go`
-contain no reference to drain, and `draining` is consumed in exactly one place —
-`node.go:247`, building the display row for `ListNodes`.
-
-Replace the comment with:
+Nothing migrates, before this branch or after it. Replace the comment with:
 
 ```go
-// Drain cordons the node and records that the cordon came from a drain. The
-// marker is display only: the cordon is what blocks new placements. Nothing
-// migrates existing sandboxes away — that is not built.
+// Drain cordons the node, then publishes and stops every sandbox running on it,
+// in the background. The node ends up empty and git-backed work is saved. The
+// draining marker records why the node is out of service and survives a restart.
+// Nothing is migrated: a sandbox id names its owner node, so a sandbox cannot
+// move without changing identity.
 ```
 
 - [ ] **Step 2: Add the two glossary terms**
@@ -559,14 +865,15 @@ Insert after that entry's trailing blank line, before `**Swarm**:`
 ```markdown
 **Cordon**:
 An operator action that stops new placements on a Node while leaving it trusted and its existing
-Sandboxes running. It survives a restart: only an explicit uncordon clears it, so a repaired host must
-be uncordoned deliberately (ADR-0023). Distinct from Revoke, which ejects the Node's identity entirely.
+Sandboxes running. It applies to any Node, clustered or standalone, and it survives a restart: only an
+explicit uncordon clears it, so a repaired host must be uncordoned deliberately (ADR-0023). Distinct
+from Revoke, which ejects the Node's identity entirely.
 _Avoid_: disable, pause, quarantine
 
 **Drain**:
-A Cordon that also records why it was applied, so an operator can tell a drained Node from a plainly
-cordoned one. The marker is display only — the Cordon is what blocks placement. Draining does not move
-existing Sandboxes off the Node; nothing migrates them.
+A Cordon followed by publishing and stopping every Sandbox on the Node, so the Node ends up empty and
+git-backed work is saved. It also records why the Node is out of service. Draining does not move
+Sandboxes to other Nodes — the swarm never does, because a Sandbox id names its owner Node.
 _Avoid_: evacuate, migrate (neither happens)
 ```
 
@@ -608,8 +915,8 @@ git commit -m "docs: define Cordon and Drain, and say config is restart-only
 
 - CONTEXT.md defines Cordon, which the Revoke entry already pointed at
   but nothing defined, and Drain.
-- Drain is defined as what it is: a cordon that records why. Nothing
-  migrates sandboxes away, so the misleading comment is corrected too.
+- Drain is defined as what it now does: cordon, then publish and stop
+  everything here. The misleading migration comment is corrected too.
 - README states that config is read once and a restart is the way to
   change it."
 ```
@@ -621,14 +928,24 @@ git commit -m "docs: define Cordon and Drain, and say config is restart-only
 - [ ] `go build ./...`, `go vet ./...` and `go vet -tags integration ./internal/...` are clean
 - [ ] `go test ./...` passes, Gerrit aside
 - [ ] A node booted with a stored cordon reports itself cordoned
-- [ ] `git diff --stat main` shows exactly these nine files:
+- [ ] A **standalone** node — no `cluster_secret` — can be cordoned, and the
+      cordon blocks placement
+- [ ] `grep -rn "IsCordoned" --include=*.go . | grep -v gen/` returns nothing
+- [ ] `git diff --stat origin/main` shows exactly these fourteen files:
       `internal/store/store.go`, `internal/node/flags.go`,
       `internal/node/flags_test.go`, `internal/node/node.go`,
       `internal/node/node_test.go`, `internal/apiserver/nodeservice.go`,
-      `internal/apiserver/nodeservice_test.go`, `CONTEXT.md`, `README.md`
+      `internal/apiserver/nodeservice_test.go`,
+      `internal/apiserver/sandboxservice.go`,
+      `internal/apiserver/sandboxservice_test.go`, `internal/routing/table.go`,
+      `internal/routing/table_test.go`, `internal/membership/cluster.go`,
+      `CONTEXT.md`, `README.md`
 - [ ] Manual, on a node with a `cluster_secret` and at least one peer: cordon it,
       restart it, confirm `GET /v1/nodes` still reports it cordoned and that a
-      provision is not placed on it. A standalone node cannot show any of this.
+      provision is not placed on it.
+- [ ] Manual drain: with two running sandboxes, one git-backed, press Drain and
+      confirm the node empties, the git work is published, and the audit records
+      the caller rather than `system`.
 
 ## Explicitly out of scope
 
@@ -636,8 +953,10 @@ Decided in the spec. Do not add these, and do not treat them as oversights:
 
 - Config reload in any form.
 - `StateVersion` arbitration in `routing.Table.Upsert`.
-- Making `Drain` actually migrate sandboxes, or removing the now-redundant
-  `Drain` RPC. It is shipped API with a console control.
-- Fixing the `Cordon` RPC returning `Cordoned: true` on a standalone node where
-  nothing was cordoned. Pre-existing, and its own item.
+- Migrating Sandboxes to another Node, and the stable sandbox handle it would
+  need. Removing the `Drain` RPC is also out: it is shipped API with a console
+  control, and after Task 5 it does real work.
+- A better message than `no eligible node` when a cordoned standalone node
+  refuses a placement. It would need the scheduler to report which constraint
+  rejected each candidate.
 - Persisting any other in-memory flag. If one is found, it is its own item.
