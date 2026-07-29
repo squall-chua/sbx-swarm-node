@@ -38,6 +38,10 @@ type Fake struct {
 	// PortsErr, when set, makes Ports fail instead of returning the recorded
 	// list -- standing in for a transient daemon read failure.
 	PortsErr error
+
+	// SaveTemplateErr, when set, makes SaveTemplate fail instead of recording
+	// the call -- standing in for a backend rejection (e.g. tag in use).
+	SaveTemplateErr error
 }
 
 // NewFake returns an empty fake backend advertising the given kit names. It is
@@ -276,6 +280,9 @@ func (b *Fake) ListTemplateInfo(_ context.Context) ([]TemplateInfo, error) {
 func (f *Fake) SaveTemplate(_ context.Context, name, tag string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.SaveTemplateErr != nil {
+		return f.SaveTemplateErr
+	}
 	f.savedTemplates = append(f.savedTemplates, name+"=>"+tag)
 	f.templates = append(f.templates, tag)
 	return nil

@@ -545,3 +545,18 @@ func TestSandboxService_SaveTemplateNeedsATag(t *testing.T) {
 	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
+
+func TestSandboxService_SaveTemplateKeepsBackendStatusCode(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	require.NoError(t, svc.mgr.Stop(ctx, rec.ID))
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+
+	// A backend error that already carries a gRPC status must keep its code
+	// instead of flattening to Internal.
+	fake.SaveTemplateErr = status.Error(codes.AlreadyExists, "image already exists")
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID, Tag: "myimage:v1"})
+	require.Equal(t, codes.AlreadyExists, status.Code(err))
+}

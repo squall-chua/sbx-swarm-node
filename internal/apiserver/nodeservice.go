@@ -209,6 +209,9 @@ func (s *NodeService) RemoveTemplate(ctx context.Context, r *sbxv1.RemoveTemplat
 		})
 	}
 	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			return nil, st.Err()
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return s.ListTemplates(ctx, &sbxv1.ListTemplatesRequest{})

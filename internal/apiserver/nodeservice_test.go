@@ -77,6 +77,18 @@ func TestNodeService_RemoveTemplateWritesAuditOnFailure(t *testing.T) {
 	require.Equal(t, "error", entries[0].Outcome)
 }
 
+func TestNodeService_RemoveTemplateKeepsBackendStatusCode(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	// A backend error that already carries a gRPC status must keep its code
+	// instead of flattening to Internal.
+	s.SetTemplateRemover(func(context.Context, string) error {
+		return status.Error(codes.FailedPrecondition, "image in use")
+	})
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
+
 func TestNodeService_RemoveTemplateNeedsARef(t *testing.T) {
 	s := NewNodeService("n1", "node-1", "test")
 	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{})
