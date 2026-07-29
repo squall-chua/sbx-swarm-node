@@ -1,11 +1,31 @@
-# Design — make a restart safe, and declare config restart-only
+# Design — make the out-of-service switch tell the truth
+
+(Originally: make a restart safe, and declare config restart-only. Widened by the
+amendment below to cover the standalone cordon and what `Drain` means.)
 
 Date: 2026-07-29
 Base: `main` @ `1654521`
+Amended: 2026-07-29, same day, after a grilling session. See "Amendment" below.
 Probed against: `sbx` v0.37.0 (api `0.24.0`), sbx-go-sdk v0.1.9
 
 This is the scoping result for candidate **item 2, config reload**. The answer is
 not config reload.
+
+## Amendment
+
+The design now covers two more items that were scoped after it was written. Both
+touch the same three files, so they are built on the same branch.
+
+- **Cordon lied on a standalone node.** The RPC returned `Cordoned: true` while
+  nothing was cordoned. The fix makes the cordon flag local and authoritative, so
+  it works with or without a cluster. This reverses the original "Reading" and
+  "Standalone nodes" sections; both are rewritten below.
+- **`Drain` did not drain.** It now cordons the node and then publishes and stops
+  every sandbox running on it. See "Change 3".
+
+Re-probe note: local `main` sits 6 commits behind `origin/main`, because the
+small-gaps work merged as `cb02a51`. The branch needs a rebase before it is
+built.
 
 ## The problem
 
@@ -92,41 +112,32 @@ the drain marker.
 
 ### Reading
 
-In `internal/node/node.go`, after the cluster is built (the
-`cfg.GossipAddr != "" && cfg.ClusterSecret != ""` block at line 217), if the
-stored cordon flag is set, call `cl.SetCordoned(true)`. Restore the drain marker
-onto `nodeSvc` at the same point, and wire the persister.
+In `internal/node/node.go`, restore the stored flags onto `nodeSvc` before the
+cluster block at line 217, and wire the persister. Inside the cluster block, if
+the restored cordon is set, also call `cl.SetCordoned(true)` so peers learn it.
 
-**Do not restore by setting `localNS.Cordoned` before construction.** That was
-the first draft of this design and it is wrong. Enforcement reads the *routing
-table* — `tbl.IsCordoned(id.NodeID)` at `node.go:304`, and the scheduler's
-candidate filter — and `NewCluster` (`cluster.go:42-55`) never seeds a self
-entry. The only self-upsert in the file is inside `SetCordoned` itself
-(`cluster.go:156`). Seeding `localNS` alone would put the restored value on the
-gossip wire, so every peer would see the node as cordoned, while the node's own
-table entry stayed absent and `IsCordoned` returned the zero value. The node
-would place sandboxes on itself while telling the swarm it was cordoned.
+The local flag is restored first and unconditionally. The cluster call is only a
+mirror, and it is skipped on a standalone node, which has no cluster.
 
-Reusing `SetCordoned` avoids that. It already sets `local.Cordoned`, bumps
-`StateVersion`, upserts the self entry, and re-advertises. It is nil-safe on the
-memberlist handle (`cluster.go:159`), so calling it before gossip is up is safe:
-the table is seeded immediately and the flag rides the meta once memberlist
-starts.
-
-It would also be possible to rely on memberlist delivering a `NotifyJoin` for the
-local node, since that handler upserts from decoded meta. Rejected: that pins our
-correctness to a dependency's internal behaviour, which a version bump could
-change.
+An earlier draft restored **only** through `cl.SetCordoned(true)`, on the grounds
+that enforcement read the routing table. Change 2 removes cordon from the routing
+table, so that reasoning no longer holds. Setting `localNS.Cordoned` before
+construction is still wrong, for the reason it always was: it would put the value
+on the gossip wire without the local flag being set, so peers and the node itself
+would disagree.
 
 ### Standalone nodes
 
 A node with no `cluster_secret` builds no cluster (`node.go:217`), so `cordoner`
-is nil and `SetCordoned` is never reached. **Cordon is already inert in
-standalone mode**, before and after this change. The `Cordon` RPC nonetheless
-returns `Cordoned: true`, which is a pre-existing inaccuracy and is not in scope
-here.
+is nil. After Change 2 that no longer matters: the flag lives on `NodeService`
+and the scheduler reads it directly, so **a standalone node can be cordoned, and
+the cordon is enforced.** A provision on a cordoned standalone node fails with
+`scheduler.ErrNoEligibleNode`.
 
-Do not try to verify this work on a standalone node. It cannot show anything.
+That message is not improved. On a one-node swarm "no eligible node" reads
+oddly, but the console shows the node as cordoned, and a better message would
+mean teaching the scheduler to report which constraint rejected each candidate.
+That machinery is not worth one string.
 
 ### The cordon is sticky
 
@@ -137,7 +148,120 @@ repairs a host and restarts the node must now explicitly uncordon it.
 The failure direction is the safe one: a node sitting idle when it could work,
 rather than a node quietly taking jobs it should not have.
 
-## Change 2 — document it
+## Change 2 — the cordon flag is local, and the routing table drops it
+
+### The lie
+
+`Cordon` returns `Cordoned: true` whether or not anything was cordoned
+(`nodeservice.go:97-107`). On a standalone node nothing is: `cordoner` is nil, so
+`SetCordoned` is never called, and the console shows a cordon that does not
+exist. `Revoke` already handles the same situation honestly — it returns
+`FailedPrecondition, "revocation requires clustering"` (`nodeservice.go:69`) —
+so `Cordon` is the odd one out.
+
+Standalone is real use here, not only a test shape, so the answer is to make
+cordon work rather than to make the RPC refuse.
+
+### The flag
+
+Hold the cordon in an `atomic.Bool` on `NodeService`, beside `draining`.
+`Cordon`, `Uncordon` and `Drain` set it, then call `cordoner` if there is one.
+Each reply reports the flag, so it can no longer overstate what happened.
+
+`NodeService` is the home because `draining` already lives there and is already
+read from outside through `nodeSvc.Draining()` (`node.go:245`). A separate holder
+type in `internal/node` would be tidier ownership, and it buys nothing we are
+paying for anywhere else.
+
+### The three self reads
+
+All three switch from the routing table and the cluster to the flag:
+
+| Site | Today | After |
+|---|---|---|
+| `node.go:738` scheduler self-candidate | `tbl.IsCordoned(self)` | `nodeSvc.Cordoned()` |
+| `node.go:304` `InternalService` admission | `tbl.IsCordoned(id.NodeID)` | `nodeSvc.Cordoned()` |
+| `node.go:246` self `NodeRow` | `clusterInstance != nil && ...LocalNodeState().Cordoned` | `nodeSvc.Cordoned()` |
+
+### The deletion
+
+Those were the only two non-test callers of `routing.Table.IsCordoned`, and both
+asked about **self**. A peer's cordon reaches the scheduler through gossip —
+`ns.Cordoned` in `buildCandidates` and in `rowFromState` — never through the
+table. So once self moves, nothing reads the table's copy at all.
+
+Delete it: the `cordoned` field on the table entry, the `cordoned` parameter of
+`Upsert` (four call sites, all in `internal/membership/cluster.go`), and
+`IsCordoned` with its tests.
+
+`Cluster.SetCordoned` then shrinks to setting `local.Cordoned`, bumping
+`StateVersion` and calling `UpdateNode`. Its self-upsert (`cluster.go:156`) goes
+with the parameter: it existed only to publish the cordon, and nothing reads
+self's address or public key out of the table — `Forwarder` looks up peers only
+(`forward.go:58-61`), and the pin resolvers are for incoming peer certificates.
+
+The cluster keeps its real job, which is telling peers and holding peer state. It
+stops being the source of truth about this node.
+
+## Change 3 — `Drain` publishes and stops everything here
+
+### What it does
+
+`Drain` sets both flags, returns immediately, and a goroutine sweeps every record
+with `Status == "running"`: publish first, then stop. This is the `ReapIdle` loop
+(`sandboxservice.go:388-405`), over a different list.
+
+The sweep lives on `SandboxService`, which already owns `maybeAutoPublish` and
+the manager. `NodeService` gets a `drainer` hook wired in `node.go`, the same
+shape as every other optional dependency on that struct.
+
+### The decisions inside it
+
+- **Everything running, including `idle-stop: off`.** That label protects a
+  sandbox from a background timer, not from an operator pressing Drain. Skipping
+  those would mean a node with one long-lived sandbox could never be emptied —
+  the same class of quiet under-delivery this branch is fixing in `Cordon`.
+- **Fire and forget.** `Drain` returns `NodeInfo`; that is shipped API with a
+  console control, and a sweep with a git publish per sandbox runs far past any
+  client timeout. `Manager.Stop` publishes an event per sandbox, so the console
+  watches the node empty out. Failures are logged, as the reaper's are. The
+  alternative — returning an Operation id — changes a shipped reply type and
+  needs console work to follow it.
+- **The audit records the caller, not `"system"`.** `maybeAutoPublish` reads the
+  actor from the context and falls back to `"system"`
+  (`sandboxservice.go:374-377`). A goroutine cannot hold the RPC context, so
+  capture the principal from the `Drain` context and carry it into the sweep.
+  Note what "actor" means here: `principal.userRole` (`authz.go:12-14`), so the
+  audit gains `"admin"` rather than a person's name. That is the same actor
+  string the synchronous stop path already writes, and this keeps the two paths
+  consistent. Per-user attribution would need identities the API keys do not
+  carry.
+- **Uncordon cancels.** The sweep re-checks the drain flag before each sandbox
+  and stops early once it is cleared. Two lines, and it is the only way to halt a
+  long sweep short of killing the process.
+- **A second `Drain` during a sweep is allowed.** Both loops call `Stop` on
+  records that are already stopped, which is harmless. No lock.
+- **One-shot, not an invariant.** A restored `draining` flag after a restart
+  re-blocks placement and shows the marker; it sweeps nothing. Stopped containers
+  stay stopped across a node restart, so a node that finished draining comes back
+  empty on its own. Making drain continuous — the existing reaper ticker stopping
+  anything running while the flag is set — was considered and rejected: it lets a
+  node quietly kill a sandbox somebody started on purpose.
+
+### Why nothing migrates
+
+A sandbox id is `<node_id>.<ulid>` (`record.go:7`), self-routing by ADR-0002. A
+sandbox that moves to another node gets a **new id**, so every client handle to it
+breaks. `Record.Spec` does hold the full `CreateSpec`, so replaying a sandbox on a
+peer is mechanically possible — but anything on the container's disk outside the
+git workspace is lost, and the identity problem is not a drain problem. Migration
+needs a stable sandbox handle that the domain does not have. That is its own
+design, if it is ever wanted.
+
+So drain empties the node and saves the git work. It does not move anything, and
+the glossary says so.
+
+## Change 4 — document it
 
 - `README.md`, under `## Configuration reference`: config is read once at
   startup, every change needs a restart, and a restart is safe — the daemon owns
@@ -147,31 +271,15 @@ rather than a node quietly taking jobs it should not have.
   stops new placements on a still-trusted node", pointing at a term the glossary
   never defines. This is the same dangling cross-reference the `Custom secret`
   work found, and it is fixed the same way.
-- `CONTEXT.md`: define **Drain** honestly, as a Cordon that records why it was
-  applied. See below.
-- `internal/apiserver/nodeservice.go:141-143`: correct the `Drain` comment.
+- `CONTEXT.md`: define **Drain** as a Cordon followed by publishing and stopping
+  every sandbox on the node, and say plainly that the swarm does not move
+  sandboxes between nodes.
+- `internal/apiserver/nodeservice.go:141-143`: correct the `Drain` comment, which
+  claims the M5 scheduler migrates sandboxes away. Nothing migrates, before or
+  after this change.
 
 `CONTEXT.md` gets the terms only. The restart-only property is operational
 guidance, not vocabulary, so it belongs in `README.md`.
-
-### Drain does not drain
-
-The `Drain` comment claims it "sets a draining flag so the M5 scheduler can
-gracefully migrate sandboxes away". Nothing migrates. `internal/scheduler` and
-`internal/apiserver/provision.go` contain no reference to drain at all, and
-`Draining` is consumed in exactly one place — `node.go:247`, building the display
-row for `ListNodes`.
-
-What `Drain` actually does is call `SetCordoned(true)` and set a marker recording
-that the cordon came from a drain. That is useful, and it is all it is.
-
-Defining **Cordon** truthfully while leaving that comment in place would produce
-a glossary nobody trusts, so the comment is corrected in the same change. The
-marker is persisted alongside the cordon so the console keeps showing the right
-reason a node is out of service.
-
-Building actual migration, or removing the now-redundant `Drain` RPC, are both
-out of scope. `Drain` is shipped API with a console control.
 
 ## ADR
 
@@ -180,6 +288,18 @@ decision. It meets all three bars: hard to reverse once operators depend on it,
 surprising without context because the naive expectation is that a restart
 clears a cordon, and the result of a real trade-off against clear-on-restart and
 crash-only-restore.
+
+**0023 is edited in place, not superseded.** Two of its paragraphs are now wrong:
+the restore argument rests on "enforcement reads the routing table", and the
+scope line says cordon is inert on a standalone node and that the ADR does not
+change that. The commit holding 0023 is still unpushed on local `main`, so
+nothing outside this machine has read it. Rewriting is honest; a superseding
+document for an unreleased one is ceremony.
+
+No new ADR for Change 3. It was considered — drain meaning "stop", not "move", is
+surprising to anyone who knows Kubernetes — and rejected to keep the decision in
+one place. The reasoning lives in "Why nothing migrates" above, and the glossary
+carries the result.
 
 ## Rejected alternatives
 
@@ -222,18 +342,27 @@ shows cordon state per node.
   case on a fresh database, which must read as `false, false`.
 - `go build ./... && go vet ./...`, plus `go vet -tags integration ./internal/...`
 - `go test ./...` green, `TestNode_Gerrit_Publish` aside.
-- A test that the restored cordon reaches the **routing table**, not only the
-  gossiped state. This is the bug the first draft of this design would have
-  shipped, so it is the one check that must not be skipped: assert
-  `tbl.IsCordoned(selfID)` is true after a restore.
+- A test that a restored cordon reaches **enforcement**, not only the gossiped
+  state: the scheduler must refuse to place on the node after a restore. The
+  first draft of this design would have shipped that bug, so it is the one check
+  that must not be skipped. It is now a test on `nodeSvc.Cordoned()` and the
+  self candidate, not on `tbl.IsCordoned`, which no longer exists.
+- A test that a cordon on a **standalone** node — no `cluster_secret` — is
+  enforced, and that the RPC reply matches what happened.
+- A test that the drain sweep stops a running sandbox labelled `idle-stop: off`,
+  and that clearing the flag mid-sweep stops it early.
 - Manual, on a node **with a `cluster_secret` and at least one peer**: cordon it,
   restart it, and confirm both that `GET /v1/nodes` still reports it cordoned and
-  that a provision request is not placed on it. A standalone node cannot verify
-  any of this, because cordon is inert there.
+  that a provision request is not placed on it. Unlike the earlier draft of this
+  design, the single-node parts can now be checked standalone.
+- Manual drain: with two running sandboxes, one git-backed, press Drain and
+  confirm the node empties, the git work is published, and the audit names the
+  operator rather than `system`.
 
 ## Out of scope
 
 - Config reload in any form.
 - Changing gossip merge semantics.
+- Migrating sandboxes between nodes, and the stable sandbox handle it would need.
 - Persisting anything else that lives only in memory. If another such flag is
   found, it is its own item.

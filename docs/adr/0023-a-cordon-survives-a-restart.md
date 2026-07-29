@@ -2,7 +2,9 @@
 
 A cordon is persisted to the node's store and restored at startup. Restarting a cordoned node does
 not put it back into service; only an explicit uncordon does. The drain marker is persisted the same
-way, so the console keeps showing why a node is out of service.
+way, so the console keeps showing why a node is out of service. A restored drain marker re-blocks
+placement and explains itself; it does not re-run the drain sweep, which is a one-shot operator
+action, not a standing rule.
 
 Why: the flag lived only in memory. `Cordoned` was held in `Cluster.local` and on the gossip wire,
 and the boot `NodeState` never set it, so it defaulted to false. `routing.Table.Upsert` is
@@ -24,14 +26,20 @@ took out of service quietly accepting jobs again. Restoring only after an unclea
 considered and rejected: it needs a shutdown marker and gets the answer wrong whenever the node is
 killed hard.
 
-The restore reuses `Cluster.SetCordoned` rather than seeding the boot `NodeState`. Enforcement reads
-the routing table, and `NewCluster` never seeds a self entry — the only self-upsert is inside
-`SetCordoned`. Setting the boot state alone would tell every peer the node was cordoned while leaving
-its own table entry absent, so it would place sandboxes on itself while advertising that it would
-not. Relying on memberlist to deliver a self `NotifyJoin` would also work today, but pins correctness
-to a dependency's internals.
+The cordon itself becomes a local flag on `NodeService`, beside the drain marker, and that flag is
+the single source of truth about this node. Everything that asks whether *this* node is cordoned —
+the scheduler's self candidate, internal provision admission, and the console's own row — reads it.
+The cluster keeps telling peers and holding peer state; it stops owning the answer for self. The
+restore therefore sets the local flag first and unconditionally, then mirrors it into the cluster
+when there is one. Seeding the boot `NodeState` instead is still wrong: it would put the value on the
+gossip wire while the node's own flag stayed false, so the node and its peers would disagree.
 
-Scope: cordon is inert on a standalone node, which builds no cluster at all, and this ADR does not
-change that. Teaching `routing.Table.Upsert` to arbitrate on `StateVersion` was considered and
-rejected as unnecessary — once a node advertises the correct value on rejoin, last-writer-wins is
-right.
+Because self now reads the flag, `routing.Table` no longer carries a cordon at all. Its two callers
+both asked about self, and a peer's cordon has always reached the scheduler through gossip rather
+than the table, so the field, the `Upsert` parameter and `IsCordoned` are removed.
+
+Scope: cordon works on a standalone node, which builds no cluster at all. It used to be inert there
+while the RPC still answered `Cordoned: true` — a node that reported itself out of service and kept
+taking work. The local flag closes that. Teaching `routing.Table.Upsert` to arbitrate on
+`StateVersion` was considered and rejected as unnecessary — once a node advertises the correct value
+on rejoin, last-writer-wins is right.
