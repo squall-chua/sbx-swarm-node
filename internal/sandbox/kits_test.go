@@ -104,12 +104,24 @@ func TestAdmitKits_TimeoutIsPerKit(t *testing.T) {
 		return KitInfo{Kind: "mixin"}, nil
 	}
 
+	start := time.Now()
 	admitKits(context.Background(), inspect, map[string]string{"a": "/a", "b": "/b"}, quietLog())
 
 	mu.Lock()
 	defer mu.Unlock()
 	if deadlines["/a"].Equal(deadlines["/b"]) {
 		t.Fatalf("kit deadlines are identical (%v): inspection is sharing one context for the whole batch instead of bounding each kit independently", deadlines["/a"])
+	}
+	// Each deadline should also actually be bounded by kitInspectTimeout, not
+	// some other duration. Generous slack above the upper bound absorbs
+	// goroutine-dispatch jitter without weakening what this catches: a
+	// deadline computed from the wrong timeout (e.g. a forgotten override)
+	// would miss by far more than that.
+	window := start.Add(kitInspectTimeout + time.Second)
+	for ref, dl := range deadlines {
+		if dl.Before(start) || dl.After(window) {
+			t.Fatalf("deadline for %s (%v) is outside [start, start+kitInspectTimeout] (%v..%v)", ref, dl, start, window)
+		}
 	}
 }
 
@@ -167,6 +179,7 @@ func TestHasResources(t *testing.T) {
 		{"empty object with a space is no resources", []byte("{ }"), false},
 		{"a list is resources (no list form here; fails closed)", []byte("[]"), true},
 		{"a populated object is resources", []byte(`{"cpu":2}`), true},
+		{"a key with a null value is resources (one key, non-empty)", []byte(`{"cpu":null}`), true},
 		{"unparseable garbage is resources", []byte(`{"cpu":`), true}, // fail closed
 	}
 	for _, tc := range tests {
