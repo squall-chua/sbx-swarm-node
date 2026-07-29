@@ -19,14 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_GetNodeInfo_FullMethodName   = "/sbxswarm.v1.NodeService/GetNodeInfo"
-	NodeService_Cordon_FullMethodName        = "/sbxswarm.v1.NodeService/Cordon"
-	NodeService_Uncordon_FullMethodName      = "/sbxswarm.v1.NodeService/Uncordon"
-	NodeService_Drain_FullMethodName         = "/sbxswarm.v1.NodeService/Drain"
-	NodeService_RevokeNode_FullMethodName    = "/sbxswarm.v1.NodeService/RevokeNode"
-	NodeService_ListRevoked_FullMethodName   = "/sbxswarm.v1.NodeService/ListRevoked"
-	NodeService_ListNodes_FullMethodName     = "/sbxswarm.v1.NodeService/ListNodes"
-	NodeService_ListTemplates_FullMethodName = "/sbxswarm.v1.NodeService/ListTemplates"
+	NodeService_GetNodeInfo_FullMethodName    = "/sbxswarm.v1.NodeService/GetNodeInfo"
+	NodeService_Cordon_FullMethodName         = "/sbxswarm.v1.NodeService/Cordon"
+	NodeService_Uncordon_FullMethodName       = "/sbxswarm.v1.NodeService/Uncordon"
+	NodeService_Drain_FullMethodName          = "/sbxswarm.v1.NodeService/Drain"
+	NodeService_RevokeNode_FullMethodName     = "/sbxswarm.v1.NodeService/RevokeNode"
+	NodeService_ListRevoked_FullMethodName    = "/sbxswarm.v1.NodeService/ListRevoked"
+	NodeService_ListNodes_FullMethodName      = "/sbxswarm.v1.NodeService/ListNodes"
+	NodeService_ListTemplates_FullMethodName  = "/sbxswarm.v1.NodeService/ListTemplates"
+	NodeService_RemoveTemplate_FullMethodName = "/sbxswarm.v1.NodeService/RemoveTemplate"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -43,6 +44,7 @@ type NodeServiceClient interface {
 	ListRevoked(ctx context.Context, in *ListRevokedRequest, opts ...grpc.CallOption) (*RevokedList, error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	ListTemplates(ctx context.Context, in *ListTemplatesRequest, opts ...grpc.CallOption) (*ListTemplatesResponse, error)
+	RemoveTemplate(ctx context.Context, in *RemoveTemplateRequest, opts ...grpc.CallOption) (*ListTemplatesResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -133,6 +135,16 @@ func (c *nodeServiceClient) ListTemplates(ctx context.Context, in *ListTemplates
 	return out, nil
 }
 
+func (c *nodeServiceClient) RemoveTemplate(ctx context.Context, in *RemoveTemplateRequest, opts ...grpc.CallOption) (*ListTemplatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTemplatesResponse)
+	err := c.cc.Invoke(ctx, NodeService_RemoveTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -147,6 +159,7 @@ type NodeServiceServer interface {
 	ListRevoked(context.Context, *ListRevokedRequest) (*RevokedList, error)
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	ListTemplates(context.Context, *ListTemplatesRequest) (*ListTemplatesResponse, error)
+	RemoveTemplate(context.Context, *RemoveTemplateRequest) (*ListTemplatesResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -180,6 +193,9 @@ func (UnimplementedNodeServiceServer) ListNodes(context.Context, *ListNodesReque
 }
 func (UnimplementedNodeServiceServer) ListTemplates(context.Context, *ListTemplatesRequest) (*ListTemplatesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListTemplates not implemented")
+}
+func (UnimplementedNodeServiceServer) RemoveTemplate(context.Context, *RemoveTemplateRequest) (*ListTemplatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveTemplate not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -346,6 +362,24 @@ func _NodeService_ListTemplates_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_RemoveTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).RemoveTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_RemoveTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).RemoveTemplate(ctx, req.(*RemoveTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -384,6 +418,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListTemplates",
 			Handler:    _NodeService_ListTemplates_Handler,
+		},
+		{
+			MethodName: "RemoveTemplate",
+			Handler:    _NodeService_RemoveTemplate_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

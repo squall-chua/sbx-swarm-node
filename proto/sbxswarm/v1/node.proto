@@ -35,6 +35,9 @@ service NodeService {
   rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse) {
     option (google.api.http) = {get: "/v1/templates"};
   }
+  rpc RemoveTemplate(RemoveTemplateRequest) returns (ListTemplatesResponse) {
+    option (google.api.http) = {post: "/v1/templates/remove" body: "*"};
+  }
 }
 
 message GetNodeInfoRequest {}
@@ -71,6 +74,11 @@ message ListNodesResponse { repeated NodeSummary nodes = 1; }
 
 message ListTemplatesRequest {}
 message ListTemplatesResponse { repeated TemplateInfo templates = 1; }
+// RemoveTemplateRequest deletes one template image from a node's image store.
+message RemoveTemplateRequest {
+  string node_id = 1; // empty = self
+  string ref = 2;     // repository:tag, as listed by ListTemplates
+}
 message TemplateInfo {
   string repository = 1;
   string tag = 2;

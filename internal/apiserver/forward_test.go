@@ -156,3 +156,13 @@ func TestForward_LocalPassthrough(t *testing.T) {
 	require.Equal(t, rec.ID, got.Id)
 	require.Equal(t, "nA", got.OwnerNode)
 }
+
+func TestForward_RemoveTemplateIsNodeControl(t *testing.T) {
+	require.True(t, isNodeControlMethod("/sbxswarm.v1.NodeService/RemoveTemplate"))
+	require.False(t, isNodeControlMethod("/sbxswarm.v1.NodeService/RevokeNode"))
+}
+
+func TestForward_SaveTemplateHasAReply(t *testing.T) {
+	require.NotNil(t, newReplyFor("/sbxswarm.v1.SandboxService/SaveTemplate"))
+	require.NotNil(t, newReplyFor("/sbxswarm.v1.NodeService/RemoveTemplate"))
+}

@@ -514,6 +514,59 @@ func (x *ListTemplatesResponse) GetTemplates() []*TemplateInfo {
 	return nil
 }
 
+// RemoveTemplateRequest deletes one template image from a node's image store.
+type RemoveTemplateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"` // empty = self
+	Ref           string                 `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`                     // repository:tag, as listed by ListTemplates
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveTemplateRequest) Reset() {
+	*x = RemoveTemplateRequest{}
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveTemplateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveTemplateRequest) ProtoMessage() {}
+
+func (x *RemoveTemplateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveTemplateRequest.ProtoReflect.Descriptor instead.
+func (*RemoveTemplateRequest) Descriptor() ([]byte, []int) {
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RemoveTemplateRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *RemoveTemplateRequest) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
 type TemplateInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repository    string                 `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
@@ -527,7 +580,7 @@ type TemplateInfo struct {
 
 func (x *TemplateInfo) Reset() {
 	*x = TemplateInfo{}
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[11]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +592,7 @@ func (x *TemplateInfo) String() string {
 func (*TemplateInfo) ProtoMessage() {}
 
 func (x *TemplateInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[11]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +605,7 @@ func (x *TemplateInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TemplateInfo.ProtoReflect.Descriptor instead.
 func (*TemplateInfo) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{11}
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TemplateInfo) GetRepository() string {
@@ -616,7 +669,7 @@ type NodeSummary struct {
 
 func (x *NodeSummary) Reset() {
 	*x = NodeSummary{}
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[12]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -628,7 +681,7 @@ func (x *NodeSummary) String() string {
 func (*NodeSummary) ProtoMessage() {}
 
 func (x *NodeSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_sbxswarm_v1_node_proto_msgTypes[12]
+	mi := &file_sbxswarm_v1_node_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -641,7 +694,7 @@ func (x *NodeSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeSummary.ProtoReflect.Descriptor instead.
 func (*NodeSummary) Descriptor() ([]byte, []int) {
-	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{12}
+	return file_sbxswarm_v1_node_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *NodeSummary) GetNodeId() string {
@@ -797,7 +850,10 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\x05nodes\x18\x01 \x03(\v2\x18.sbxswarm.v1.NodeSummaryR\x05nodes\"\x16\n" +
 	"\x14ListTemplatesRequest\"P\n" +
 	"\x15ListTemplatesResponse\x127\n" +
-	"\ttemplates\x18\x01 \x03(\v2\x19.sbxswarm.v1.TemplateInfoR\ttemplates\"\x85\x01\n" +
+	"\ttemplates\x18\x01 \x03(\v2\x19.sbxswarm.v1.TemplateInfoR\ttemplates\"B\n" +
+	"\x15RemoveTemplateRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x10\n" +
+	"\x03ref\x18\x02 \x01(\tR\x03ref\"\x85\x01\n" +
 	"\fTemplateInfo\x12\x1e\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\tR\n" +
@@ -835,7 +891,7 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"\x04kits\x18\x12 \x03(\tR\x04kits\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xff\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xfa\x06\n" +
 	"\vNodeService\x12W\n" +
 	"\vGetNodeInfo\x12\x1f.sbxswarm.v1.GetNodeInfoRequest\x1a\x15.sbxswarm.v1.NodeInfo\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/node\x12T\n" +
@@ -846,7 +902,8 @@ const file_sbxswarm_v1_node_proto_rawDesc = "" +
 	"RevokeNode\x12\x1e.sbxswarm.v1.RevokeNodeRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/node/revoke\x12b\n" +
 	"\vListRevoked\x12\x1f.sbxswarm.v1.ListRevokedRequest\x1a\x18.sbxswarm.v1.RevokedList\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/node/revoked\x12]\n" +
 	"\tListNodes\x12\x1d.sbxswarm.v1.ListNodesRequest\x1a\x1e.sbxswarm.v1.ListNodesResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12m\n" +
-	"\rListTemplates\x12!.sbxswarm.v1.ListTemplatesRequest\x1a\".sbxswarm.v1.ListTemplatesResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/templatesB\xb4\x01\n" +
+	"\rListTemplates\x12!.sbxswarm.v1.ListTemplatesRequest\x1a\".sbxswarm.v1.ListTemplatesResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/templates\x12y\n" +
+	"\x0eRemoveTemplate\x12\".sbxswarm.v1.RemoveTemplateRequest\x1a\".sbxswarm.v1.ListTemplatesResponse\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/templates/removeB\xb4\x01\n" +
 	"\x0fcom.sbxswarm.v1B\tNodeProtoP\x01ZIgithub.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1;sbxswarmv1\xa2\x02\x03SXX\xaa\x02\vSbxswarm.V1\xca\x02\vSbxswarm\\V1\xe2\x02\x17Sbxswarm\\V1\\GPBMetadata\xea\x02\fSbxswarm::V1b\x06proto3"
 
 var (
@@ -861,7 +918,7 @@ func file_sbxswarm_v1_node_proto_rawDescGZIP() []byte {
 	return file_sbxswarm_v1_node_proto_rawDescData
 }
 
-var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_sbxswarm_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_sbxswarm_v1_node_proto_goTypes = []any{
 	(*GetNodeInfoRequest)(nil),    // 0: sbxswarm.v1.GetNodeInfoRequest
 	(*CordonRequest)(nil),         // 1: sbxswarm.v1.CordonRequest
@@ -874,14 +931,15 @@ var file_sbxswarm_v1_node_proto_goTypes = []any{
 	(*ListNodesResponse)(nil),     // 8: sbxswarm.v1.ListNodesResponse
 	(*ListTemplatesRequest)(nil),  // 9: sbxswarm.v1.ListTemplatesRequest
 	(*ListTemplatesResponse)(nil), // 10: sbxswarm.v1.ListTemplatesResponse
-	(*TemplateInfo)(nil),          // 11: sbxswarm.v1.TemplateInfo
-	(*NodeSummary)(nil),           // 12: sbxswarm.v1.NodeSummary
-	nil,                           // 13: sbxswarm.v1.NodeSummary.LabelsEntry
+	(*RemoveTemplateRequest)(nil), // 11: sbxswarm.v1.RemoveTemplateRequest
+	(*TemplateInfo)(nil),          // 12: sbxswarm.v1.TemplateInfo
+	(*NodeSummary)(nil),           // 13: sbxswarm.v1.NodeSummary
+	nil,                           // 14: sbxswarm.v1.NodeSummary.LabelsEntry
 }
 var file_sbxswarm_v1_node_proto_depIdxs = []int32{
-	12, // 0: sbxswarm.v1.ListNodesResponse.nodes:type_name -> sbxswarm.v1.NodeSummary
-	11, // 1: sbxswarm.v1.ListTemplatesResponse.templates:type_name -> sbxswarm.v1.TemplateInfo
-	13, // 2: sbxswarm.v1.NodeSummary.labels:type_name -> sbxswarm.v1.NodeSummary.LabelsEntry
+	13, // 0: sbxswarm.v1.ListNodesResponse.nodes:type_name -> sbxswarm.v1.NodeSummary
+	12, // 1: sbxswarm.v1.ListTemplatesResponse.templates:type_name -> sbxswarm.v1.TemplateInfo
+	14, // 2: sbxswarm.v1.NodeSummary.labels:type_name -> sbxswarm.v1.NodeSummary.LabelsEntry
 	0,  // 3: sbxswarm.v1.NodeService.GetNodeInfo:input_type -> sbxswarm.v1.GetNodeInfoRequest
 	1,  // 4: sbxswarm.v1.NodeService.Cordon:input_type -> sbxswarm.v1.CordonRequest
 	1,  // 5: sbxswarm.v1.NodeService.Uncordon:input_type -> sbxswarm.v1.CordonRequest
@@ -890,16 +948,18 @@ var file_sbxswarm_v1_node_proto_depIdxs = []int32{
 	4,  // 8: sbxswarm.v1.NodeService.ListRevoked:input_type -> sbxswarm.v1.ListRevokedRequest
 	7,  // 9: sbxswarm.v1.NodeService.ListNodes:input_type -> sbxswarm.v1.ListNodesRequest
 	9,  // 10: sbxswarm.v1.NodeService.ListTemplates:input_type -> sbxswarm.v1.ListTemplatesRequest
-	6,  // 11: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
-	6,  // 12: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
-	6,  // 13: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
-	6,  // 14: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
-	5,  // 15: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
-	5,  // 16: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
-	8,  // 17: sbxswarm.v1.NodeService.ListNodes:output_type -> sbxswarm.v1.ListNodesResponse
-	10, // 18: sbxswarm.v1.NodeService.ListTemplates:output_type -> sbxswarm.v1.ListTemplatesResponse
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
+	11, // 11: sbxswarm.v1.NodeService.RemoveTemplate:input_type -> sbxswarm.v1.RemoveTemplateRequest
+	6,  // 12: sbxswarm.v1.NodeService.GetNodeInfo:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 13: sbxswarm.v1.NodeService.Cordon:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 14: sbxswarm.v1.NodeService.Uncordon:output_type -> sbxswarm.v1.NodeInfo
+	6,  // 15: sbxswarm.v1.NodeService.Drain:output_type -> sbxswarm.v1.NodeInfo
+	5,  // 16: sbxswarm.v1.NodeService.RevokeNode:output_type -> sbxswarm.v1.RevokedList
+	5,  // 17: sbxswarm.v1.NodeService.ListRevoked:output_type -> sbxswarm.v1.RevokedList
+	8,  // 18: sbxswarm.v1.NodeService.ListNodes:output_type -> sbxswarm.v1.ListNodesResponse
+	10, // 19: sbxswarm.v1.NodeService.ListTemplates:output_type -> sbxswarm.v1.ListTemplatesResponse
+	10, // 20: sbxswarm.v1.NodeService.RemoveTemplate:output_type -> sbxswarm.v1.ListTemplatesResponse
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -916,7 +976,7 @@ func file_sbxswarm_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbxswarm_v1_node_proto_rawDesc), len(file_sbxswarm_v1_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
