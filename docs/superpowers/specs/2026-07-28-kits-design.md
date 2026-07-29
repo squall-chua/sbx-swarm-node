@@ -146,8 +146,22 @@ Two related visibility questions, for the record:
 
 - A kit's `caps.network` is held by the daemon as policy, and `PolicyList` reads the daemon
   live, so it is visible.
-- Whether a kit's `credentials` appear in `SecretList` is **unverified**. The integration test
-  settles it rather than this design asserting it.
+- Whether a kit's `credentials` appear in `SecretList`: **no, at either scope.** A
+  `credentials` entry is a declared NEED ({service, description, required}) — it carries no
+  value/token/env, so there is nothing to materialise into the secret store. `required: true`
+  with no matching secret present does not block the create either. Confirmed against sbx
+  v0.37.0 by `TestSDKBackend_KitCredentialsNotInSecretList`
+  (`internal/sandbox/sdkbackend_integration_test.go`). Upstream is EXPERIMENTAL, so a future
+  daemon version could change this — that is what the test is for.
+
+### Kit schema notes (discovered by probing, undocumented upstream)
+
+Two kit fields matter to this design and their exact shape cost live probing to find:
+
+- `credentials` is a top-level key, a **list**. Each entry: `{service, description, required}`.
+- `publishedPorts` is a top-level key, a **list**. Each entry: `{name, container, protocol}`.
+  The port field is `container` — **not** `port` or `containerPort`; both of those are
+  rejected by the daemon's strict YAML decoder.
 
 ## Console
 
@@ -231,11 +245,18 @@ Integration, `//go:build integration` and env-gated, against a live daemon:
 - Create with a real mixin kit; assert `sb.Kits()` holds the absolute reference, and read the
   kit's environment variable from inside the sandbox — proof it was applied, not merely accepted.
 - Assert a `kind: sandbox` kit is refused and never advertised, against real daemon output.
+- `TestSDKBackend_KitCredentialsNotInSecretList`: a kit declaring `credentials` produces no
+  `SecretList` rows at either scope. Fixture: `testdata/credential-kit`.
+- `TestSDKBackend_KitPortsMatchLiveRead`: a kit declaring `publishedPorts` produces a
+  `Manager.Create`-snapshotted `Record.Ports` that agrees exactly with a live `Ports()` read.
+  Fixture: `testdata/ports-kit`; asserts on the container port only, never the ephemeral host
+  port the daemon assigns.
 
-Two things the live test does **not** settle, and the plan says so rather than implying coverage:
-the `credentials`-in-`SecretList` question needs a fixture declaring a real credential, and proving
-the ports agreement live needs a kit declaring `publishedPorts`, which would fight over host ports.
-The ports agreement is covered by unit tests instead.
+These two were originally left as open questions the live test did not settle — the first
+needed a fixture declaring a real credential, the second a kit declaring `publishedPorts`,
+which would fight over host ports. Both concerns turned out to be unfounded once probed live,
+and the two tests above now cover them permanently; see "Kit schema notes" above for the
+answers and the schema details the probing turned up.
 
 ## Two sibling items, declined
 
