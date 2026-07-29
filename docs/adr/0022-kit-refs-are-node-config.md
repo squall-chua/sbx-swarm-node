@@ -24,3 +24,10 @@ name is also only as trustworthy as the operator's config: node A's `my-tools` a
 accepted, and it is the exposure Workspace names already carry. Comparing references across nodes
 was considered and rejected: the same OCI tag can be re-pushed and two copies of a path can
 differ, so the check would prove a string matched, not that the content did.
+
+This ADR's concern is inbound: a client naming a host path in a request. A reference can still
+leave the node outbound, and that is not a violation of it. A kept-but-unloadable kit fails at
+create, and the CLI's own error text — which can contain the absolute path or the OCI reference —
+becomes `op.Error` (`internal/ops/ops.go`). `ListOperations` is classified as a read method
+(`internal/apiserver/authz.go`), so a `read-only` principal can see it. This is not new: the same
+class of disclosure already exists for git and workspace errors.

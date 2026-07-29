@@ -103,7 +103,13 @@ real-daemon feature; the fake exists for tests and daemonless nodes.
   set at boot, and carried by Join, so it needs none of the `UpdateNode` care that a
   runtime-mutable bulk field needs.
 
-An unknown kit name in a request is `InvalidArgument`, the same as an unknown workspace today.
+An unknown kit name never surfaces as `InvalidArgument` on the create call, because `CreateSandbox`
+is async: it returns an `Operation`, and a placement failure lands in `op.Error`. Usually the
+scheduler filters out every node that doesn't advertise the kit, so placement fails with
+`ErrNoEligibleNode` before any node is even tried. If a candidate's advertisement is stale — see
+"An unknown kit is a NACK, not a hard error" below — the failure instead surfaces as
+`ErrNoCapacity` once every candidate has NACKed. An unknown workspace has none of this: it is
+still rejected synchronously as `InvalidArgument`, and that comparison was never changed.
 
 ## Backend
 
@@ -191,6 +197,15 @@ edit needs a config reload, which the node does not have.
    place an operator finds out.
 3. **A kit name can mean different things on different nodes.** Accepted, documented, and the
    same exposure Workspace names already carry.
+4. **An unknown kit is a NACK, not a hard error.** Stale gossip is possible: a peer restarts with
+   a kit dropped from its config after the entry node's candidate snapshot already listed it as
+   an advertiser. `sandbox.ErrUnknownKit` is a sentinel, wrapped at both production sites —
+   `attemptFor`'s local branch in `internal/node/node.go` and `InternalService.Provision` in
+   `internal/apiserver/provision.go` — and both treat it as a NACK (`Accepted: false, Reason:
+   "unknown kit"`), so the coordinator moves on to the next candidate instead of aborting
+   placement. This follows the precedent M5 set converting the self-cordon and dial-failure
+   cases to NACKs. This was a deliberate later change: unknown-*workspace* behaviour was left a
+   hard error in the same pass, which is a separate call.
 
 ## Tests
 
