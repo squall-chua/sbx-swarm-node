@@ -139,10 +139,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			}
 		}
 		_ = mgr.Reconcile(nctx)
-		if clusterInstance != nil {
-			rc, rm, rd := mgr.Capacity().Snapshot()
-			clusterInstance.UpdateLocalLoad(rc, rm, rd, au.CPU, au.Mem)
-		}
+		refreshLocalState(nctx, clusterInstance, mgr, statsC)
 	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
 	if idle := cfg.IdleTimeoutDuration(); idle > 0 {
@@ -481,6 +478,25 @@ func (n *Node) Stop(ctx context.Context) error {
 		err = cerr
 	}
 	return err
+}
+
+// refreshLocalState re-advertises this node's load and templates to the
+// cluster. It is the clustered half of the node's 10s ticker, pulled out into
+// its own function so it can be unit-tested without booting a whole node. A
+// nil cluster (standalone node) is a no-op.
+func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox.Manager, statsC *obsd.StatsCollector) {
+	if cl == nil {
+		return
+	}
+	rc, rm, rd := mgr.Capacity().Snapshot()
+	au := statsC.ActualUtil()
+	cl.UpdateLocalLoad(rc, rm, rd, au.CPU, au.Mem)
+	// Re-advertise templates: they used to be a boot-time snapshot, so a
+	// template saved at runtime was invisible to peers until a restart.
+	// Polling also catches images added or removed outside our own RPCs.
+	if tmpls, err := mgr.Backend().ListTemplates(ctx); err == nil {
+		cl.UpdateLocalTemplates(tmpls)
+	}
 }
 
 // namesList returns a function that lists backend names of running sandboxes

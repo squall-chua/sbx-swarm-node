@@ -106,3 +106,14 @@ func TestUpdateLocalLoad_SetsUtilAndBumpsVersionOnce(t *testing.T) {
 	require.Equal(t, 0.6, ns.ActualMem)
 	require.Equal(t, before+1, ns.StateVersion, "one combined re-advertise")
 }
+
+func TestCluster_UpdateLocalTemplates(t *testing.T) {
+	_, c, _ := newTestDelegate("n1", nil)
+	before := c.LocalNodeState().StateVersion
+
+	c.UpdateLocalTemplates([]string{"myimage:v1"})
+
+	ls := c.LocalNodeState()
+	require.Equal(t, []string{"myimage:v1"}, ls.Templates)
+	require.Greater(t, ls.StateVersion, before, "peers only re-read a bumped state")
+}

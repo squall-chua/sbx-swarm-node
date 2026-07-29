@@ -210,6 +210,22 @@ func (c *Cluster) UpdateLocalLoad(cpu, memKB, diskGB, utilCPU, utilMem float64) 
 	}
 }
 
+// UpdateLocalTemplates re-advertises the templates this node holds. Templates
+// are a bulk gossip field, so they ride the push/pull rather than the meta;
+// the UpdateNode call below only prompts a gossip round sooner, matching the
+// same locking and re-advertise shape as UpdateLocalLoad and
+// UpdateLocalSandboxIDs. Called from the node's 10s ticker.
+func (c *Cluster) UpdateLocalTemplates(tmpls []string) {
+	c.mu.Lock()
+	c.local.Templates = tmpls
+	c.local.StateVersion++
+	ml := c.ml
+	c.mu.Unlock()
+	if ml != nil {
+		_ = ml.UpdateNode(5 * time.Second)
+	}
+}
+
 // --- delegate (push/pull + broadcasts) ---
 
 type delegate struct{ c *Cluster }

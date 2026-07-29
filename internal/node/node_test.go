@@ -20,7 +20,9 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
+	"github.com/squall-chua/sbx-swarm-node/internal/membership"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/obsd"
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
@@ -340,4 +342,65 @@ func TestGitWorkspaceNames(t *testing.T) {
 	}
 	require.Equal(t, []string{"repo", "repo2"}, gitWorkspaceNames(ws))
 	require.Empty(t, gitWorkspaceNames([]config.WorkspaceConfig{{Name: "plain"}}))
+}
+
+// newTestCluster builds a real, unjoined membership.Cluster bound to an
+// ephemeral loopback port, mirroring what node.New wires up when clustered,
+// so refreshLocalState has something real to advertise into.
+func newTestCluster(t *testing.T) *membership.Cluster {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.GossipAddr = "127.0.0.1:0"
+	cfg.ClusterSecret = "test-secret"
+	tbl := routing.NewTable("n1")
+	si, err := membership.LoadOrInit(filepath.Join(dir, "swarm.json"), nil)
+	require.NoError(t, err)
+	st, err := store.Open(filepath.Join(dir, "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	local := membership.NodeState{NodeID: "n1", ProtocolVersion: membership.ProtocolVersion}
+	cl, err := membership.NewCluster(cfg, local, tbl, si, filepath.Join(dir, "swarm.json"), st, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cl.Shutdown() })
+	return cl
+}
+
+// TestRefreshLocalState_NilClusterIsNoOp proves a standalone node (no
+// cluster wired up) skips the refresh without panicking.
+func TestRefreshLocalState_NilClusterIsNoOp(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(sandbox.NewFake(), nil, obsd.DefaultProvisionLimit(), 4)
+
+	require.NotPanics(t, func() {
+		refreshLocalState(context.Background(), nil, mgr, statsC)
+	})
+}
+
+// TestRefreshLocalState_AdvertisesLoadAndTemplates proves the extracted
+// clustered-ticker body forwards both load and the backend's current
+// templates into the cluster, bumping StateVersion so peers re-read.
+func TestRefreshLocalState_AdvertisesLoadAndTemplates(t *testing.T) {
+	cl := newTestCluster(t)
+	before := cl.LocalNodeState().StateVersion
+
+	backend := sandbox.NewFake()
+	backend.SetTemplates([]string{"myimage:v1"})
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+
+	refreshLocalState(context.Background(), cl, mgr, statsC)
+
+	ns := cl.LocalNodeState()
+	require.Equal(t, []string{"myimage:v1"}, ns.Templates)
+	require.Greater(t, ns.StateVersion, before, "peers only re-read a bumped state")
 }
