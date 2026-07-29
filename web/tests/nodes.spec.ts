@@ -25,7 +25,8 @@ describe('Nodes', () => {
 
   it('shows a badge per advertised kit', async () => {
     const w = await mountSuspended(Nodes)
-    expect(w.text()).toContain('tools')
-    expect(w.text()).toContain('extras')
+    const kits = w.find('[data-test="kits-n1"]')
+    expect(kits.text()).toContain('tools')
+    expect(kits.text()).toContain('extras')
   })
 })

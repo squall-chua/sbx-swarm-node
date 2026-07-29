@@ -12,7 +12,6 @@ interface NodeSummary {
   actual_mem: number
   templates: string[]
   workspaces: string[]
-  kits: string[]
   labels: Record<string, string>
   capabilities: string[]
 }

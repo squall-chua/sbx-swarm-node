@@ -288,7 +288,7 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
           </div>
 
           <!-- Kits -->
-          <div v-if="(node.kits ?? []).length" class="flex flex-col gap-1">
+          <div v-if="(node.kits ?? []).length" class="flex flex-col gap-1" :data-test="`kits-${node.node_id}`">
             <span class="text-xs text-muted uppercase tracking-wide font-medium">Kits</span>
             <div class="flex flex-wrap gap-1">
               <UBadge
