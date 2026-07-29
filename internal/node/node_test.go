@@ -525,3 +525,72 @@ func TestEdgeLog_WarnThenRecovered(t *testing.T) {
 	e.recovered(log, "check recovered") // already healthy: silent
 	require.Empty(t, buf.String())
 }
+
+// TestPollStats_EdgeTriggeredLogging proves pollStats shares edgeLog's
+// treatment: a first failure logs, a repeated one doesn't.
+func TestPollStats_EdgeTriggeredLogging(t *testing.T) {
+	callErr := errors.New("list failed")
+	failing := func(context.Context) ([]string, error) { return nil, callErr }
+	statsC := obsd.NewStatsCollector(sandbox.NewFake(), failing, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	pollStats(context.Background(), statsC, edge, log)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	pollStats(context.Background(), statsC, edge, log) // still failing: silent
+	require.Empty(t, buf.String())
+}
+
+// TestListSandboxRecords_EdgeTriggeredLogging proves listSandboxRecords shares
+// edgeLog's treatment: a first failure logs and reports ok=false, a repeated
+// one doesn't log again.
+func TestListSandboxRecords_EdgeTriggeredLogging(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
+	require.NoError(t, st.Close()) // a closed store makes List fail
+
+	edge := &edgeLog{}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	_, ok := listSandboxRecords(context.Background(), mgr, edge, log)
+	require.False(t, ok)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	_, ok = listSandboxRecords(context.Background(), mgr, edge, log)
+	require.False(t, ok)
+	require.Empty(t, buf.String(), "a repeated failure must not log again")
+}
+
+// TestReconcileSandboxes_EdgeTriggeredLogging proves reconcileSandboxes shares
+// edgeLog's treatment: a first failure logs, a repeated one doesn't, and
+// recovery logs once.
+func TestReconcileSandboxes_EdgeTriggeredLogging(t *testing.T) {
+	backend := sandbox.NewFake()
+	backend.ListErr = errors.New("daemon unreachable")
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+
+	edge := &edgeLog{}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	reconcileSandboxes(context.Background(), mgr, edge, log)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	reconcileSandboxes(context.Background(), mgr, edge, log) // still failing: silent
+	require.Empty(t, buf.String())
+
+	buf.Reset()
+	backend.ListErr = nil
+	reconcileSandboxes(context.Background(), mgr, edge, log)
+	require.Contains(t, buf.String(), "level=INFO")
+}

@@ -214,15 +214,15 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	// ticker's closure reads clusterInstance, and starting the goroutine only
 	// once that assignment is finished (in program order, before the `go`
 	// even runs) avoids a data race between the two.
-	templatesEdge := &edgeLog{}
+	edges := &tickerEdges{}
 	go runTicker(nctx, 10*time.Second, func() {
-		_ = statsC.PollOnce(nctx)
+		pollStats(nctx, statsC, &edges.stats, log)
 		// Surface the spec §9 actual_util reconstruction on /metrics.
 		au := statsC.ActualUtil()
 		metrics.SetActualUtil(au.CPU, au.Mem)
 		// Update the sandbox status gauge from manager records. Reset first so
 		// statuses absent from this snapshot don't retain stale values.
-		if recs, err := mgr.List(nctx); err == nil {
+		if recs, ok := listSandboxRecords(nctx, mgr, &edges.list, log); ok {
 			counts := map[string]int{}
 			for _, r := range recs {
 				counts[r.Status]++
@@ -237,8 +237,8 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 				metrics.SetSandboxes(status, n)
 			}
 		}
-		_ = mgr.Reconcile(nctx)
-		refreshLocalState(nctx, clusterInstance, mgr, statsC, log, templatesEdge)
+		reconcileSandboxes(nctx, mgr, &edges.reconcile, log)
+		refreshLocalState(nctx, clusterInstance, mgr, statsC, log, &edges.templates)
 	})
 
 	nodeSvc.SetTemplateLister(mgr.Backend().ListTemplateInfo)
@@ -497,9 +497,9 @@ func (n *Node) Stop(ctx context.Context) error {
 // not on every tick. Without this, a daemon outage logs the same line every
 // 10s -- about 8,600 identical lines a day, burying everything else in the log.
 //
-// It is created fresh per Node (see templatesEdge in New()), not as a
-// package-level variable -- a package-level flag would be shared by every
-// Node instance in the same test binary.
+// Each check gets its own edgeLog (see tickerEdges), created fresh per Node.
+// A package-level flag would be wrong: it would be shared by every Node
+// instance in the same test binary.
 type edgeLog struct {
 	failing bool
 }
@@ -520,6 +520,50 @@ func (e *edgeLog) recovered(log *slog.Logger, msg string) {
 		log.Info(msg)
 	}
 	e.failing = false
+}
+
+// tickerEdges holds one edgeLog per repeating check in the node's 10s ticker.
+// Each check gets its own state rather than one shared "daemon looks down"
+// bit: stats/list read the local store while reconcile/templates call the
+// backend daemon, so they fail for different reasons, and collapsing them
+// into one signal would hide which one is actually wrong.
+type tickerEdges struct {
+	stats     edgeLog
+	list      edgeLog
+	reconcile edgeLog
+	templates edgeLog
+}
+
+// pollStats polls sandbox stats, logging edge-triggered on failure.
+func pollStats(ctx context.Context, statsC *obsd.StatsCollector, edge *edgeLog, log *slog.Logger) {
+	if err := statsC.PollOnce(ctx); err != nil {
+		edge.warn(log, "poll sandbox stats failed", err)
+		return
+	}
+	edge.recovered(log, "poll sandbox stats recovered")
+}
+
+// listSandboxRecords lists this node's sandbox records for the ticker's status
+// gauge, logging edge-triggered on failure. ok is false when the list failed,
+// so the caller skips refreshing the gauge this tick (the previous values stand).
+func listSandboxRecords(ctx context.Context, mgr *sandbox.Manager, edge *edgeLog, log *slog.Logger) ([]*sandbox.Record, bool) {
+	recs, err := mgr.List(ctx)
+	if err != nil {
+		edge.warn(log, "list sandboxes failed", err)
+		return nil, false
+	}
+	edge.recovered(log, "list sandboxes recovered")
+	return recs, true
+}
+
+// reconcileSandboxes reconciles backend truth against stored records, logging
+// edge-triggered on failure (e.g. the daemon is down).
+func reconcileSandboxes(ctx context.Context, mgr *sandbox.Manager, edge *edgeLog, log *slog.Logger) {
+	if err := mgr.Reconcile(ctx); err != nil {
+		edge.warn(log, "reconcile failed", err)
+		return
+	}
+	edge.recovered(log, "reconcile recovered")
 }
 
 // refreshLocalState re-advertises this node's load and templates to the

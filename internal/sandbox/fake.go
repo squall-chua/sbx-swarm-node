@@ -52,6 +52,11 @@ type Fake struct {
 	// SaveTemplateErr, when set, makes SaveTemplate fail instead of recording
 	// the call -- standing in for a backend rejection (e.g. tag in use).
 	SaveTemplateErr error
+
+	// ListErr, when set, makes List fail instead of returning the recorded
+	// sandboxes -- standing in for a daemon that is down (Manager.Reconcile
+	// calls List first, before touching any record).
+	ListErr error
 }
 
 // NewFake returns an empty fake backend advertising the given kit names. It is
@@ -115,6 +120,9 @@ func (f *Fake) Get(_ context.Context, name string) (BackendSandbox, error) {
 func (f *Fake) List(_ context.Context) ([]BackendSandbox, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListErr != nil {
+		return nil, f.ListErr
+	}
 	out := make([]BackendSandbox, 0, len(f.sandboxes))
 	for _, sb := range f.sandboxes {
 		out = append(out, *sb)
