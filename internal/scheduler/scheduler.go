@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"sort"
+	"strings"
 )
 
 // ErrNoEligibleNode means no candidate passed every Placement constraint.
@@ -67,6 +68,13 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 			}
 			return si < sj // least-loaded / spread: lighter first
 		}
+		// A node that already holds the image beats one that would have to pull
+		// it. Only reached on an exact score tie, so real load still wins first.
+		if req.Template != "" {
+			if hi, hj := ok[i].Templates[req.Template], ok[j].Templates[req.Template]; hi != hj {
+				return hi
+			}
+		}
 		// Score tie: prefer the local (entry) node so an unconstrained create
 		// stays where it was requested when that node can take it; an unloaded
 		// node ties for best, a loaded one is beaten on score and offloads.
@@ -83,6 +91,23 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 	return out, nil
 }
 
+// pullable reports whether a template reference names a registry, so any node's
+// daemon can fetch it. This is Docker's own rule: the first path component is a
+// registry host when it contains a "." or a ":", or is exactly "localhost".
+//
+// "org/img:1" is deliberately NOT pullable here. Docker reads it as a Docker Hub
+// image, but it is ambiguous with a locally saved two-part tag, so the rule errs
+// toward refusing placement instead of assuming a pull (ADR-0024). Write
+// "docker.io/org/img:1" to make it travel.
+func pullable(ref string) bool {
+	i := strings.Index(ref, "/")
+	if i < 0 {
+		return false
+	}
+	host := ref[:i]
+	return host == "localhost" || strings.ContainsAny(host, ".:")
+}
+
 func fits(req Request, c Candidate) bool {
 	if c.Cordoned {
 		return false
@@ -92,7 +117,7 @@ func fits(req Request, c Candidate) bool {
 			return false
 		}
 	}
-	if req.Template != "" && !c.Templates[req.Template] {
+	if req.Template != "" && !pullable(req.Template) && !c.Templates[req.Template] {
 		return false
 	}
 	for _, k := range req.Kits {

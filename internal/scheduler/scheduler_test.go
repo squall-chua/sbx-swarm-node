@@ -137,6 +137,49 @@ func TestSchedule_NodeAffinityFiltersByLabel(t *testing.T) {
 	require.Equal(t, []string{"A"}, order) // eu excluded
 }
 
+func TestPullable(t *testing.T) {
+	cases := map[string]bool{
+		"ghcr.io/org/img:1":    true,  // registry host: has a dot
+		"localhost:5000/img:1": true,  // registry host: localhost
+		"registry:5000/img:1":  true,  // registry host: has a colon
+		"myimage:v1":           false, // bare tag: only where it was saved
+		"org/img:1":            false, // Docker Hub shorthand, deliberately bare
+		"alpine":               false,
+	}
+	for ref, want := range cases {
+		require.Equal(t, want, pullable(ref), ref)
+	}
+}
+
+func TestSchedule_RegistryTemplatePlacesOnANodeWithoutIt(t *testing.T) {
+	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+	// c.Templates is empty: this node holds nothing.
+	got, err := Schedule(Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r"}, []Candidate{c})
+	require.NoError(t, err)
+	require.Equal(t, []string{"n1"}, got)
+}
+
+func TestSchedule_BareTemplateStillFiltered(t *testing.T) {
+	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+	_, err := Schedule(Request{Template: "myimage:v1", CPU: 1, RequestID: "r"}, []Candidate{c})
+	require.ErrorIs(t, err, ErrNoEligibleNode)
+}
+
+func TestSchedule_HolderBeatsTheEntryNodeOnATie(t *testing.T) {
+	// Two identical, unloaded nodes. n2 holds the image; n1 is the entry node.
+	mk := func(id string, holds bool) Candidate {
+		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+		if holds {
+			c.Templates = map[string]bool{"ghcr.io/org/img:1": true}
+		}
+		return c
+	}
+	req := Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r", Local: "n1"}
+	got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
+	require.NoError(t, err)
+	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node")
+}
+
 func TestSchedule_KitFilter(t *testing.T) {
 	has := Candidate{NodeID: "a", LimitCPU: 4, LimitMem: 4_000_000, LimitDisk: 100,
 		Kits: map[string]bool{"tools": true}}
