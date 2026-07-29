@@ -31,6 +31,7 @@ type SDKBackend struct {
 	cl      *sdkclient.Client
 	resolve WorkspaceResolver
 	kits    map[string]string // admitted kit name -> reference
+	log     *slog.Logger
 }
 
 // NewSDKBackend connects to the local daemon (auto-starting it if needed) and
@@ -52,9 +53,22 @@ func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, kits map[stri
 			"daemon_version", h.Version, "daemon_api_version", h.APIVersion,
 			"sdk_client_version", sdkclient.ClientVersion, "sdk_tested_api_version", sdkclient.TestedAPIVersion)
 	}
-	b := &SDKBackend{cl: cl, resolve: resolve}
+	// log is set here, not after: admitKits runs before the return, and a later
+	// warning path would panic on a nil logger (see logger() below).
+	b := &SDKBackend{cl: cl, resolve: resolve, log: log}
 	b.kits = admitKits(ctx, b.inspectKit, kits, log)
 	return b, nil
+}
+
+// logger never returns nil. Only NewSDKBackend sets log, so a construction path
+// that adds a field and forgets the assignment would otherwise panic on the first
+// warning — and the warnings here sit on rare paths, so it would ship unnoticed.
+// A missing logger costs a log line, not the process.
+func (b *SDKBackend) logger() *slog.Logger {
+	if b.log == nil {
+		return slog.Default()
+	}
+	return b.log
 }
 
 // inspectKit loads a kit reference and reduces it to the facts admit() checks.
@@ -372,12 +386,18 @@ func (b *SDKBackend) UnpublishPort(ctx context.Context, name string, containerPo
 	}
 	// The daemon requires a HOST_PORT:SANDBOX_PORT spec for unpublish, so resolve
 	// the host port(s) currently mapped to this container port and unpublish each.
-	ports, err := sb.Ports(ctx)
+	//
+	// Read them through b.Ports, NOT the raw sb.Ports: the daemon lists one row per
+	// host IP (127.0.0.1 and ::1), and one unpublish removes every IP row for that
+	// mapping. Iterating the raw rows issues the same spec twice and the second call
+	// fails with "no published port matches". b.Ports applies dedupePorts, so each
+	// host port appears once.
+	ports, err := b.Ports(ctx, name)
 	if err != nil {
 		return err
 	}
 	for _, p := range ports {
-		if p.SandboxPort == containerPort {
+		if p.ContainerPort == containerPort {
 			if err := sb.UnpublishPort(ctx, strconv.Itoa(p.HostPort)+":"+strconv.Itoa(containerPort)); err != nil {
 				return err
 			}
@@ -600,10 +620,38 @@ func (b *SDKBackend) PolicyProfiles(ctx context.Context) ([]string, error) {
 // Values are NEVER stored or returned (spec §11).
 
 func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret) error {
+	// The daemon rejects a second write to the same (scope, env) unless the caller
+	// re-supplies the existing placeholder, so an update needs a read first. Reusing
+	// it is also what makes rotation safe: the sandbox env value stays put and only
+	// the real secret behind the proxy changes.
+	//
+	// ponytail: on a read failure, fall through and let SetCustom report the real
+	// error. That is today's behaviour, so no new failure mode. The failure is
+	// logged below so a table-format drift (which has happened before) doesn't
+	// fail silently.
+	if cur, err := b.SecretList(ctx, scope); err == nil {
+		for _, c := range cur.Custom {
+			if c.Env == s.Env {
+				if c.Host != s.Host {
+					// A create-or-replace under a different host destroys the old
+					// host's credential: values are write-only, so it cannot be
+					// recovered. None of these fields is a secret value.
+					b.logger().Warn("secret set: replacing host on existing entry",
+						"env", s.Env, "old_host", c.Host, "new_host", s.Host, "placeholder", c.Placeholder)
+				}
+				s.Placeholder = c.Placeholder
+				break
+			}
+		}
+	} else {
+		b.logger().Warn("secret set: placeholder lookup skipped, update may fail",
+			"scope", scope, "err", err)
+	}
 	err := sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
-		Host:  s.Host,
-		Env:   s.Env,
-		Value: s.Value, // passed to the CLI; never stored or logged here
+		Host:        s.Host,
+		Env:         s.Env,
+		Value:       s.Value, // passed to the CLI; never stored or logged here
+		Placeholder: s.Placeholder,
 	})
 	// The underlying sbx CLI echoes the full "--value <key>" argv in its error;
 	// scrub the raw value so it never reaches logs or the caller.

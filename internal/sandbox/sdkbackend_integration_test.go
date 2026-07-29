@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	sdksecret "github.com/squall-chua/sbx-go-sdk/secret"
 	"github.com/stretchr/testify/require"
 
 	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
@@ -280,7 +281,7 @@ func TestSDKBackend_SecretRoundTrip(t *testing.T) {
 	sb := mkSandbox(t, b, CreateSpec{Name: "it-secret", CPUs: 1, MemoryBytes: 1 << 30, Workspaces: ws})
 	scope := sb.Name
 
-	require.NoError(t, b.SecretSet(ctx, scope, CustomSecret{Host: "api.example.com", Env: "API_TOKEN", Value: "s3cr3t"}))
+	require.NoError(t, b.SecretSet(ctx, scope, CustomSecret{Host: "api.example.com", Env: "API_TOKEN", Value: "AAAAAAAA-first-0001"}))
 
 	got, err := b.SecretList(ctx, scope)
 	require.NoError(t, err)
@@ -293,6 +294,60 @@ func TestSDKBackend_SecretRoundTrip(t *testing.T) {
 	require.NotNil(t, found, "secret not listed after set")
 	require.Equal(t, "API_TOKEN", found.Env)
 	require.Empty(t, found.Value, "secret value must be masked on read")
+
+	// Rotation: a second write to the same (scope, env) must land. The daemon
+	// rejects it unless the existing placeholder is re-supplied, which SecretSet
+	// looks up for us. The placeholder must NOT change — it is the value the
+	// sandbox already holds in its env var, so changing it would break the
+	// sandbox rather than rotate the secret.
+	firstPlaceholder := found.Placeholder
+	require.NotEmpty(t, firstPlaceholder, "daemon did not report a placeholder")
+
+	// The daemon's masked value column reveals a prefix (and sometimes a suffix)
+	// of the real value, so it changes when the value really changes. Read it
+	// through the SDK's own List directly: SDKBackend.SecretList deliberately
+	// drops ValueMasked (spec §11 — the node API never returns even a masked
+	// value), so this is the only way to observe a real rotation from this test.
+	beforeList, err := sdksecret.List(ctx, b.cl, scope)
+	require.NoError(t, err)
+	var beforeMasked string
+	for _, c := range beforeList.Custom {
+		if c.Env == "API_TOKEN" {
+			beforeMasked = c.ValueMasked
+		}
+	}
+	require.NotEmpty(t, beforeMasked, "masked value not found before rotation")
+
+	require.NoError(t,
+		b.SecretSet(ctx, scope, CustomSecret{Host: "api.example.com", Env: "API_TOKEN", Value: "ZZZZZZZZ-second-9999"}),
+		"second write to the same env must succeed")
+
+	after, err := b.SecretList(ctx, scope)
+	require.NoError(t, err)
+	var rotated *CustomSecret
+	for i := range after.Custom {
+		if after.Custom[i].Env == "API_TOKEN" {
+			rotated = &after.Custom[i]
+		}
+	}
+	require.NotNil(t, rotated, "secret not listed after rotation")
+	require.Equal(t, firstPlaceholder, rotated.Placeholder, "rotation must reuse the placeholder")
+	require.Empty(t, rotated.Value, "secret value must stay masked after rotation")
+
+	// Exit 0 alone cannot tell a real value replacement from a silent cancel
+	// (the SDK warns set-custom may hit exactly that shape). The masked value
+	// changing is the only observable proof the write actually replaced the
+	// value rather than being a no-op.
+	afterList, err := sdksecret.List(ctx, b.cl, scope)
+	require.NoError(t, err)
+	var afterMasked string
+	for _, c := range afterList.Custom {
+		if c.Env == "API_TOKEN" {
+			afterMasked = c.ValueMasked
+		}
+	}
+	require.NotEmpty(t, afterMasked, "masked value not found after rotation")
+	require.NotEqual(t, beforeMasked, afterMasked, "masked value must change after a real rotation")
 
 	// A global list must NOT carry this sandbox's secret. Bare `sbx secret ls`
 	// lists every scope, so SecretList filters rows to the requested scope.
