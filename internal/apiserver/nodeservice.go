@@ -169,6 +169,9 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 	}
 	infos, err := s.templateLister(ctx)
 	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			return nil, st.Err()
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	for _, t := range infos {
