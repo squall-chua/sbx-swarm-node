@@ -378,7 +378,7 @@ func TestRefreshLocalState_NilClusterIsNoOp(t *testing.T) {
 	statsC := obsd.NewStatsCollector(sandbox.NewFake(), nil, obsd.DefaultProvisionLimit(), 4)
 
 	require.NotPanics(t, func() {
-		refreshLocalState(context.Background(), nil, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		refreshLocalState(context.Background(), nil, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)), &edgeLog{})
 	})
 }
 
@@ -398,7 +398,7 @@ func TestRefreshLocalState_AdvertisesLoadAndTemplates(t *testing.T) {
 	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
 	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
 
-	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)), &edgeLog{})
 
 	ns := cl.LocalNodeState()
 	require.Equal(t, []string{"myimage:v1"}, ns.Templates)
@@ -419,9 +419,10 @@ func TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped(t *testing.T) {
 	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
 	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
 	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
 
 	// First tick succeeds and advertises the template.
-	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)), edge)
 	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates)
 
 	// The daemon goes down: ListTemplates starts failing.
@@ -431,9 +432,96 @@ func TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped(t *testing.T) {
 	// "info", so this proves the failure is visible without an operator
 	// having to turn on debug logging.
 	log := slog.New(slog.NewTextHandler(&buf, nil))
-	refreshLocalState(context.Background(), cl, mgr, statsC, log)
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
 
 	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates, "a failed poll must not blank the advertised list")
 	require.Contains(t, buf.String(), "daemon unreachable", "the failure must be logged, not silently swallowed")
 	require.Contains(t, buf.String(), "level=WARN", "must log at a level visible by default, not buried at debug")
+}
+
+// TestRefreshLocalState_ListTemplatesRepeatedFailureLogsOnce proves a second
+// consecutive failed tick does not log again -- otherwise a daemon outage
+// logs the same line every 10s (about 8,600 times a day).
+func TestRefreshLocalState_ListTemplatesRepeatedFailureLogsOnce(t *testing.T) {
+	cl := newTestCluster(t)
+	backend := sandbox.NewFake()
+	backend.ListTemplatesErr = errors.New("daemon unreachable")
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge) // first failure: logs
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge) // second consecutive failure: silent
+	require.Empty(t, buf.String(), "a repeated failure must not log again")
+}
+
+// TestRefreshLocalState_ListTemplatesRecoveryLogsOnce proves a tick that
+// succeeds after a failing streak logs a single Info recovery line, that a
+// tick that was never failing logs nothing on success, and that a tick that
+// is already healthy again stays silent.
+func TestRefreshLocalState_ListTemplatesRecoveryLogsOnce(t *testing.T) {
+	cl := newTestCluster(t)
+	backend := sandbox.NewFake()
+	backend.SetTemplates([]string{"myimage:v1"})
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	// A tick that succeeds while never failing logs nothing.
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+	require.Empty(t, buf.String(), "a never-failing tick must not log a recovery")
+
+	// The daemon goes down, then comes back.
+	backend.ListTemplatesErr = errors.New("daemon unreachable")
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+	buf.Reset()
+	backend.ListTemplatesErr = nil
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+	require.Contains(t, buf.String(), "level=INFO", "recovery must log once, visible by default")
+
+	buf.Reset()
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge) // still healthy: silent
+	require.Empty(t, buf.String(), "a tick that was already healthy must not log again")
+}
+
+// TestEdgeLog_WarnThenRecovered proves the shared edge-triggered mechanism
+// itself: a repeated failure logs nothing further, and recovery logs once.
+func TestEdgeLog_WarnThenRecovered(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	e := &edgeLog{}
+
+	e.warn(log, "check failed", errors.New("boom"))
+	require.Contains(t, buf.String(), "level=WARN")
+	require.Contains(t, buf.String(), "check failed")
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("boom")) // repeated failure: silent
+	require.Empty(t, buf.String())
+
+	buf.Reset()
+	e.recovered(log, "check recovered")
+	require.Contains(t, buf.String(), "level=INFO")
+	require.Contains(t, buf.String(), "check recovered")
+
+	buf.Reset()
+	e.recovered(log, "check recovered") // already healthy: silent
+	require.Empty(t, buf.String())
 }

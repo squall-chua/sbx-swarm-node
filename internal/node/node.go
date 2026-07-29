@@ -214,6 +214,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	// ticker's closure reads clusterInstance, and starting the goroutine only
 	// once that assignment is finished (in program order, before the `go`
 	// even runs) avoids a data race between the two.
+	templatesEdge := &edgeLog{}
 	go runTicker(nctx, 10*time.Second, func() {
 		_ = statsC.PollOnce(nctx)
 		// Surface the spec §9 actual_util reconstruction on /metrics.
@@ -237,7 +238,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			}
 		}
 		_ = mgr.Reconcile(nctx)
-		refreshLocalState(nctx, clusterInstance, mgr, statsC, log)
+		refreshLocalState(nctx, clusterInstance, mgr, statsC, log, templatesEdge)
 	})
 
 	nodeSvc.SetTemplateLister(mgr.Backend().ListTemplateInfo)
@@ -491,11 +492,41 @@ func (n *Node) Stop(ctx context.Context) error {
 	return err
 }
 
+// edgeLog tracks whether a repeating ticker check is currently failing, so
+// warn/recovered only log on the transition (into failure, then back out),
+// not on every tick. Without this, a daemon outage logs the same line every
+// 10s -- about 8,600 identical lines a day, burying everything else in the log.
+//
+// It is created fresh per Node (see templatesEdge in New()), not as a
+// package-level variable -- a package-level flag would be shared by every
+// Node instance in the same test binary.
+type edgeLog struct {
+	failing bool
+}
+
+// warn logs at Warn on the transition into failure. A repeated failure logs
+// nothing further.
+func (e *edgeLog) warn(log *slog.Logger, msg string, err error) {
+	if !e.failing {
+		log.Warn(msg, "err", err)
+	}
+	e.failing = true
+}
+
+// recovered logs once at Info when a previously failing check succeeds again.
+// A check that was never failing logs nothing.
+func (e *edgeLog) recovered(log *slog.Logger, msg string) {
+	if e.failing {
+		log.Info(msg)
+	}
+	e.failing = false
+}
+
 // refreshLocalState re-advertises this node's load and templates to the
 // cluster. It is the clustered half of the node's 10s ticker, pulled out into
 // its own function so it can be unit-tested without booting a whole node. A
 // nil cluster (standalone node) is a no-op.
-func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox.Manager, statsC *obsd.StatsCollector, log *slog.Logger) {
+func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox.Manager, statsC *obsd.StatsCollector, log *slog.Logger, edge *edgeLog) {
 	if cl == nil {
 		return
 	}
@@ -507,13 +538,14 @@ func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox
 	// Polling also catches images added or removed outside our own RPCs.
 	if tmpls, err := mgr.Backend().ListTemplates(ctx); err == nil {
 		cl.UpdateLocalTemplates(tmpls)
+		edge.recovered(log, "list templates recovered")
 	} else {
 		// Keep the last known list — one failed tick shouldn't blank a node's
-		// advertised templates. Warn, matching the other skip-and-log sites in
-		// this file: it repeats every 10s for as long as the daemon stays
-		// down, and that repetition is the point -- an accurate signal of an
-		// ongoing problem, not something to bury at debug.
-		log.Warn("list templates failed, keeping previously advertised list", "err", err)
+		// advertised templates. Edge-triggered: Warn once on the way down and
+		// Info once on the way back up, so a daemon outage that lasts hours
+		// doesn't spam once per tick -- the first line is the signal, the rest
+		// is just noise burying everything else in the log.
+		edge.warn(log, "list templates failed, keeping previously advertised list", err)
 	}
 }
 
