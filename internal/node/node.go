@@ -856,8 +856,15 @@ func nameSet(ss []string) map[string]bool {
 // that's local-only, not gossiped). NodeName now rides the bulk gossip tier
 // (see ADR-0005), so a peer's name shows instead of rendering blank.
 func rowFromState(ns membership.NodeState) apiserver.NodeRow {
+	// A pre-upgrade peer gossips NodeState without NodeName populated. Fall
+	// back to NodeID here, once, so every render site gets a name instead of
+	// a blank chip.
+	name := ns.NodeName
+	if name == "" {
+		name = ns.NodeID
+	}
 	return apiserver.NodeRow{
-		NodeID: ns.NodeID, NodeName: ns.NodeName, Cordoned: ns.Cordoned, Labels: ns.Labels,
+		NodeID: ns.NodeID, NodeName: name, Cordoned: ns.Cordoned, Labels: ns.Labels,
 		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, GitWorkspaces: ns.GitWorkspaces, Templates: ns.Templates,
 		Kits:     ns.Kits,
 		LimitCPU: ns.LimitCPU, LimitMemKB: ns.LimitMemKB, LimitDiskGB: ns.LimitDiskGB,

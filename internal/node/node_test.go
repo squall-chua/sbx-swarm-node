@@ -491,6 +491,15 @@ func TestRowFromState_CarriesNodeName(t *testing.T) {
 	require.Equal(t, "worker-2", row.NodeName)
 }
 
+// TestRowFromState_FallsBackToNodeIDWhenNameIsBlank proves a pre-upgrade peer
+// that gossips no NodeName still gets a non-blank name, so its node card
+// doesn't render an empty chip.
+func TestRowFromState_FallsBackToNodeIDWhenNameIsBlank(t *testing.T) {
+	ns := membership.NodeState{NodeID: "n2"}
+	row := rowFromState(ns)
+	require.Equal(t, "n2", row.NodeName)
+}
+
 func TestGitWorkspaceNames(t *testing.T) {
 	ws := []config.WorkspaceConfig{
 		{Name: "repo", Git: &config.GitConfig{}},
