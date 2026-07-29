@@ -180,6 +180,24 @@ func TestSchedule_HolderBeatsTheEntryNodeOnATie(t *testing.T) {
 	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node")
 }
 
+// Two identical unloaded nodes. n1 advertises the daemon's tagged form of an
+// untagged request, so only the canonical lookup finds it.
+func TestSchedule_TieBreakMatchesTheCanonicalName(t *testing.T) {
+	mk := func(id string, tmpl map[string]bool) Candidate {
+		return Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100, Templates: tmpl}
+	}
+	n1 := mk("n1", map[string]bool{"ghcr.io/org/img:latest": true})
+	n2 := mk("n2", nil)
+
+	// RequestID chosen so the hash tie-break (what decides if holds falls back
+	// to a raw map read) would rank n2 first, the opposite of the expected
+	// n1 — so this test fails if holds stops using the canonical name.
+	req := Request{Template: "ghcr.io/org/img", CPU: 1, RequestID: "req-tiebreak"}
+	got, err := Schedule(req, []Candidate{n1, n2})
+	require.NoError(t, err)
+	require.Equal(t, "n1", got[0], "only the canonical lookup finds n1's tagged form")
+}
+
 func TestCanonical(t *testing.T) {
 	cases := map[string]string{
 		"myimage:v1":           "docker.io/library/myimage:v1",     // bare tag, as the daemon reports it

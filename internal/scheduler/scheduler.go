@@ -70,10 +70,11 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 		}
 		// A node that already holds the image beats one that would have to pull
 		// it. Only reached on an exact score tie, so real load still wins first.
-		// holds is used here only for consistency with fits; it cannot actually
-		// differ from a plain map read at this point, because every candidate
-		// that survived fits already holds the reference (under either spelling)
-		// or the reference was pullable and the check never applied.
+		// For a bare tag this agrees with a plain map read, because fits already
+		// excluded every candidate that does not hold it. For a pullable
+		// reference it can differ: fits let every candidate through, so holds is
+		// what actually finds the node whose daemon reports the tagged form and
+		// avoids a pull.
 		if req.Template != "" {
 			if hi, hj := holds(ok[i], req.Template), holds(ok[j], req.Template); hi != hj {
 				return hi
