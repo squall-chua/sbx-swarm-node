@@ -287,11 +287,15 @@ func (b *Fake) ListTemplateInfo(_ context.Context) ([]TemplateInfo, error) {
 // only when that colon falls in the last path segment. This keeps a registry
 // host's port (e.g. "localhost:5000/img") from being mistaken for a tag,
 // while still splitting "localhost:5000/img:1" as repository "localhost:5000/img"
-// and tag "1".
+// and tag "1". A digest reference (e.g. "myimage@sha256:abc") has no tag, so
+// an "@" in the last path segment is left alone.
 func splitRepoTag(ref string) (repo, tag string) {
 	prefix, last := "", ref
 	if i := strings.LastIndexByte(ref, '/'); i >= 0 {
 		prefix, last = ref[:i+1], ref[i+1:]
+	}
+	if strings.Contains(last, "@") {
+		return ref, ""
 	}
 	if i := strings.LastIndexByte(last, ':'); i >= 0 {
 		return prefix + last[:i], last[i+1:]

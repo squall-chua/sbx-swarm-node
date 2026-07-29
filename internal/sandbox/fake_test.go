@@ -36,6 +36,15 @@ func TestFake_ListTemplateInfoSplitsPortedHostFromTag(t *testing.T) {
 	require.Contains(t, got, TemplateInfo{Repository: "localhost:5000/img", Tag: "1"})
 }
 
+func TestFake_ListTemplateInfoDigestHasNoTag(t *testing.T) {
+	f := NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage@sha256:abc"))
+
+	got, err := f.ListTemplateInfo(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, got, TemplateInfo{Repository: "myimage@sha256:abc", Tag: ""})
+}
+
 func TestFake_SaveAndRemoveTemplate(t *testing.T) {
 	f := NewFake()
 	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
