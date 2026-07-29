@@ -35,6 +35,10 @@ type Fake struct {
 	// standing in for ports a real kit publishes by itself.
 	KitPorts []PublishedPort
 
+	// PortsErr, ListTemplatesErr and SaveTemplateErr are read under f.mu, so
+	// set them before the fake is used and never while it might already be in
+	// use (e.g. by a background poller) -- there is no lock on the write side.
+
 	// PortsErr, when set, makes Ports fail instead of returning the recorded
 	// list -- standing in for a transient daemon read failure.
 	PortsErr error
