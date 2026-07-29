@@ -45,6 +45,10 @@ pick the best host for it, and forward the work there.
   filters hosts by hard constraints (workspaces, template, kits, capabilities, node labels,
   free capacity, not cordoned) and ranks the survivors by strategy (least-loaded,
   bin-pack, spread, least-actual-load). The chosen node creates the sandbox locally.
+  To use one template across the swarm, push it to a registry and request it by its
+  full reference, e.g. `ghcr.io/org/img:1`; a bare tag like `myimage:v1` only places
+  on the node that holds it. Sharp edge: `org/img:1` is treated as a bare tag, so
+  write `docker.io/org/img:1` if you mean Docker Hub.
 - **Wraps the real `sbx` daemon** (via [`sbx-go-sdk`](https://github.com/squall-chua/sbx-go-sdk))
   for `backend: sdk`, or a built-in fake for tests / daemonless nodes.
 - **Git-backed workspaces.** Provision clones a node-owned bare repo into the sandbox;

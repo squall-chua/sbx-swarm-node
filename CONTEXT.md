@@ -179,9 +179,12 @@ is exempt and never auto-stopped.
 _Avoid_: reap (as delete), kill, evict
 
 **Template**:
-A reusable sandbox base image saved locally on a node (SDK `SaveTemplate`). A node advertises the
-templates it holds; provisioning that requests a template is filtered to nodes that have it. The swarm
-does not move templates between nodes (v1).
+A reusable sandbox base image, saved on a Node (SDK `SaveTemplate`) or pulled from a registry. A Node
+advertises the templates it holds, and keeps re-advertising while it runs, so peers see a save within
+about half a minute. A registry-hosted reference (e.g. `ghcr.io/org/img:1`) is usable on every Node and
+is the supported way to share one; a bare tag (e.g. `myimage:v1`) exists only on the Node that saved it.
+Holding the image is a tie-break at placement, not a requirement, for a reference that travels — the
+swarm never moves image bytes between Nodes (ADR-0024).
 _Avoid_: image (bare), base
 
 **Kit**:

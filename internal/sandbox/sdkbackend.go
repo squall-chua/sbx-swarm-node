@@ -728,8 +728,12 @@ func (b *SDKBackend) SecretRemoveStored(ctx context.Context, scope, name string)
 }
 
 // ListTemplates returns the template refs the daemon holds (repository:tag).
-// ponytail: ref format assumed repository:tag to match WithTemplate; confirm
-// against a live daemon (integration-only) before relying on exact matching.
+//
+// Confirmed against a live daemon (sbx v0.37.0, TestSDKBackend_SaveRemoveTemplate):
+// the format is repository:tag, but the daemon canonicalizes an unqualified
+// repository the way Docker does — a template saved with a bare tag like
+// "name:tag" is reported back as "docker.io/library/name:tag", not the bare
+// tag it was saved with. RemoveTemplate still accepts the original bare tag.
 func (b *SDKBackend) ListTemplates(ctx context.Context) ([]string, error) {
 	imgs, err := sdktemplate.List(ctx, b.cl)
 	if err != nil {
