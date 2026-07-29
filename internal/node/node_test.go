@@ -683,6 +683,58 @@ func TestEdgeLog_WarnThenRecovered(t *testing.T) {
 	require.Empty(t, buf.String())
 }
 
+// TestEdgeLog_ReWarnsOnAnInterval proves an ongoing failure isn't silent
+// forever: it re-logs every reWarnEvery-th consecutive tick, so a multi-hour
+// outage still leaves a periodic trail an operator can find after onset (and
+// survives log rotation), instead of exactly one line at the start.
+func TestEdgeLog_ReWarnsOnAnInterval(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	e := &edgeLog{}
+
+	e.warn(log, "check failed", errors.New("boom")) // 1st: logs (transition)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	for i := 2; i < reWarnEvery; i++ {
+		buf.Reset()
+		e.warn(log, "check failed", errors.New("boom"))
+		require.Emptyf(t, buf.String(), "tick %d must be silent", i)
+	}
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("boom")) // Nth: re-logs
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	e.recovered(log, "check recovered")
+	require.Contains(t, buf.String(), "level=INFO")
+}
+
+// TestEdgeLog_ReLogsWhenTheErrorChanges proves a failure mode that changes
+// mid-outage (e.g. connection refused, then permission denied) is still
+// visible, not silenced by the interval in TestEdgeLog_ReWarnsOnAnInterval.
+func TestEdgeLog_ReLogsWhenTheErrorChanges(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	e := &edgeLog{}
+
+	e.warn(log, "check failed", errors.New("connection refused"))
+	require.Contains(t, buf.String(), "connection refused")
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("connection refused")) // same error: silent
+	require.Empty(t, buf.String())
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("permission denied")) // changed error: logs
+	require.Contains(t, buf.String(), "level=WARN")
+	require.Contains(t, buf.String(), "permission denied")
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("permission denied")) // unchanged again: silent
+	require.Empty(t, buf.String())
+}
+
 // TestPollStats_EdgeTriggeredLogging proves pollStats shares edgeLog's
 // treatment: a first failure logs, a repeated one doesn't.
 func TestPollStats_EdgeTriggeredLogging(t *testing.T) {

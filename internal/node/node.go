@@ -525,13 +525,27 @@ func (n *Node) Stop(ctx context.Context) error {
 // instance in the same test binary.
 type edgeLog struct {
 	failing bool
+	streak  int    // consecutive failures since the last log line
+	lastErr string // text of the error last logged, so a changed error re-logs
 }
 
-// warn logs at Warn on the transition into failure. A repeated failure logs
-// nothing further.
+// reWarnEvery re-logs an ongoing failure every N consecutive ticks, so a
+// multi-hour outage still leaves a trail instead of exactly one line at onset.
+// At the ticker's 10s period, 30 ticks is 5 minutes.
+const reWarnEvery = 30
+
+// warn logs at Warn on the transition into failure, then stays silent for a
+// repeated failure with the same error -- except every reWarnEvery-th
+// consecutive tick (so an ongoing outage keeps a periodic trail) and whenever
+// the error text changes (so a failure mode that shifts, e.g. "connection
+// refused" to "permission denied", is still visible).
 func (e *edgeLog) warn(log *slog.Logger, msg string, err error) {
-	if !e.failing {
+	e.streak++
+	errText := err.Error()
+	changed := errText != e.lastErr
+	if !e.failing || changed || e.streak%reWarnEvery == 0 {
 		log.Warn(msg, "err", err)
+		e.lastErr = errText
 	}
 	e.failing = true
 }
@@ -543,13 +557,16 @@ func (e *edgeLog) recovered(log *slog.Logger, msg string) {
 		log.Info(msg)
 	}
 	e.failing = false
+	e.streak = 0
+	e.lastErr = ""
 }
 
 // tickerEdges holds one edgeLog per repeating check in the node's 10s ticker.
 // Each check gets its own state rather than one shared "daemon looks down"
-// bit: stats/list read the local store while reconcile/templates call the
-// backend daemon, so they fail for different reasons, and collapsing them
-// into one signal would hide which one is actually wrong.
+// bit, but they don't all fail for unrelated reasons: stats and list both
+// read through mgr.List, which reads the local store, so a store read
+// failure trips both of them at once. reconcile and templates call the
+// backend daemon directly, a different failure mode from a bad store read.
 type tickerEdges struct {
 	stats     edgeLog
 	list      edgeLog
