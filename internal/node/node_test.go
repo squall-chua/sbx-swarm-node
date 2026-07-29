@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/scheduler"
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -105,6 +107,153 @@ func TestNode_BootServeStop(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
+}
+
+// TestNode_BootRestoresCordon proves a stored cordon is restored on both
+// halves: the local flag, which is what enforcement reads, and the cluster's
+// gossiped state, which is what peers read.
+func TestNode_BootRestoresCordon(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-seed the flags as if this node had been cordoned before a restart.
+	st, err := store.Open(filepath.Join(dir, "node.db"))
+	require.NoError(t, err)
+	saveNodeFlags(st, obs.NewLogger("error", io.Discard), nodeFlags{Cordoned: true})
+	require.NoError(t, st.Close())
+
+	cfg := config.Default()
+	cfg.DataDir = dir
+	cfg.ListenAddr = "127.0.0.1:0"
+	// A cluster is no longer needed to observe a cordon (Task 3), but keep one
+	// here so the mirror-to-cluster half is covered too.
+	cfg.GossipAddr = "127.0.0.1:0"
+	cfg.ClusterSecret = "test-secret"
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	require.True(t, n.nodeSvc.Cordoned(), "a stored cordon must be restored at boot")
+	require.True(t, n.cluster.LocalNodeState().Cordoned, "and it must reach the peers")
+}
+
+// TestNode_BootRestoresCordon_Standalone proves the restore and the persister
+// wiring do not depend on a cluster: a standalone node's cordon must survive a
+// restart too.
+func TestNode_BootRestoresCordon_Standalone(t *testing.T) {
+	dir := t.TempDir()
+
+	st, err := store.Open(filepath.Join(dir, "node.db"))
+	require.NoError(t, err)
+	saveNodeFlags(st, obs.NewLogger("error", io.Discard), nodeFlags{Cordoned: true})
+	require.NoError(t, st.Close())
+
+	cfg := config.Default()
+	cfg.DataDir = dir
+	cfg.ListenAddr = "127.0.0.1:0"
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	require.True(t, n.nodeSvc.Cordoned(), "a standalone node's stored cordon must be restored too")
+}
+
+// TestNode_StandaloneCordonBlocksPlacement proves the point of this task: a
+// node with no GossipAddr and no ClusterSecret builds no cluster at all, and a
+// cordon on it must still block placement. It drives the real HTTP path —
+// cordon, then request a sandbox — because node_test.go has no in-process
+// handle to the sandbox/ops manager to poll directly; there is also no
+// GetOperation RPC, so this polls ListOperations, exactly as a real client
+// would.
+func TestNode_StandaloneCordonBlocksPlacement(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = "127.0.0.1:0"
+	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}}
+	// No GossipAddr, no ClusterSecret: standalone.
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	require.NoError(t, n.Start())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	// Verify the node genuinely has no cluster.
+	require.Nil(t, n.cluster)
+
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	authed := func(req *http.Request) *http.Request {
+		req.Header.Set("Authorization", "Bearer adm")
+		return req
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "https://"+n.Addr()+"/v1/node/cordon", nil)
+	resp, err := client.Do(authed(req))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	req, _ = http.NewRequest(http.MethodPost, "https://"+n.Addr()+"/v1/sandboxes",
+		strings.NewReader(`{"cpus":1,"memory_bytes":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = client.Do(authed(req))
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var op struct {
+		Id string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(body, &op))
+	require.NotEmpty(t, op.Id)
+
+	// The provision runs in a background goroutine (internal/ops.Manager.Run).
+	// Poll ListOperations until it reaches a terminal state.
+	var found struct {
+		State string `json:"state"`
+		Error string `json:"error"`
+	}
+	require.Eventually(t, func() bool {
+		req, _ := http.NewRequest(http.MethodGet, "https://"+n.Addr()+"/v1/operations", nil)
+		resp, err := client.Do(authed(req))
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Operations []struct {
+				Id    string `json:"id"`
+				State string `json:"state"`
+				Error string `json:"error"`
+			} `json:"operations"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&out) != nil {
+			return false
+		}
+		for _, o := range out.Operations {
+			if o.Id == op.Id && o.State != "" && o.State != "pending" && o.State != "running" {
+				found.State, found.Error = o.State, o.Error
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 20*time.Millisecond, "provision did not reach a terminal state")
+
+	require.Equal(t, "error", found.State)
+	require.Contains(t, found.Error, scheduler.ErrNoEligibleNode.Error())
 }
 
 func TestWorkspaceResolver(t *testing.T) {
@@ -236,7 +385,7 @@ func TestAttemptFor_DialFailureNacks(t *testing.T) {
 		peer.WithPinResolver(func(string) ([]byte, bool) { return nil, false }),
 	)
 	tbl := routing.NewTable("self")
-	tbl.Upsert("peerB", "127.0.0.1:1", false, nil)
+	tbl.Upsert("peerB", "127.0.0.1:1", nil)
 
 	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1},
 		"op-x", nil, nil, tbl, pool, obs.NewLogger("error", io.Discard))

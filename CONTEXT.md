@@ -22,6 +22,19 @@ node-to-node calls; it returns only by generating a new Node key. Distinct from 
 stops new placements on a still-trusted node.
 _Avoid_: ban, block, evict (evicting a revoked node from routing is separate and deferred)
 
+**Cordon**:
+An operator action that stops new placements on a Node while leaving it trusted and its existing
+Sandboxes running. It applies to any Node, clustered or standalone, and it survives a restart: only an
+explicit uncordon clears it, so a repaired host must be uncordoned deliberately (ADR-0023). Distinct
+from Revoke, which ejects the Node's identity entirely.
+_Avoid_: disable, pause, quarantine
+
+**Drain**:
+A Cordon followed by publishing and stopping every Sandbox on the Node, so the Node ends up empty and
+git-backed work is saved. It also records why the Node is out of service. Draining does not move
+Sandboxes to other Nodes — the swarm never does, because a Sandbox id names its owner Node.
+_Avoid_: evacuate, migrate (neither happens)
+
 **Swarm**:
 The set of nodes that gossip together as one peer-to-peer group, identified by a Swarm ID. A node can
 run solo (a swarm of one) or join others.

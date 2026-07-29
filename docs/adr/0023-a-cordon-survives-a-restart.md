@@ -38,8 +38,24 @@ Because self now reads the flag, `routing.Table` no longer carries a cordon at a
 both asked about self, and a peer's cordon has always reached the scheduler through gossip rather
 than the table, so the field, the `Upsert` parameter and `IsCordoned` are removed.
 
+A peer's cordon reaches other nodes through the bulk push/pull exchange of gossip state, not through
+the fast meta path. After node A is cordoned, another node's scheduler can still list A as a candidate
+until the next push/pull round — on the order of the push/pull interval, tens of seconds. This does
+not cause a wrong placement: the target-side recheck in `Provision` refuses a forwarded provision when
+the node is cordoned, returning a NACK to the coordinator, which retries the next candidate. The cost
+is a wasted placement attempt, not a sandbox landing on a cordoned node.
+
 Scope: cordon works on a standalone node, which builds no cluster at all. It used to be inert there
 while the RPC still answered `Cordoned: true` — a node that reported itself out of service and kept
 taking work. The local flag closes that. Teaching `routing.Table.Upsert` to arbitrate on
 `StateVersion` was considered and rejected as unnecessary — once a node advertises the correct value
 on rejoin, last-writer-wins is right.
+
+An older binary that does not know about the `node` bucket opens the database without error and simply
+leaves it untouched. This means an operator who downgrades the binary, uncordons the node, and then
+upgrades again will find the node cordoned once more — the downgrade uncordoned it on the operator's
+request, but the old binary never wrote the `Cordoned: false` value to the new bucket, so the previous
+cordoned state remains on disk. The cordon is restored when the newer binary starts and reads the
+persisted flag. This asymmetry is the safer failure mode: a rolled-back and re-upgraded node ends up
+idle rather than quietly returning to service, and it is inherent to the schema change that carries no
+version bump. An operator performing a rollback should account for this during recovery.

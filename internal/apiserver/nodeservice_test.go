@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -257,4 +260,229 @@ func TestNodeService_ListNodes_Kits(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resp.Nodes, 1)
 	require.Equal(t, []string{"extras", "tools"}, resp.Nodes[0].Kits)
+}
+
+func TestNodeService_FlagPersisterSeesEveryChange(t *testing.T) {
+	type call struct{ cordoned, draining bool }
+	var got []call
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetFlagPersister(func(c, d bool) { got = append(got, call{c, d}) })
+
+	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	_, err = s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+	_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+
+	require.Equal(t, []call{
+		{cordoned: true, draining: false},  // Cordon
+		{cordoned: true, draining: true},   // Drain also sets the marker
+		{cordoned: false, draining: false}, // Uncordon clears both
+	}, got)
+}
+
+func TestNodeService_NilFlagPersisterDoesNotPanic(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+}
+
+func TestNodeService_DrainCallsDrainerCordonDoesNot(t *testing.T) {
+	type call struct {
+		actor     string
+		keepGoing func() bool
+	}
+	calls := make(chan call, 1)
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetDrainer(func(actor string, keepGoing func() bool) { calls <- call{actor: actor, keepGoing: keepGoing} })
+
+	// Cordon must not trigger a sweep.
+	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	select {
+	case c := <-calls:
+		t.Fatalf("Cordon must not call the drainer, got %+v", c)
+	default:
+	}
+
+	// Drain runs the sweep in the background with the caller's actor.
+	ctx := context.WithValue(context.Background(), principalCtxKey{}, principal{userRole: "admin"})
+	_, err = s.Drain(ctx, &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+
+	select {
+	case c := <-calls:
+		require.Equal(t, "admin", c.actor)
+		// The keepGoing handed to the drainer must be live, not a stub: it must
+		// go false once the node is uncordoned, so the sweep actually stops.
+		require.True(t, c.keepGoing(), "keepGoing must be true while still draining")
+		_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+		require.NoError(t, err)
+		require.False(t, c.keepGoing(), "keepGoing must go false after Uncordon")
+	case <-time.After(time.Second):
+		t.Fatal("Drain did not call the drainer")
+	}
+}
+
+func TestNodeService_DrainDrainerFallsBackToSystem(t *testing.T) {
+	calls := make(chan string, 1)
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetDrainer(func(actor string, _ func() bool) { calls <- actor })
+
+	_, err := s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+
+	select {
+	case actor := <-calls:
+		require.Equal(t, "system", actor, "an unauthenticated context falls back to system")
+	case <-time.After(time.Second):
+		t.Fatal("Drain did not call the drainer")
+	}
+}
+
+func TestNodeService_NilDrainerDoesNotPanic(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	_, err := s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+}
+
+// recordingCordoner mirrors what Cluster.SetCordoned would set, guarded by its
+// own lock so the test can read it after the concurrent RPCs finish.
+type recordingCordoner struct {
+	mu   sync.Mutex
+	last bool
+}
+
+func (c *recordingCordoner) SetCordoned(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.last = v
+}
+
+func (c *recordingCordoner) get() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.last
+}
+
+// recordingPersister mirrors what a flag persister would write, guarded by its
+// own lock for the same reason as recordingCordoner.
+type recordingPersister struct {
+	mu       sync.Mutex
+	cordoned bool
+}
+
+func (p *recordingPersister) save(cordoned, _ bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cordoned = cordoned
+}
+
+func (p *recordingPersister) get() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.cordoned
+}
+
+// TestNodeService_ConcurrentCordonUncordonStaysConsistent proves the fix for
+// the three-way desync: Cordon and Uncordon each do "set local flag, mirror to
+// the cluster, persist" as a sequence, and without serializing that sequence,
+// two concurrent calls can interleave and leave the local flag, the cluster
+// mirror and the persisted record disagreeing (a lost update).
+//
+// A test cannot reliably force a specific microsecond interleaving, so this
+// does not try to reproduce the bug directly. Instead it runs many concurrent
+// Cordon/Uncordon calls, over many rounds, and checks the invariant the mutex
+// is meant to guarantee: whatever the last call to complete decided, all three
+// views agree with it once every call has returned. Run with -race so a
+// missing lock also shows up as a detected data race, not just a mismatch.
+func TestNodeService_ConcurrentCordonUncordonStaysConsistent(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	fc := &recordingCordoner{}
+	s.SetCordoner(fc)
+	fp := &recordingPersister{}
+	s.SetFlagPersister(fp.save)
+
+	const rounds = 100
+	const workers = 8
+	for r := 0; r < rounds; r++ {
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				if i%2 == 0 {
+					_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+					require.NoError(t, err)
+				} else {
+					_, err := s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+					require.NoError(t, err)
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		local := s.Cordoned()
+		require.Equal(t, local, fc.get(), "round %d: local flag and cluster mirror disagree", r)
+		require.Equal(t, local, fp.get(), "round %d: local flag and persisted record disagree", r)
+	}
+}
+
+// TestNodeService_DrainDoesNotStartSecondSweepWhileOneRuns covers finding 2: a
+// double Drain must not start two concurrent sweeps over the same running set.
+// The second call must still cordon and still return NodeInfo normally; only
+// the duplicate sweep is suppressed.
+func TestNodeService_DrainDoesNotStartSecondSweepWhileOneRuns(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var sweeps int32
+	s.SetDrainer(func(_ string, _ func() bool) {
+		atomic.AddInt32(&sweeps, 1)
+		started <- struct{}{}
+		<-release
+	})
+
+	_, err := s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("first sweep did not start")
+	}
+
+	// A second Drain while the first sweep is still in flight.
+	info, err := s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+	require.True(t, info.Cordoned, "the second Drain must still cordon")
+	require.True(t, info.Draining, "the second Drain must still report draining")
+
+	select {
+	case <-started:
+		t.Fatal("a second sweep must not start while one is already running")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(release)
+	require.Eventually(t, func() bool { return atomic.LoadInt32(&sweeps) == 1 }, time.Second, 10*time.Millisecond,
+		"exactly one sweep must have run")
+}
+
+func TestNodeService_CordonWithoutClusterIsReal(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test") // no cordoner: standalone
+	require.False(t, s.Cordoned())
+
+	info, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	require.True(t, info.Cordoned)
+	require.True(t, s.Cordoned(), "the reply must not claim a cordon the node did not take")
+
+	_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	require.False(t, s.Cordoned())
 }

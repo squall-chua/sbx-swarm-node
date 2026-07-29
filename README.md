@@ -407,6 +407,13 @@ other's keys, and share capacity for scheduling. Notes:
 
 ## Configuration reference
 
+Configuration is read once, at startup. There is no reload: changing a workspace,
+a kit, a template constraint or a git provider means restarting the node. That is
+the intended design, not a gap. A restart is cheap — the sandbox daemon owns the
+sandboxes and the node reconciles its records against them at boot — and a cordon
+now survives a restart, so restarting a node you deliberately took out of service
+will not put it back into service.
+
 Config is layered: **defaults → YAML file (`--config`) → env vars (`SBX_…`) → flags**,
 each overriding the previous. Schema: [internal/config/config.go](internal/config/config.go).
 
@@ -445,7 +452,7 @@ workspaces:
 
   # Git-backed (clone-only, ADR-0015): the agent works in a fresh clone on a branch.
   - name: my-repo
-    host_path: /srv/sbx/repos/my-repo.git    # a node-owned bare/mirror repo
+    host_path: /srv/sbx/repos/my-repo
     git:
       remote: origin
       default_branch: main
@@ -462,6 +469,11 @@ workspaces:
 A git-backed workspace is always mounted **read-only** into the sandbox — the agent
 works in its clone, never the base repo (ADR-0015). Upstream credentials are host-side
 git config, never in this file (ADR-0014).
+
+An operator-prepared git base must be a non-bare clone with a detached HEAD
+(ADR-0020): run `git clone <remote_url> <host_path>` followed by `git checkout --detach`
+inside the base directory. The working tree allows `sbx --clone` to use the base; the
+detached HEAD prevents git from refusing to fetch into the checked-out branch.
 
 A kit (`kits[]`) is inspected at boot and admitted only if it is a `kind: mixin`
 declaring nothing that could exceed the capacity this node admitted. A refused kit is

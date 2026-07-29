@@ -387,7 +387,7 @@ func (s *SandboxService) SaveTemplate(ctx context.Context, r *sbxv1.SaveTemplate
 }
 
 func (s *SandboxService) StopSandbox(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.Sandbox, error) {
-	s.maybeAutoPublish(ctx, r.Id) // publish-then-stop: the sandbox-<name> fetch needs the live daemon
+	s.maybeAutoPublish(ctx, r.Id, actor(ctx)) // publish-then-stop: the sandbox-<name> fetch needs the live daemon
 	if err := s.mgr.Stop(ctx, r.Id); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -397,7 +397,12 @@ func (s *SandboxService) StopSandbox(ctx context.Context, r *sbxv1.IdRequest) (*
 // maybeAutoPublish best-effort publishes the recorded branch of a clone-mode,
 // push-allowed sandbox. Failures are audited + logged inside doPublish and do NOT
 // block the caller (ADR: auto-publish is best-effort).
-func (s *SandboxService) maybeAutoPublish(ctx context.Context, id string) {
+//
+// callerActor is attributed when non-empty (synchronous callers with a gRPC
+// principal); it falls back to "system" for background triggers (AgentRun
+// success, the reaper, a drain sweep run after its request has returned) whose
+// context carries no principal.
+func (s *SandboxService) maybeAutoPublish(ctx context.Context, id, callerActor string) {
 	if s.gitWS == nil {
 		return
 	}
@@ -409,14 +414,10 @@ func (s *SandboxService) maybeAutoPublish(ctx context.Context, id string) {
 	if ws == nil || !ws.AllowPush() {
 		return // not git-backed or pull-only: silent skip
 	}
-	// Attribute to the user when ctx carries one (synchronous StopSandbox); fall
-	// back to "system" for background triggers (AgentRun success) whose ctx has
-	// no principal.
-	actor := principalFromContext(ctx).userRole
-	if actor == "" {
-		actor = "system"
+	if callerActor == "" {
+		callerActor = "system"
 	}
-	if perr := s.doPublish(ctx, id, nil, actor); perr != nil {
+	if perr := s.doPublish(ctx, id, nil, callerActor); perr != nil {
 		slog.Warn("auto-publish failed", "sandbox", id, "err", perr)
 	}
 }
@@ -434,12 +435,49 @@ func (s *SandboxService) ReapIdle(ctx context.Context, now time.Time) int {
 	}
 	n := 0
 	for _, rec := range idle {
-		s.maybeAutoPublish(ctx, rec.ID) // best-effort, before stop
+		s.maybeAutoPublish(ctx, rec.ID, actor(ctx)) // best-effort, before stop
 		if serr := s.mgr.Stop(ctx, rec.ID); serr != nil {
 			slog.Warn("reaper: stop failed", "sandbox", rec.ID, "err", serr)
 			continue
 		}
 		slog.Info("idle-stopped sandbox", "sandbox", rec.ID, "idle", now.Sub(rec.LastActivity).String())
+		n++
+	}
+	return n
+}
+
+// DrainAll publishes and stops every running sandbox on this node. It is what
+// Drain does after cordoning: the node ends up empty and git-backed work is
+// saved on the way out. Nothing is migrated — a sandbox id names its owner node,
+// so a sandbox cannot move without changing identity.
+//
+// keepGoing is re-checked before each sandbox so an uncordon cancels the sweep.
+// ctx is also checked, so node shutdown stops the sweep instead of running it
+// to a failing finish. actor is carried in because the caller's context dies
+// with its RPC, and the audit should not record a bulk operator action as
+// "system".
+func (s *SandboxService) DrainAll(ctx context.Context, actor string, keepGoing func() bool) int {
+	recs, err := s.mgr.List(ctx)
+	if err != nil {
+		slog.Warn("drain: list failed", "err", err)
+		return 0
+	}
+	n := 0
+	for _, rec := range recs {
+		if rec.Status != "running" {
+			continue
+		}
+		if !keepGoing() || ctx.Err() != nil {
+			break
+		}
+		// publish-then-stop, same order and the same "a publish failure does not
+		// skip the stop" rule as ReapIdle.
+		s.maybeAutoPublish(ctx, rec.ID, actor)
+		if serr := s.mgr.Stop(ctx, rec.ID); serr != nil {
+			slog.Warn("drain: stop failed", "sandbox", rec.ID, "err", serr)
+			continue
+		}
+		slog.Info("drain-stopped sandbox", "sandbox", rec.ID)
 		n++
 	}
 	return n
@@ -534,7 +572,7 @@ func (s *SandboxService) AgentRun(ctx context.Context, r *sbxv1.AgentRunRequest)
 					return sbID, status.Errorf(codes.Internal, "agent run exited %d", st.ExitCode)
 				}
 				if publishOnSuccess {
-					s.maybeAutoPublish(context.Background(), sbID) // best-effort
+					s.maybeAutoPublish(context.Background(), sbID, "") // best-effort; no principal on this background goroutine
 				}
 				return sbID, nil
 			}
