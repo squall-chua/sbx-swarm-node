@@ -43,17 +43,39 @@ func startNodeWithDir(t *testing.T, dataDir, listenAddr, gossipAddr string, seed
 	return n
 }
 
-// cordonPropagationTimeout bounds how long a Cordoned change can take to reach
-// a peer's PeerStates(). Cordoned rides in NodeMeta too (NotifyUpdate fires
-// almost immediately), but NotifyUpdate only upserts the routing table —
-// PeerStates() itself is fed exclusively by MergeRemoteState, i.e. the next
-// full TCP push/pull round. memberlist.DefaultLANConfig().PushPullInterval is
-// 30s, so give it comfortable headroom instead of the ~10s used for join/leave
-// (which ARE event-driven).
-const cordonPropagationTimeout = 45 * time.Second
+// forceSync triggers an immediate TCP push/pull between watcher and the peer
+// at gossipAddr, instead of waiting on the periodic push/pull ticker
+// (memberlist.DefaultLANConfig().PushPullInterval is 30s).
+//
+// Cordoned rides in NodeMeta too, and NotifyUpdate (fired promptly by
+// UpdateNode) fires almost immediately — but NotifyUpdate only upserts the
+// routing table. PeerStates(), what buildCandidates/ListNodes actually read,
+// is fed exclusively by MergeRemoteState, i.e. a full push/pull round. Without
+// a nudge, waitForCordoned is racing a 30s timer: it is genuinely
+// nondeterministic (observed both a ~40s pass and a 45s-timeout failure across
+// runs), so a longer fixed timeout only narrows the odds of flaking, it does
+// not remove them.
+//
+// (*Cluster).Join always performs a pushPullNode against every given address,
+// even one that is already a member (see memberlist.Memberlist.Join) — this is
+// the exact mechanism production code already relies on for the same "bulk
+// state must propagate promptly" problem: Cluster.Revoke's pushPullPeers
+// (internal/membership/revocation.go) calls ml.Join per live peer for
+// precisely this reason. Reusing the exported Join here (rather than adding a
+// test-only export of the unexported pushPullPeers) makes the propagation
+// deterministic: Join blocks until the exchange completes, so by the time it
+// returns, watcher's peerStates already reflects the peer's current state.
+func forceSync(t *testing.T, watcher *node.Node, gossipAddr string) {
+	t.Helper()
+	n, err := watcher.Cluster().Join([]string{gossipAddr})
+	require.NoError(t, err, "forced push/pull with %s", gossipAddr)
+	require.Greater(t, n, 0, "forced push/pull with %s contacted no host", gossipAddr)
+}
 
 // waitForCordoned polls watcher's gossiped peer view until it sees peerID's
-// Cordoned flag match want, or fails the test on timeout.
+// Cordoned flag match want, or fails the test on timeout. Call forceSync
+// first — this is a short safety-net poll for the (already-applied) result,
+// not the thing doing the waiting.
 func waitForCordoned(t *testing.T, watcher *node.Node, peerID string, want bool, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -208,8 +230,9 @@ func TestCluster_CordonSurvivesRestart(t *testing.T) {
 
 	// B must see A as cordoned before we tear A down, or the restart proves
 	// nothing (we would not know whether B's later view came from before or
-	// after the restart).
-	waitForCordoned(t, nodeB, aID, true, cordonPropagationTimeout)
+	// after the restart). Force the sync rather than wait on the periodic timer.
+	forceSync(t, nodeB, gossipA)
+	waitForCordoned(t, nodeB, aID, true, 5*time.Second)
 
 	// Stop A, then start a brand-new *node.Node on the SAME DataDir and the
 	// SAME addresses — the thing under test is that this counts as a restart.
@@ -224,8 +247,12 @@ func TestCluster_CordonSurvivesRestart(t *testing.T) {
 	require.True(t, selfCordoned(t, client, nodeA2), "restarted node must report itself cordoned")
 
 	// 2. B (re-)sees A as cordoned once gossip reconverges after the rejoin.
+	// A's own rejoin (cfg.Join above) already triggers a push/pull with B, but
+	// force one from B's side too so this assertion does not depend on which
+	// side's join happened to win the race.
 	waitForPeer(t, nodeB, aID, 10*time.Second)
-	waitForCordoned(t, nodeB, aID, true, cordonPropagationTimeout)
+	forceSync(t, nodeB, gossipA)
+	waitForCordoned(t, nodeB, aID, true, 5*time.Second)
 
 	// 3. A swarm-wide placement must not land on the restarted, still-cordoned
 	// A. Post the create request to A itself (a cordoned node still answers
