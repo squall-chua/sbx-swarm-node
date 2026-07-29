@@ -138,6 +138,8 @@ func TestNode_BootRestoresCordon(t *testing.T) {
 
 	require.True(t, n.cluster.LocalNodeState().Cordoned,
 		"a stored cordon must be restored at boot")
+	require.True(t, n.tbl.IsCordoned(n.NodeID()),
+		"the restored cordon must reach the routing table")
 }
 
 func TestWorkspaceResolver(t *testing.T) {

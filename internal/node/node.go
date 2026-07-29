@@ -59,6 +59,7 @@ type Node struct {
 	cancel     context.CancelFunc  // cancels background collector goroutines
 	cluster    *membership.Cluster // nil when not in cluster mode
 	pool       *peer.Pool          // nil when not in cluster mode
+	tbl        *routing.Table
 }
 
 // New constructs a node: it establishes identity, opens the store, loads the TLS
@@ -360,6 +361,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		cancel:  cancel,
 		cluster: clusterInstance,
 		pool:    pool,
+		tbl:     tbl,
 		srv: &http.Server{
 			Handler:   handler,
 			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}},
