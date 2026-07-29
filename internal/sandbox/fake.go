@@ -7,21 +7,24 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/squall-chua/sbx-swarm-node/internal/imageref"
 )
 
 // Fake is an in-memory Backend for tests.
 type Fake struct {
-	mu        sync.Mutex
-	sandboxes map[string]*BackendSandbox
-	ports     map[string][]PublishedPort
-	detached  map[string]bool // detachedID -> done
-	seq       int
-	blocked   []BlockedHost
-	allowed   []BlockedHost
-	rules     []PolicyRule
-	secrets   map[string][]CustomSecret
-	templates []string
-	kits      map[string]bool
+	mu             sync.Mutex
+	sandboxes      map[string]*BackendSandbox
+	ports          map[string][]PublishedPort
+	detached       map[string]bool // detachedID -> done
+	seq            int
+	blocked        []BlockedHost
+	allowed        []BlockedHost
+	rules          []PolicyRule
+	secrets        map[string][]CustomSecret
+	templates      []string
+	savedTemplates []string
+	kits           map[string]bool
 
 	// Optional test hooks. When non-nil they override the default Exec/PublishPort/
 	// CopyFrom behavior (used to drive git-publish tests against real git repos).
@@ -34,9 +37,26 @@ type Fake struct {
 	// standing in for ports a real kit publishes by itself.
 	KitPorts []PublishedPort
 
+	// PortsErr, ListTemplatesErr and SaveTemplateErr are read under f.mu, so
+	// set them before the fake is used and never while it might already be in
+	// use (e.g. by a background poller) -- there is no lock on the write side.
+
 	// PortsErr, when set, makes Ports fail instead of returning the recorded
 	// list -- standing in for a transient daemon read failure.
 	PortsErr error
+
+	// ListTemplatesErr, when set, makes ListTemplates fail instead of
+	// returning the configured refs -- standing in for a daemon that is down.
+	ListTemplatesErr error
+
+	// SaveTemplateErr, when set, makes SaveTemplate fail instead of recording
+	// the call -- standing in for a backend rejection (e.g. tag in use).
+	SaveTemplateErr error
+
+	// ListErr, when set, makes List fail instead of returning the recorded
+	// sandboxes -- standing in for a daemon that is down (Manager.Reconcile
+	// calls List first, before touching any record).
+	ListErr error
 }
 
 // NewFake returns an empty fake backend advertising the given kit names. It is
@@ -100,6 +120,9 @@ func (f *Fake) Get(_ context.Context, name string) (BackendSandbox, error) {
 func (f *Fake) List(_ context.Context) ([]BackendSandbox, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListErr != nil {
+		return nil, f.ListErr
+	}
 	out := make([]BackendSandbox, 0, len(f.sandboxes))
 	for _, sb := range f.sandboxes {
 		out = append(out, *sb)
@@ -255,12 +278,57 @@ func (f *Fake) SetTemplates(t []string) {
 func (f *Fake) ListTemplates(_ context.Context) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListTemplatesErr != nil {
+		return nil, f.ListTemplatesErr
+	}
 	return append([]string(nil), f.templates...), nil
 }
 
-// ListTemplateInfo returns a canned template so tests need no daemon.
+// ListTemplateInfo returns a canned base template, plus one entry per template
+// saved or set since, so a caller can list-then-remove a real save.
 func (b *Fake) ListTemplateInfo(_ context.Context) ([]TemplateInfo, error) {
-	return []TemplateInfo{{Repository: "fake/base", Tag: "latest", ID: "img-fake", Agent: "shell"}}, nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := []TemplateInfo{{Repository: "fake/base", Tag: "latest", ID: "img-fake", Agent: "shell"}}
+	for _, t := range b.templates {
+		repo, tag := imageref.SplitRepoTag(t)
+		out = append(out, TemplateInfo{Repository: repo, Tag: tag})
+	}
+	return out, nil
+}
+
+// SaveTemplate records the call and adds the tag to the advertised templates.
+func (f *Fake) SaveTemplate(_ context.Context, name, tag string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.SaveTemplateErr != nil {
+		return f.SaveTemplateErr
+	}
+	f.savedTemplates = append(f.savedTemplates, name+"=>"+tag)
+	f.templates = append(f.templates, tag)
+	return nil
+}
+
+// SavedTemplates returns the SaveTemplate calls in order (tests).
+func (f *Fake) SavedTemplates() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.savedTemplates...)
+}
+
+// RemoveTemplate drops the ref from the advertised templates. Removing one that
+// is not there is not an error, matching the daemon.
+func (f *Fake) RemoveTemplate(_ context.Context, ref string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.templates[:0]
+	for _, t := range f.templates {
+		if t != ref {
+			out = append(out, t)
+		}
+	}
+	f.templates = out
+	return nil
 }
 
 // SetBlocked sets the fake's blocked-egress list (test helper).

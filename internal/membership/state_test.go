@@ -43,6 +43,26 @@ func TestNodeState_MetaTinyAndBulkRoundTrip(t *testing.T) {
 	require.Equal(t, []string{"clone", "stats"}, gotBulk.Capabilities)
 }
 
+// TestBulk_CarriesNodeName proves a node's display name survives a bulk
+// round-trip, so a peer's name shows on the console instead of rendering blank.
+func TestBulk_CarriesNodeName(t *testing.T) {
+	in := NodeState{NodeID: "n1", NodeName: "worker-1"}
+	out, err := DecodeBulk(in.EncodeBulk())
+	require.NoError(t, err)
+	require.Equal(t, "worker-1", out.NodeName)
+}
+
+// TestBulk_MissingNodeNameStillDecodes proves an older peer's bulk state
+// (encoded before NodeName existed) still decodes -- the field is additive and
+// omitempty, so a payload without it just yields a zero-value name, not an error.
+func TestBulk_MissingNodeNameStillDecodes(t *testing.T) {
+	old := []byte(`{"id":"n1"}`) // no "node_name" key, simulating a pre-upgrade peer
+	out, err := DecodeBulk(old)
+	require.NoError(t, err)
+	require.Equal(t, "n1", out.NodeID)
+	require.Empty(t, out.NodeName)
+}
+
 func TestBulk_CarriesKits(t *testing.T) {
 	in := NodeState{NodeID: "n1", Kits: []string{"extras", "tools"}}
 	out, err := DecodeBulk(in.EncodeBulk())

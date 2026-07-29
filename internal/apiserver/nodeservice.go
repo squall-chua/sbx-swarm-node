@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"google.golang.org/grpc/codes"
@@ -48,6 +49,8 @@ type NodeService struct {
 	revoker                   Revoker                                               // optional; nil when not in cluster mode
 	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
+	removeTemplate            func(ctx context.Context, ref string) error           // optional; nil until wired by node.go
+	audit                     *audit.Log                                            // optional; nil until wired by node.go
 	persistFlags              func(cordoned, draining bool)                         // optional; nil until wired by node.go
 	drainer                   func(actor string, keepGoing func() bool)             // optional; nil until wired by node.go
 	draining                  atomic.Bool
@@ -224,6 +227,16 @@ func (s *NodeService) SetTemplateLister(fn func(context.Context) ([]sandbox.Temp
 	s.templateLister = fn
 }
 
+// SetTemplateRemover wires template deletion (node.go). Optional: without it,
+// RemoveTemplate answers Unavailable rather than pretending to delete.
+func (s *NodeService) SetTemplateRemover(fn func(ctx context.Context, ref string) error) {
+	s.removeTemplate = fn
+}
+
+// SetAudit wires the audit log (node.go). Optional: without it, RemoveTemplate
+// still deletes but records nothing.
+func (s *NodeService) SetAudit(a *audit.Log) { s.audit = a }
+
 // ListTemplates returns the local node's templates with metadata.
 func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesRequest) (*sbxv1.ListTemplatesResponse, error) {
 	out := &sbxv1.ListTemplatesResponse{}
@@ -232,6 +245,9 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 	}
 	infos, err := s.templateLister(ctx)
 	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			return nil, st.Err()
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	for _, t := range infos {
@@ -240,6 +256,44 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 		})
 	}
 	return out, nil
+}
+
+// RemoveTemplate deletes one template image from this node's image store and
+// returns what is left. Cross-node calls arrive here already forwarded by
+// node_id (ADR-0018), so this only ever removes locally.
+//
+// A node_id naming some other node is refused here rather than trusted to the
+// interceptor: the interceptor forwards to the owning peer only when it has an
+// address for that node, and otherwise falls through to this local handler
+// (unknown or departed peer, or a standalone node with no forwarder at all).
+// Without this guard that fallback would delete the wrong node's image and
+// report success, with no node identity in the reply to reveal the mistake.
+func (s *NodeService) RemoveTemplate(ctx context.Context, r *sbxv1.RemoveTemplateRequest) (*sbxv1.ListTemplatesResponse, error) {
+	if id := r.GetNodeId(); id != "" && id != s.nodeID {
+		return nil, status.Error(codes.NotFound, "unknown node")
+	}
+	if r.GetRef() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ref is required")
+	}
+	if s.removeTemplate == nil {
+		return nil, status.Error(codes.Unavailable, "no sandbox backend on this node")
+	}
+	err := s.removeTemplate(ctx, r.GetRef())
+	if s.audit != nil {
+		_ = s.audit.Record(audit.Entry{
+			Actor:   actor(ctx),
+			Action:  "template.remove",
+			Target:  r.GetRef(),
+			Outcome: outcomeOf(err),
+		})
+	}
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			return nil, st.Err()
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return s.ListTemplates(ctx, &sbxv1.ListTemplatesRequest{})
 }
 
 // Draining reports this node's drain flag (self-only; not gossiped).

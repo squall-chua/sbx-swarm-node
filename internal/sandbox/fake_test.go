@@ -27,6 +27,40 @@ func TestFake_ListTemplates(t *testing.T) {
 	require.Equal(t, []string{"base:1", "gpu:2"}, got)
 }
 
+func TestFake_ListTemplateInfoSplitsPortedHostFromTag(t *testing.T) {
+	f := NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "localhost:5000/img:1"))
+
+	got, err := f.ListTemplateInfo(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, got, TemplateInfo{Repository: "localhost:5000/img", Tag: "1"})
+}
+
+func TestFake_ListTemplateInfoDigestHasNoTag(t *testing.T) {
+	f := NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage@sha256:abc"))
+
+	got, err := f.ListTemplateInfo(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, got, TemplateInfo{Repository: "myimage@sha256:abc", Tag: ""})
+}
+
+func TestFake_SaveAndRemoveTemplate(t *testing.T) {
+	f := NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+	require.Equal(t, []string{"sb-1=>myimage:v1"}, f.SavedTemplates())
+
+	// A saved template is listed, then removable.
+	got, err := f.ListTemplates(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, got, "myimage:v1")
+
+	require.NoError(t, f.RemoveTemplate(context.Background(), "myimage:v1"))
+	got, err = f.ListTemplates(context.Background())
+	require.NoError(t, err)
+	require.NotContains(t, got, "myimage:v1")
+}
+
 func TestFake_ExecInteractiveEchoes(t *testing.T) {
 	sess, err := NewFake().ExecInteractive(context.Background(), "sb", []string{"/bin/sh"}, true)
 	require.NoError(t, err)

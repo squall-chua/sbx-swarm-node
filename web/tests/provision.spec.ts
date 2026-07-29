@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCreateBody } from '../app/components/ProvisionModal'
+import { buildCreateBody, requestableTemplate } from '../app/components/ProvisionModal'
 
 describe('buildCreateBody', () => {
   it('maps the form to a snake_case CreateSandbox body, dropping empties', () => {
@@ -46,5 +46,31 @@ describe('buildCreateBody', () => {
     }
     expect(buildCreateBody({ ...base, kits: ['tools', 'extras'] }).kits).toEqual(['tools', 'extras'])
     expect('kits' in buildCreateBody({ ...base, kits: [] })).toBe(false)
+  })
+})
+
+describe('requestableTemplate', () => {
+  it('strips the docker.io/library/ prefix the daemon adds to a saved single-part tag', () => {
+    expect(requestableTemplate('docker.io/library/myimage:v1')).toBe('myimage:v1')
+  })
+
+  it('strips the docker.io/ prefix the daemon adds to a saved two-part tag', () => {
+    expect(requestableTemplate('docker.io/myorg/myimage:v1')).toBe('myorg/myimage:v1')
+  })
+
+  it('leaves a plain bare tag unchanged', () => {
+    expect(requestableTemplate('myimage:v1')).toBe('myimage:v1')
+  })
+
+  it('leaves a plain two-part bare tag unchanged', () => {
+    expect(requestableTemplate('myorg/myimage:v1')).toBe('myorg/myimage:v1')
+  })
+
+  it('leaves a non-Docker-Hub registry reference untouched', () => {
+    expect(requestableTemplate('ghcr.io/org/img:1')).toBe('ghcr.io/org/img:1')
+  })
+
+  it('localhost registry reference untouched', () => {
+    expect(requestableTemplate('localhost:5000/img:1')).toBe('localhost:5000/img:1')
   })
 })

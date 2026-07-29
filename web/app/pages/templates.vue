@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
+import { requestableTemplate } from '../components/ProvisionModal'
 
 interface Template {
   id: string
@@ -85,7 +86,20 @@ const columns: TableColumn<Template>[] = [
         class="w-full"
       >
         <template #repository-cell="{ row }">
-          <span class="text-sm text-default">{{ row.original.repository }}</span>
+          <!-- Show the requestable form (what a Provision request should use), not
+          the daemon's canonical string: those differ for a locally-saved template
+          (see requestableTemplate). Show the canonical form too, in small print,
+          when it differs — an operator matching this against `sbx image ls` needs
+          it, and hiding it would make the two pages look inconsistent. -->
+          <div class="flex flex-col">
+            <span class="text-sm text-default font-mono">{{ requestableTemplate(row.original.repository) }}</span>
+            <span
+              v-if="requestableTemplate(row.original.repository) !== row.original.repository"
+              class="text-xs text-muted font-mono"
+            >
+              listed as {{ row.original.repository }}
+            </span>
+          </div>
         </template>
         <template #tag-cell="{ row }">
           <UBadge
@@ -135,7 +149,19 @@ const columns: TableColumn<Template>[] = [
           :key="tmplName"
           class="flex items-start gap-3 rounded-md bg-elevated px-4 py-3"
         >
-          <span class="font-mono text-sm text-default min-w-0 shrink-0">{{ tmplName }}</span>
+          <!-- Show the requestable form here too, same rule as the table above:
+          `tmplName` comes straight from node gossip, which is the daemon's
+          canonical string. Keep the canonical form as a muted subtitle when it
+          differs, so this list stays consistent with the table. -->
+          <div class="flex flex-col min-w-0 shrink-0">
+            <span class="font-mono text-sm text-default">{{ requestableTemplate(tmplName) }}</span>
+            <span
+              v-if="requestableTemplate(tmplName) !== tmplName"
+              class="font-mono text-xs text-muted"
+            >
+              listed as {{ tmplName }}
+            </span>
+          </div>
           <div class="flex flex-wrap gap-1.5">
             <UBadge
               v-for="nodeName in templateNodeMap[tmplName]"

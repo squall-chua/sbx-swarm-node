@@ -248,6 +248,40 @@ func TestSDKBackend_ListTemplateInfo(t *testing.T) {
 	require.NotEmpty(t, infos[0].Repository)
 }
 
+// TestSDKBackend_SaveRemoveTemplate proves the save/remove pair against a live
+// daemon. The daemon refuses to snapshot a running sandbox, so this stops first
+// — the same rule the SaveTemplate handler enforces.
+//
+// Confirmed against sbx v0.37.0: the assumption in the ListTemplates note
+// (sdkbackend.go) was wrong. A bare tag given to SaveTemplate is NOT listed
+// back verbatim — the daemon canonicalizes it the way Docker does for an
+// unqualified name, adding the "docker.io/library/" registry+namespace. So
+// saving "it-tmpl:v1" is listed as "docker.io/library/it-tmpl:v1". RemoveTemplate
+// still accepts the original bare tag; only the List side is canonicalized.
+func TestSDKBackend_SaveRemoveTemplate(t *testing.T) {
+	ctx := context.Background()
+	b, ws := backendWS(t)
+	tag := "it-tmpl:v1"
+	saved := "docker.io/library/" + tag // the canonical form ListTemplates actually reports
+
+	sb := mkSandbox(t, b, CreateSpec{Name: "it-save-tmpl", CPUs: 1, MemoryBytes: 1 << 30, Workspaces: ws})
+
+	// A saved image outlives the sandbox, so remove it even if the test fails.
+	t.Cleanup(func() { _ = b.RemoveTemplate(context.Background(), tag) })
+
+	require.NoError(t, b.Stop(ctx, sb.Name), "the daemon cannot snapshot a running sandbox")
+	require.NoError(t, b.SaveTemplate(ctx, sb.Name, tag))
+
+	got, err := b.ListTemplates(ctx)
+	require.NoError(t, err)
+	require.Contains(t, got, saved, "a saved template must be listed by its canonical repository:tag")
+
+	require.NoError(t, b.RemoveTemplate(ctx, tag))
+	got, err = b.ListTemplates(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, got, saved)
+}
+
 // TestSDKBackend_PolicyRoundTrip covers Profiles/Allow/List/RemoveRule. The allowed
 // host appears in the RESOURCES column of `sbx policy ls`, which hasAllow matches.
 // RemoveRule takes the resource selector that sbx requires (--resource).

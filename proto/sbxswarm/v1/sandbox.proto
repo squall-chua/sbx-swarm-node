@@ -44,6 +44,9 @@ service SandboxService {
   rpc UnpublishPort(UnpublishPortRequest) returns (Empty) {
     option (google.api.http) = {delete: "/v1/sandboxes/{id}/ports/{container_port}"};
   }
+  rpc SaveTemplate(SaveTemplateRequest) returns (Empty) {
+    option (google.api.http) = {post: "/v1/sandboxes/{id}/template" body: "*"};
+  }
   rpc GetStats(IdRequest) returns (Stats) {
     option (google.api.http) = {get: "/v1/sandboxes/{id}/stats"};
   }
@@ -243,6 +246,11 @@ message PublishPortRequest {
 message UnpublishPortRequest {
   string id = 1;
   int32 container_port = 2;
+}
+// SaveTemplateRequest snapshots a STOPPED sandbox as a reusable template image.
+message SaveTemplateRequest {
+  string id = 1;
+  string tag = 2; // e.g. "myimage:v1" (local) or "ghcr.io/org/img:1"
 }
 message Port {
   int32 container_port = 1;

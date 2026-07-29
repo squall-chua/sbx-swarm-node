@@ -31,14 +31,15 @@ type idExtractor interface{ GetId() string }
 // nodeIDExtractor pulls a target node id from a node-control request (Cordon/Drain).
 type nodeIDExtractor interface{ GetNodeId() string }
 
-// isNodeControlMethod reports whether the full method is one of the three
+// isNodeControlMethod reports whether the full method is one of the four
 // node-control RPCs that accept a node_id for cross-node routing.
 // This guard is required to prevent RevokeNode (whose request also has GetNodeId)
 // from being misrouted.
 func isNodeControlMethod(m string) bool {
 	return m == "/sbxswarm.v1.NodeService/Cordon" ||
 		m == "/sbxswarm.v1.NodeService/Uncordon" ||
-		m == "/sbxswarm.v1.NodeService/Drain"
+		m == "/sbxswarm.v1.NodeService/Drain" ||
+		m == "/sbxswarm.v1.NodeService/RemoveTemplate"
 }
 
 // routableNode pulls a target node id from a node-control request.
@@ -148,6 +149,8 @@ func newReplyFor(fullMethod string) any {
 		return new(sbxv1.Port)
 	case "/sbxswarm.v1.SandboxService/UnpublishPort":
 		return new(sbxv1.Empty)
+	case "/sbxswarm.v1.SandboxService/SaveTemplate":
+		return new(sbxv1.Empty)
 	case "/sbxswarm.v1.SandboxService/ListPorts":
 		return new(sbxv1.ListPortsResponse)
 	case "/sbxswarm.v1.SandboxService/GetStats":
@@ -164,6 +167,8 @@ func newReplyFor(fullMethod string) any {
 		"/sbxswarm.v1.NodeService/Uncordon",
 		"/sbxswarm.v1.NodeService/Drain":
 		return new(sbxv1.NodeInfo)
+	case "/sbxswarm.v1.NodeService/RemoveTemplate":
+		return new(sbxv1.ListTemplatesResponse)
 	default:
 		return nil
 	}

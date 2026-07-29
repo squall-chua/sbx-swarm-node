@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
-import { buildCreateBody, type ProvisionForm } from './ProvisionModal'
+import { buildCreateBody, requestableTemplate, type ProvisionForm } from './ProvisionModal'
 
 const props = defineProps<{
   open: boolean
@@ -15,12 +15,13 @@ const toast = useToast()
 
 // ── Derived options ──────────────────────────────────────────────────────────
 
-// DISTINCT templates across all nodes
+// DISTINCT templates across all nodes. Offer the requestable form, not the
+// listed one: see requestableTemplate for why those differ.
 const templateOptions = computed<string[]>(() => {
   const seen = new Set<string>()
   for (const node of swarm?.nodes.value ?? []) {
     for (const t of node.templates ?? []) {
-      seen.add(typeof t === 'string' ? t : t.name ?? t.id ?? String(t))
+      seen.add(requestableTemplate(typeof t === 'string' ? t : t.name ?? t.id ?? String(t)))
     }
   }
   return Array.from(seen).sort()
@@ -233,13 +234,19 @@ function onClose() {
             <label class="block text-sm font-medium text-default mb-1" for="prov-template">
               Template <span class="text-muted font-normal">(optional)</span>
             </label>
-            <USelect
+            <!-- USelectMenu, not USelect: a listed template is only ever the
+            requestable form of what THIS swarm already holds. create-item is
+            the escape hatch for a reference no node holds yet, or a genuinely
+            pullable image that was never saved (and so isn't listed stripped). -->
+            <USelectMenu
               id="prov-template"
               v-model="form.template"
               :items="templateOptions"
-              placeholder="Default (agent's image)"
+              create-item
+              placeholder="Default (agent's image), or type a reference"
               aria-label="Sandbox template"
               class="w-full"
+              @create="form.template = $event"
             />
           </div>
 

@@ -94,6 +94,8 @@ async function doUnpublishPort(containerPort: number) {
 // ── Actions ─────────────────────────────────────────────────────────────────
 const actionLoading = ref<string | null>(null)
 const deleteConfirmOpen = ref(false)
+const saveTemplateOpen = ref(false)
+const templateTag = ref('')
 
 // Lifecycle gating: Start only makes sense when not running, Stop only when running.
 const isRunning = computed(() => props.sandbox.status === 'running')
@@ -112,6 +114,21 @@ async function doAction(action: string) {
     }
   } catch (e: any) {
     toast.add({ title: `Failed: ${action}`, description: e?.message, color: 'error' })
+  } finally {
+    actionLoading.value = null
+  }
+}
+
+async function doSaveTemplate() {
+  saveTemplateOpen.value = false
+  actionLoading.value = 'save-template'
+  const tag = templateTag.value
+  try {
+    await api.post(`/v1/sandboxes/${props.sandbox.id}/template`, { tag })
+    templateTag.value = '' // clear so a re-open doesn't pre-fill a stale tag
+    toast.add({ title: `Saved template ${tag}`, color: 'success', icon: 'i-lucide-check-circle' })
+  } catch (e: any) {
+    toast.add({ title: 'Failed to save template', description: e?.message, color: 'error' })
   } finally {
     actionLoading.value = null
   }
@@ -304,6 +321,17 @@ onMounted(fetchPorts)
             @click="doAction('stop')"
           />
           <UButton
+            data-test="save-template"
+            label="Save as Template"
+            icon="i-lucide-camera"
+            size="sm"
+            color="neutral"
+            variant="outline"
+            :loading="actionLoading === 'save-template'"
+            :disabled="isRunning"
+            @click="saveTemplateOpen = true"
+          />
+          <UButton
             data-test="keepalive"
             label="Keep Alive"
             icon="i-lucide-heart-pulse"
@@ -324,6 +352,7 @@ onMounted(fetchPorts)
             @click="deleteConfirmOpen = true"
           />
         </div>
+        <p v-if="isRunning" class="text-xs text-muted">Stop the sandbox first to save it as a template.</p>
       </div>
 
       <!-- Delete confirm modal -->
@@ -336,6 +365,24 @@ onMounted(fetchPorts)
         <template #footer="{ close }">
           <UButton label="Cancel" color="neutral" variant="outline" @click="close" />
           <UButton label="Delete" color="error" @click="doDelete" />
+        </template>
+      </UModal>
+
+      <!-- Save-as-template confirm modal -->
+      <UModal
+        v-model:open="saveTemplateOpen"
+        title="Save as template"
+        description="Snapshot this stopped sandbox as a template image."
+        :ui="{ footer: 'justify-end' }"
+      >
+        <template #body>
+          <UFormField label="Tag" description="e.g. myimage:v1">
+            <UInput v-model="templateTag" data-test="save-template-tag" placeholder="myimage:v1" />
+          </UFormField>
+        </template>
+        <template #footer="{ close }">
+          <UButton label="Cancel" color="neutral" variant="outline" @click="templateTag = ''; close()" />
+          <UButton data-test="save-template-confirm" label="Save" :disabled="!templateTag" @click="doSaveTemplate" />
         </template>
       </UModal>
     </template>

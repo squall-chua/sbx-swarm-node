@@ -106,3 +106,29 @@ func TestUpdateLocalLoad_SetsUtilAndBumpsVersionOnce(t *testing.T) {
 	require.Equal(t, 0.6, ns.ActualMem)
 	require.Equal(t, before+1, ns.StateVersion, "one combined re-advertise")
 }
+
+func TestCluster_UpdateLocalTemplates(t *testing.T) {
+	_, c, _ := newTestDelegate("n1", nil)
+	before := c.LocalNodeState().StateVersion
+
+	c.UpdateLocalTemplates([]string{"myimage:v1"})
+
+	ls := c.LocalNodeState()
+	require.Equal(t, []string{"myimage:v1"}, ls.Templates)
+	require.Greater(t, ls.StateVersion, before, "peers only re-read a bumped state")
+}
+
+func TestCluster_UpdateLocalTemplates_NoBumpWhenUnchanged(t *testing.T) {
+	_, c, _ := newTestDelegate("n1", nil)
+
+	c.UpdateLocalTemplates([]string{"a:v1", "b:v1"})
+	after1 := c.LocalNodeState().StateVersion
+
+	// Same set, different order: the backend's ListTemplates order is not
+	// guaranteed stable, so this must still be treated as unchanged.
+	c.UpdateLocalTemplates([]string{"b:v1", "a:v1"})
+	after2 := c.LocalNodeState().StateVersion
+
+	require.Equal(t, after1, after2, "an unchanged template set must not bump StateVersion again")
+	require.Equal(t, []string{"a:v1", "b:v1"}, c.LocalNodeState().Templates)
+}

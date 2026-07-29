@@ -45,6 +45,18 @@ pick the best host for it, and forward the work there.
   filters hosts by hard constraints (workspaces, template, kits, capabilities, node labels,
   free capacity, not cordoned) and ranks the survivors by strategy (least-loaded,
   bin-pack, spread, least-actual-load). The chosen node creates the sandbox locally.
+  To use one template across the swarm, push it to a registry and request it by its
+  full reference, e.g. `ghcr.io/org/img:1`; a bare tag like `myimage:v1` only places
+  on the node that holds it. Sharp edge: `org/img:1` is treated as a bare tag, so
+  write `docker.io/org/img:1` if you mean Docker Hub. Another sharp edge: a node
+  lists a locally saved template under the daemon's canonical name, e.g. `myimage:v1`
+  becomes `docker.io/library/myimage:v1` and `myorg/myimage:v1` becomes
+  `docker.io/myorg/myimage:v1`; the console offers a saved template in its bare
+  form in the list, so selecting it places correctly. An operator who wants a
+  genuine Docker Hub image should type its full `docker.io/...` reference into
+  the template field. A bare digest reference like `myimage@sha256:...` can
+  never place: it is not registry-shaped, so it is not pullable, and it never
+  matches a node's `repository:tag` listing either.
 - **Wraps the real `sbx` daemon** (via [`sbx-go-sdk`](https://github.com/squall-chua/sbx-go-sdk))
   for `backend: sdk`, or a built-in fake for tests / daemonless nodes.
 - **Git-backed workspaces.** Provision clones a node-owned bare repo into the sandbox;

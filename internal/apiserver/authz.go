@@ -30,6 +30,7 @@ var mutatingMethods = map[string]bool{
 	"/sbxswarm.v1.SandboxService/AgentRun":          true,
 	"/sbxswarm.v1.SandboxService/PublishPort":       true,
 	"/sbxswarm.v1.SandboxService/UnpublishPort":     true,
+	"/sbxswarm.v1.SandboxService/SaveTemplate":      true,
 	"/sbxswarm.v1.SandboxService/PublishSandbox":    true,
 	"/sbxswarm.v1.SandboxService/PublishWork":       true,
 	"/sbxswarm.v1.SandboxService/ReadReview":        true, // uses the workspace forge credential; admin-only like publish
@@ -45,6 +46,7 @@ var mutatingMethods = map[string]bool{
 	"/sbxswarm.v1.NodeService/Uncordon":             true,
 	"/sbxswarm.v1.NodeService/Drain":                true,
 	"/sbxswarm.v1.NodeService/RevokeNode":           true,
+	"/sbxswarm.v1.NodeService/RemoveTemplate":       true,
 }
 
 // internalMethods are node->node RPCs authorized by node identity alone

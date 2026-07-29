@@ -728,8 +728,12 @@ func (b *SDKBackend) SecretRemoveStored(ctx context.Context, scope, name string)
 }
 
 // ListTemplates returns the template refs the daemon holds (repository:tag).
-// ponytail: ref format assumed repository:tag to match WithTemplate; confirm
-// against a live daemon (integration-only) before relying on exact matching.
+//
+// Confirmed against a live daemon (sbx v0.37.0, TestSDKBackend_SaveRemoveTemplate):
+// the format is repository:tag, but the daemon canonicalizes an unqualified
+// repository the way Docker does — a template saved with a bare tag like
+// "name:tag" is reported back as "docker.io/library/name:tag", not the bare
+// tag it was saved with. RemoveTemplate still accepts the original bare tag.
 func (b *SDKBackend) ListTemplates(ctx context.Context) ([]string, error) {
 	imgs, err := sdktemplate.List(ctx, b.cl)
 	if err != nil {
@@ -759,6 +763,22 @@ func (b *SDKBackend) ListTemplateInfo(ctx context.Context) ([]TemplateInfo, erro
 		})
 	}
 	return out, nil
+}
+
+// SaveTemplate snapshots the sandbox as a template image. The SDK shells out to
+// `sbx template save NAME TAG`; the daemon refuses a running sandbox, and the
+// CLI's prompt fails on a non-interactive stdin, so the caller stops it first.
+func (b *SDKBackend) SaveTemplate(ctx context.Context, name, tag string) error {
+	sb, err := b.handle(ctx, name)
+	if err != nil {
+		return err
+	}
+	return sb.SaveTemplate(ctx, tag)
+}
+
+// RemoveTemplate deletes a template image by ref (REST DELETE on the daemon).
+func (b *SDKBackend) RemoveTemplate(ctx context.Context, ref string) error {
+	return sdktemplate.Remove(ctx, b.cl, ref)
 }
 
 // ExecInteractive opens a Terminal session via the SDK's hijacking attach.

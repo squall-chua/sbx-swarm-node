@@ -345,6 +345,47 @@ func (s *SandboxService) KeepAlive(ctx context.Context, r *sbxv1.IdRequest) (*sb
 	return s.GetSandbox(ctx, &sbxv1.GetSandboxRequest{Id: r.Id})
 }
 
+// SaveTemplate snapshots a stopped sandbox as a reusable template image.
+//
+// The sandbox must already be stopped. The daemon refuses to snapshot a running
+// one, and the CLI prompts, which fails on a non-interactive stdin — so a stop
+// has to happen either way. The caller does it, visibly: stopping on their
+// behalf would destroy a running sandbox for anyone who mistypes an id.
+func (s *SandboxService) SaveTemplate(ctx context.Context, r *sbxv1.SaveTemplateRequest) (*sbxv1.Empty, error) {
+	if r.GetTag() == "" {
+		return nil, status.Error(codes.InvalidArgument, "tag is required")
+	}
+	if strings.HasPrefix(r.GetTag(), "-") {
+		return nil, status.Error(codes.InvalidArgument, "tag must not start with -")
+	}
+	rec, err := s.mgr.Get(ctx, r.GetId())
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return nil, status.Error(codes.NotFound, "sandbox not found")
+	}
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if rec.Status == "running" {
+		return nil, status.Error(codes.FailedPrecondition, "stop the sandbox before saving it as a template")
+	}
+	err = s.mgr.Backend().SaveTemplate(ctx, rec.BackendName, r.GetTag())
+	if s.audit != nil {
+		_ = s.audit.Record(audit.Entry{
+			Actor:   actor(ctx),
+			Action:  "template.save",
+			Target:  r.GetTag(),
+			Outcome: outcomeOf(err),
+		})
+	}
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			return nil, st.Err()
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &sbxv1.Empty{}, nil
+}
+
 func (s *SandboxService) StopSandbox(ctx context.Context, r *sbxv1.IdRequest) (*sbxv1.Sandbox, error) {
 	s.maybeAutoPublish(ctx, r.Id, actor(ctx)) // publish-then-stop: the sandbox-<name> fetch needs the live daemon
 	if err := s.mgr.Stop(ctx, r.Id); err != nil {

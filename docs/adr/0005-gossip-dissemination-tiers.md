@@ -7,7 +7,7 @@ UDP gossip metadata (which is ~512-byte capped):
   `cordoned`, a monotonic `state_version`.
 - **TCP push/pull state sync** (`LocalState` / `MergeRemoteState`) — bulky/dynamic state: capacity,
   `allocated`, `actual_util`, workspace names, template names, full pubkey, owned sandbox IDs,
-  `blocked_egress_distinct_count`.
+  `blocked_egress_distinct_count`, the node's display name.
 - **Delta broadcasts** (delegate broadcast queue) — per-change events (sandbox created/removed) for
   faster-than-sync propagation, reconciled via `state_version`.
 

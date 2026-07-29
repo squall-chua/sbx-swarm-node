@@ -564,3 +564,76 @@ func TestToSpecAndToProto_CarryKits(t *testing.T) {
 		t.Fatalf("toProto kits: want %v, got %v", want, got)
 	}
 }
+
+func TestSandboxService_SaveTemplateRequiresAStoppedSandbox(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+
+	// A running sandbox is refused, and the backend is never called.
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID, Tag: "myimage:v1"})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Empty(t, fake.SavedTemplates())
+}
+
+func TestSandboxService_SaveTemplateSavesAStoppedSandbox(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+	require.NoError(t, svc.mgr.Stop(ctx, rec.ID))
+
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID, Tag: "myimage:v1"})
+	require.NoError(t, err)
+	require.Equal(t, []string{rec.BackendName + "=>myimage:v1"}, fake.SavedTemplates())
+}
+
+func TestSandboxService_SaveTemplateNeedsATag(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestSandboxService_SaveTemplateRejectsATagStartingWithDash(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+
+	// A leading "-" would be read as a CLI flag by the shelled-out template save;
+	// refuse it up front instead of letting the backend fail confusingly.
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID, Tag: "-v1"})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Empty(t, fake.SavedTemplates())
+}
+
+func TestSandboxService_SaveTemplateMissingSandboxIsNotFound(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+
+	_, err := svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: "n1.missing", Tag: "myimage:v1"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestSandboxService_SaveTemplateKeepsBackendStatusCode(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	require.NoError(t, svc.mgr.Stop(ctx, rec.ID))
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+
+	// A backend error that already carries a gRPC status must keep its code
+	// instead of flattening to Internal.
+	fake.SaveTemplateErr = status.Error(codes.AlreadyExists, "image already exists")
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID, Tag: "myimage:v1"})
+	require.Equal(t, codes.AlreadyExists, status.Code(err))
+}

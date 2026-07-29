@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -117,34 +118,6 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	netC := obsd.NewNetLogCollector(backend, mgr.ResolveVMToID)
 	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC, Backend: backend, Mgr: mgr})
 	idleEnabled := cfg.IdleTimeoutDuration() > 0
-	go runTicker(nctx, 10*time.Second, func() {
-		_ = statsC.PollOnce(nctx)
-		// Surface the spec §9 actual_util reconstruction on /metrics.
-		au := statsC.ActualUtil()
-		metrics.SetActualUtil(au.CPU, au.Mem)
-		// Update the sandbox status gauge from manager records. Reset first so
-		// statuses absent from this snapshot don't retain stale values.
-		if recs, err := mgr.List(nctx); err == nil {
-			counts := map[string]int{}
-			for _, r := range recs {
-				counts[r.Status]++
-				if idleEnabled && r.Status == "running" {
-					if u, ok := statsC.Latest(r.BackendName); ok && u.CPUPercent >= cpuActiveThreshold {
-						_ = mgr.BumpActivity(nctx, r.ID) // observed work counts as Activity
-					}
-				}
-			}
-			metrics.ResetSandboxes()
-			for status, n := range counts {
-				metrics.SetSandboxes(status, n)
-			}
-		}
-		_ = mgr.Reconcile(nctx)
-		if clusterInstance != nil {
-			rc, rm, rd := mgr.Capacity().Snapshot()
-			clusterInstance.UpdateLocalLoad(rc, rm, rd, au.CPU, au.Mem)
-		}
-	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
 	if idle := cfg.IdleTimeoutDuration(); idle > 0 {
 		go runTicker(nctx, reapInterval(idle), func() { sandboxes.ReapIdle(nctx, time.Now()) })
@@ -198,6 +171,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		OwnedSandboxIDs: ownedIDs,
 		SwarmID:         si.SwarmID,
 		SwarmName:       swarmName,
+		NodeName:        cfg.NodeName,
 		Labels:          cfg.Labels,
 		LimitCPU:        lc,
 		LimitMemKB:      lm,
@@ -258,12 +232,49 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		mgr.SetOwnedIDsNotifier(cl)
 	}
 
+	// Started here, after clusterInstance is done being assigned above: this
+	// ticker's closure reads clusterInstance, and starting the goroutine only
+	// once that assignment is finished (in program order, before the `go`
+	// even runs) avoids a data race between the two.
+	edges := &tickerEdges{}
+	go runTicker(nctx, 10*time.Second, func() {
+		pollStats(nctx, statsC, &edges.stats, log)
+		// Surface the spec §9 actual_util reconstruction on /metrics.
+		au := statsC.ActualUtil()
+		metrics.SetActualUtil(au.CPU, au.Mem)
+		// Update the sandbox status gauge from manager records. Reset first so
+		// statuses absent from this snapshot don't retain stale values.
+		if recs, ok := listSandboxRecords(nctx, mgr, &edges.list, log); ok {
+			counts := map[string]int{}
+			for _, r := range recs {
+				counts[r.Status]++
+				if idleEnabled && r.Status == "running" {
+					if u, ok := statsC.Latest(r.BackendName); ok && u.CPUPercent >= cpuActiveThreshold {
+						_ = mgr.BumpActivity(nctx, r.ID) // observed work counts as Activity
+					}
+				}
+			}
+			metrics.ResetSandboxes()
+			for status, n := range counts {
+				metrics.SetSandboxes(status, n)
+			}
+		}
+		reconcileSandboxes(nctx, mgr, &edges.reconcile, log)
+		refreshLocalState(nctx, clusterInstance, mgr, statsC, log, &edges.templates)
+	})
+
 	nodeSvc.SetTemplateLister(mgr.Backend().ListTemplateInfo)
+	nodeSvc.SetTemplateRemover(mgr.Backend().RemoveTemplate)
+	nodeSvc.SetAudit(auditLog)
 	nodeSvc.SetNodeLister(func() []apiserver.NodeRow {
 		// Self row: live capacity + current templates + drain/cordon state.
 		lc, lm, ld := capt.Limits()
 		ac, am, ad := capt.Snapshot()
 		tmpls, _ := mgr.Backend().ListTemplates(context.Background())
+		// Sort to match peer rows: those come from gossip, which sorts before
+		// storing (membership.Cluster.UpdateLocalTemplates). GET /v1/nodes is
+		// public API, so self shouldn't be the one row in a different order.
+		slices.Sort(tmpls)
 		self := apiserver.NodeRow{
 			NodeID: id.NodeID, NodeName: cfg.NodeName, Draining: nodeSvc.Draining(),
 			Cordoned:      nodeSvc.Cordoned(),
@@ -504,6 +515,124 @@ func (n *Node) Stop(ctx context.Context) error {
 	return err
 }
 
+// edgeLog tracks whether a repeating ticker check is currently failing, so
+// warn/recovered only log on the transition (into failure, then back out),
+// not on every tick. Without this, a daemon outage logs the same line every
+// 10s -- about 8,600 identical lines a day, burying everything else in the log.
+//
+// Each check gets its own edgeLog (see tickerEdges), created fresh per Node.
+// A package-level flag would be wrong: it would be shared by every Node
+// instance in the same test binary.
+type edgeLog struct {
+	failing bool
+	streak  int    // consecutive failures since the last log line
+	lastErr string // text of the error last logged, so a changed error re-logs
+}
+
+// reWarnEvery re-logs an ongoing failure every N consecutive ticks, so a
+// multi-hour outage still leaves a trail instead of exactly one line at onset.
+// At the ticker's 10s period, 30 ticks is 5 minutes.
+const reWarnEvery = 30
+
+// warn logs at Warn on the transition into failure, then stays silent for a
+// repeated failure with the same error -- except every reWarnEvery-th
+// consecutive tick (so an ongoing outage keeps a periodic trail) and whenever
+// the error text changes (so a failure mode that shifts, e.g. "connection
+// refused" to "permission denied", is still visible).
+func (e *edgeLog) warn(log *slog.Logger, msg string, err error) {
+	e.streak++
+	errText := err.Error()
+	changed := errText != e.lastErr
+	if !e.failing || changed || e.streak%reWarnEvery == 0 {
+		log.Warn(msg, "err", err)
+		e.lastErr = errText
+	}
+	e.failing = true
+}
+
+// recovered logs once at Info when a previously failing check succeeds again.
+// A check that was never failing logs nothing.
+func (e *edgeLog) recovered(log *slog.Logger, msg string) {
+	if e.failing {
+		log.Info(msg)
+	}
+	e.failing = false
+	e.streak = 0
+	e.lastErr = ""
+}
+
+// tickerEdges holds one edgeLog per repeating check in the node's 10s ticker.
+// Each check gets its own state rather than one shared "daemon looks down"
+// bit, but they don't all fail for unrelated reasons: stats and list both
+// read through mgr.List, which reads the local store, so a store read
+// failure trips both of them at once. reconcile and templates call the
+// backend daemon directly, a different failure mode from a bad store read.
+type tickerEdges struct {
+	stats     edgeLog
+	list      edgeLog
+	reconcile edgeLog
+	templates edgeLog
+}
+
+// pollStats polls sandbox stats, logging edge-triggered on failure.
+func pollStats(ctx context.Context, statsC *obsd.StatsCollector, edge *edgeLog, log *slog.Logger) {
+	if err := statsC.PollOnce(ctx); err != nil {
+		edge.warn(log, "poll sandbox stats failed", err)
+		return
+	}
+	edge.recovered(log, "poll sandbox stats recovered")
+}
+
+// listSandboxRecords lists this node's sandbox records for the ticker's status
+// gauge, logging edge-triggered on failure. ok is false when the list failed,
+// so the caller skips refreshing the gauge this tick (the previous values stand).
+func listSandboxRecords(ctx context.Context, mgr *sandbox.Manager, edge *edgeLog, log *slog.Logger) ([]*sandbox.Record, bool) {
+	recs, err := mgr.List(ctx)
+	if err != nil {
+		edge.warn(log, "list sandboxes failed", err)
+		return nil, false
+	}
+	edge.recovered(log, "list sandboxes recovered")
+	return recs, true
+}
+
+// reconcileSandboxes reconciles backend truth against stored records, logging
+// edge-triggered on failure (e.g. the daemon is down).
+func reconcileSandboxes(ctx context.Context, mgr *sandbox.Manager, edge *edgeLog, log *slog.Logger) {
+	if err := mgr.Reconcile(ctx); err != nil {
+		edge.warn(log, "reconcile failed", err)
+		return
+	}
+	edge.recovered(log, "reconcile recovered")
+}
+
+// refreshLocalState re-advertises this node's load and templates to the
+// cluster. It is the clustered half of the node's 10s ticker, pulled out into
+// its own function so it can be unit-tested without booting a whole node. A
+// nil cluster (standalone node) is a no-op.
+func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox.Manager, statsC *obsd.StatsCollector, log *slog.Logger, edge *edgeLog) {
+	if cl == nil {
+		return
+	}
+	rc, rm, rd := mgr.Capacity().Snapshot()
+	au := statsC.ActualUtil()
+	cl.UpdateLocalLoad(rc, rm, rd, au.CPU, au.Mem)
+	// Re-advertise templates: they used to be a boot-time snapshot, so a
+	// template saved at runtime was invisible to peers until a restart.
+	// Polling also catches images added or removed outside our own RPCs.
+	if tmpls, err := mgr.Backend().ListTemplates(ctx); err == nil {
+		cl.UpdateLocalTemplates(tmpls)
+		edge.recovered(log, "list templates recovered")
+	} else {
+		// Keep the last known list — one failed tick shouldn't blank a node's
+		// advertised templates. Edge-triggered: Warn once on the way down and
+		// Info once on the way back up, so a daemon outage that lasts hours
+		// doesn't spam once per tick -- the first line is the signal, the rest
+		// is just noise burying everything else in the log.
+		edge.warn(log, "list templates failed, keeping previously advertised list", err)
+	}
+}
+
 // namesList returns a function that lists backend names of running sandboxes
 // only (exec.Stats requires a running sandbox).
 func namesList(mgr *sandbox.Manager) func(context.Context) ([]string, error) {
@@ -723,10 +852,19 @@ func nameSet(ss []string) map[string]bool {
 	return m
 }
 
-// rowFromState maps a gossiped NodeState to a NodeRow (peer view: no name/draining).
+// rowFromState maps a gossiped NodeState to a NodeRow (peer view: no draining --
+// that's local-only, not gossiped). NodeName now rides the bulk gossip tier
+// (see ADR-0005), so a peer's name shows instead of rendering blank.
 func rowFromState(ns membership.NodeState) apiserver.NodeRow {
+	// A pre-upgrade peer gossips NodeState without NodeName populated. Fall
+	// back to NodeID here, once, so every render site gets a name instead of
+	// a blank chip.
+	name := ns.NodeName
+	if name == "" {
+		name = ns.NodeID
+	}
 	return apiserver.NodeRow{
-		NodeID: ns.NodeID, Cordoned: ns.Cordoned, Labels: ns.Labels,
+		NodeID: ns.NodeID, NodeName: name, Cordoned: ns.Cordoned, Labels: ns.Labels,
 		Capabilities: ns.Capabilities, Workspaces: ns.Workspaces, GitWorkspaces: ns.GitWorkspaces, Templates: ns.Templates,
 		Kits:     ns.Kits,
 		LimitCPU: ns.LimitCPU, LimitMemKB: ns.LimitMemKB, LimitDiskGB: ns.LimitDiskGB,

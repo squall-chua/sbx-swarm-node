@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"sort"
+
+	"github.com/squall-chua/sbx-swarm-node/internal/imageref"
 )
 
 // ErrNoEligibleNode means no candidate passed every Placement constraint.
@@ -67,6 +69,18 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 			}
 			return si < sj // least-loaded / spread: lighter first
 		}
+		// A node that already holds the image beats one that would have to pull
+		// it. Only reached on an exact score tie, so real load still wins first.
+		// For a bare tag this agrees with a plain map read, because fits already
+		// excluded every candidate that does not hold it. For a pullable
+		// reference it can differ: fits let every candidate through, so holds is
+		// what actually finds the node whose daemon reports the tagged form and
+		// avoids a pull.
+		if req.Template != "" {
+			if hi, hj := holds(ok[i], req.Template), holds(ok[j], req.Template); hi != hj {
+				return hi
+			}
+		}
 		// Score tie: prefer the local (entry) node so an unconstrained create
 		// stays where it was requested when that node can take it; an unloaded
 		// node ties for best, a loaded one is beaten on score and offloads.
@@ -83,6 +97,13 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 	return out, nil
 }
 
+// holds reports whether a candidate advertises the requested template, under
+// either spelling. The fake backend advertises the bare tag it was given, while a
+// real daemon advertises the canonical form, so both have to match.
+func holds(c Candidate, ref string) bool {
+	return c.Templates[ref] || c.Templates[imageref.Canonical(ref)]
+}
+
 func fits(req Request, c Candidate) bool {
 	if c.Cordoned {
 		return false
@@ -92,7 +113,7 @@ func fits(req Request, c Candidate) bool {
 			return false
 		}
 	}
-	if req.Template != "" && !c.Templates[req.Template] {
+	if req.Template != "" && !imageref.Pullable(req.Template) && !holds(c, req.Template) {
 		return false
 	}
 	for _, k := range req.Kits {

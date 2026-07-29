@@ -3,17 +3,123 @@ package apiserver
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func newTestAudit(t *testing.T) *audit.Log {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return audit.New(st, func() int64 { return 1 })
+}
+
+func TestNodeService_RemoveTemplate(t *testing.T) {
+	f := sandbox.NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateLister(f.ListTemplateInfo)
+	s.SetTemplateRemover(f.RemoveTemplate)
+
+	resp, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.NoError(t, err)
+	for _, tm := range resp.Templates {
+		require.NotEqual(t, "myimage:v1", tm.Repository+":"+tm.Tag)
+	}
+}
+
+func TestNodeService_RemoveTemplateWritesAudit(t *testing.T) {
+	f := sandbox.NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+	a := newTestAudit(t)
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateLister(f.ListTemplateInfo)
+	s.SetTemplateRemover(f.RemoveTemplate)
+	s.SetAudit(a)
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.NoError(t, err)
+
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "template.remove", entries[0].Action)
+	require.Equal(t, "myimage:v1", entries[0].Target)
+	require.Equal(t, "ok", entries[0].Outcome)
+}
+
+func TestNodeService_RemoveTemplateWritesAuditOnFailure(t *testing.T) {
+	a := newTestAudit(t)
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateRemover(func(context.Context, string) error { return errors.New("boom") })
+	s.SetAudit(a)
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.Error(t, err)
+
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "template.remove", entries[0].Action)
+	require.Equal(t, "myimage:v1", entries[0].Target)
+	require.Equal(t, "error", entries[0].Outcome)
+}
+
+func TestNodeService_RemoveTemplateKeepsBackendStatusCode(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	// A backend error that already carries a gRPC status must keep its code
+	// instead of flattening to Internal.
+	s.SetTemplateRemover(func(context.Context, string) error {
+		return status.Error(codes.FailedPrecondition, "image in use")
+	})
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
+
+func TestNodeService_RemoveTemplateNeedsARef(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestNodeService_RemoveTemplateWithoutABackend(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test") // no remover wired
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+func TestNodeService_RemoveTemplateRefusesAnotherNode(t *testing.T) {
+	f := sandbox.NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+
+	called := false
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateLister(f.ListTemplateInfo)
+	s.SetTemplateRemover(func(ctx context.Context, ref string) error {
+		called = true
+		return f.RemoveTemplate(ctx, ref)
+	})
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{NodeId: "n2", Ref: "myimage:v1"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+	require.False(t, called, "the backend remover must not run for another node's id")
+}
 
 func TestNodeService_GetNodeInfo(t *testing.T) {
 	svc := NewNodeService("node-abc", "alpha", "v9")

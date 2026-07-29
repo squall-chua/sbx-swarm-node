@@ -137,6 +137,94 @@ func TestSchedule_NodeAffinityFiltersByLabel(t *testing.T) {
 	require.Equal(t, []string{"A"}, order) // eu excluded
 }
 
+func TestSchedule_RegistryTemplatePlacesOnANodeWithoutIt(t *testing.T) {
+	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+	// c.Templates is empty: this node holds nothing.
+	got, err := Schedule(Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r"}, []Candidate{c})
+	require.NoError(t, err)
+	require.Equal(t, []string{"n1"}, got)
+}
+
+func TestSchedule_BareTemplateStillFiltered(t *testing.T) {
+	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+	_, err := Schedule(Request{Template: "myimage:v1", CPU: 1, RequestID: "r"}, []Candidate{c})
+	require.ErrorIs(t, err, ErrNoEligibleNode)
+}
+
+func TestSchedule_HolderBeatsTheEntryNodeOnATie(t *testing.T) {
+	// Two identical, unloaded nodes. n2 holds the image; n1 is the entry node.
+	mk := func(id string, holds bool) Candidate {
+		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+		if holds {
+			c.Templates = map[string]bool{"ghcr.io/org/img:1": true}
+		}
+		return c
+	}
+	req := Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r", Local: "n1"}
+	got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
+	require.NoError(t, err)
+	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node")
+}
+
+// The holder tie-break sits after the score comparison, so it must win a tie
+// under every ranking strategy, not just the default. bin-pack, spread and
+// least-actual-load all score both nodes equal here, so each one reaches the
+// same tie-break as TestSchedule_HolderBeatsTheEntryNodeOnATie.
+func TestSchedule_HolderBeatsTheEntryNodeOnATie_AcrossStrategies(t *testing.T) {
+	mk := func(id string, holds bool) Candidate {
+		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+		if holds {
+			c.Templates = map[string]bool{"ghcr.io/org/img:1": true}
+		}
+		return c
+	}
+	for _, strategy := range []string{"bin-pack", "spread", "least-actual-load"} {
+		t.Run(strategy, func(t *testing.T) {
+			req := Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r", Local: "n1", Strategy: strategy}
+			got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
+			require.NoError(t, err)
+			require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node under "+strategy)
+		})
+	}
+}
+
+// Two identical unloaded nodes. n1 advertises the daemon's tagged form of an
+// untagged request, so only the canonical lookup finds it.
+func TestSchedule_TieBreakMatchesTheCanonicalName(t *testing.T) {
+	mk := func(id string, tmpl map[string]bool) Candidate {
+		return Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100, Templates: tmpl}
+	}
+	n1 := mk("n1", map[string]bool{"ghcr.io/org/img:latest": true})
+	n2 := mk("n2", nil)
+
+	// RequestID chosen so the hash tie-break (what decides if holds falls back
+	// to a raw map read) would rank n2 first, the opposite of the expected
+	// n1 — so this test fails if holds stops using the canonical name.
+	req := Request{Template: "ghcr.io/org/img", CPU: 1, RequestID: "req-tiebreak"}
+	got, err := Schedule(req, []Candidate{n1, n2})
+	require.NoError(t, err)
+	require.Equal(t, "n1", got[0], "only the canonical lookup finds n1's tagged form")
+}
+
+// A node that saved "myimage:v1" advertises "docker.io/library/myimage:v1", because the
+// daemon canonicalizes an unqualified repository. A request for the bare tag must still
+// place there.
+func TestSchedule_BareTagMatchesTheCanonicalAdvertisedName(t *testing.T) {
+	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100,
+		Templates: map[string]bool{"docker.io/library/myimage:v1": true}}
+	got, err := Schedule(Request{Template: "myimage:v1", CPU: 1, RequestID: "r"}, []Candidate{c})
+	require.NoError(t, err)
+	require.Equal(t, []string{"n1"}, got)
+}
+
+// A bare tag still does not travel: a node that holds nothing is not eligible.
+func TestSchedule_BareTagStillDoesNotTravel(t *testing.T) {
+	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+	// c.Templates is empty: this node holds nothing.
+	_, err := Schedule(Request{Template: "myimage:v1", CPU: 1, RequestID: "r"}, []Candidate{c})
+	require.ErrorIs(t, err, ErrNoEligibleNode)
+}
+
 func TestSchedule_KitFilter(t *testing.T) {
 	has := Candidate{NodeID: "a", LimitCPU: 4, LimitMem: 4_000_000, LimitDisk: 100,
 		Kits: map[string]bool{"tools": true}}

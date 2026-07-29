@@ -21,7 +21,9 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/ids"
+	"github.com/squall-chua/sbx-swarm-node/internal/membership"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
+	"github.com/squall-chua/sbx-swarm-node/internal/obsd"
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
@@ -481,6 +483,23 @@ func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {
 	require.Equal(t, kA, kB)
 }
 
+// TestRowFromState_CarriesNodeName proves a peer's gossiped node name reaches
+// its NodeRow, so a peer's node card shows a name instead of rendering blank.
+func TestRowFromState_CarriesNodeName(t *testing.T) {
+	ns := membership.NodeState{NodeID: "n2", NodeName: "worker-2"}
+	row := rowFromState(ns)
+	require.Equal(t, "worker-2", row.NodeName)
+}
+
+// TestRowFromState_FallsBackToNodeIDWhenNameIsBlank proves a pre-upgrade peer
+// that gossips no NodeName still gets a non-blank name, so its node card
+// doesn't render an empty chip.
+func TestRowFromState_FallsBackToNodeIDWhenNameIsBlank(t *testing.T) {
+	ns := membership.NodeState{NodeID: "n2"}
+	row := rowFromState(ns)
+	require.Equal(t, "n2", row.NodeName)
+}
+
 func TestGitWorkspaceNames(t *testing.T) {
 	ws := []config.WorkspaceConfig{
 		{Name: "repo", Git: &config.GitConfig{}},
@@ -489,4 +508,307 @@ func TestGitWorkspaceNames(t *testing.T) {
 	}
 	require.Equal(t, []string{"repo", "repo2"}, gitWorkspaceNames(ws))
 	require.Empty(t, gitWorkspaceNames([]config.WorkspaceConfig{{Name: "plain"}}))
+}
+
+// newTestCluster builds a real, unjoined membership.Cluster bound to an
+// ephemeral loopback port, mirroring what node.New wires up when clustered,
+// so refreshLocalState has something real to advertise into.
+func newTestCluster(t *testing.T) *membership.Cluster {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.GossipAddr = "127.0.0.1:0"
+	cfg.ClusterSecret = "test-secret"
+	tbl := routing.NewTable("n1")
+	si, err := membership.LoadOrInit(filepath.Join(dir, "swarm.json"), nil)
+	require.NoError(t, err)
+	st, err := store.Open(filepath.Join(dir, "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	local := membership.NodeState{NodeID: "n1", ProtocolVersion: membership.ProtocolVersion}
+	cl, err := membership.NewCluster(cfg, local, tbl, si, filepath.Join(dir, "swarm.json"), st, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cl.Shutdown() })
+	return cl
+}
+
+// TestRefreshLocalState_NilClusterIsNoOp proves a standalone node (no
+// cluster wired up) skips the refresh without panicking.
+func TestRefreshLocalState_NilClusterIsNoOp(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(sandbox.NewFake(), nil, obsd.DefaultProvisionLimit(), 4)
+
+	require.NotPanics(t, func() {
+		refreshLocalState(context.Background(), nil, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)), &edgeLog{})
+	})
+}
+
+// TestRefreshLocalState_AdvertisesLoadAndTemplates proves the extracted
+// clustered-ticker body forwards both load and the backend's current
+// templates into the cluster, bumping StateVersion so peers re-read.
+func TestRefreshLocalState_AdvertisesLoadAndTemplates(t *testing.T) {
+	cl := newTestCluster(t)
+	before := cl.LocalNodeState().StateVersion
+
+	backend := sandbox.NewFake()
+	backend.SetTemplates([]string{"myimage:v1"})
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+
+	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)), &edgeLog{})
+
+	ns := cl.LocalNodeState()
+	require.Equal(t, []string{"myimage:v1"}, ns.Templates)
+	require.Greater(t, ns.StateVersion, before, "peers only re-read a bumped state")
+}
+
+// TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped proves a failed
+// ListTemplates poll keeps the previously advertised templates (a persistently
+// failing daemon must not blank a node's advertised list) and logs the error
+// so the failure isn't silent.
+func TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped(t *testing.T) {
+	cl := newTestCluster(t)
+	backend := sandbox.NewFake()
+	backend.SetTemplates([]string{"myimage:v1"})
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+
+	// First tick succeeds and advertises the template.
+	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)), edge)
+	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates)
+
+	// The daemon goes down: ListTemplates starts failing.
+	backend.ListTemplatesErr = errors.New("daemon unreachable")
+	var buf bytes.Buffer
+	// Default handler options (no Level override): the default log_level is
+	// "info", so this proves the failure is visible without an operator
+	// having to turn on debug logging.
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+
+	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates, "a failed poll must not blank the advertised list")
+	require.Contains(t, buf.String(), "daemon unreachable", "the failure must be logged, not silently swallowed")
+	require.Contains(t, buf.String(), "level=WARN", "must log at a level visible by default, not buried at debug")
+}
+
+// TestRefreshLocalState_ListTemplatesRepeatedFailureLogsOnce proves a second
+// consecutive failed tick does not log again -- otherwise a daemon outage
+// logs the same line every 10s (about 8,600 times a day).
+func TestRefreshLocalState_ListTemplatesRepeatedFailureLogsOnce(t *testing.T) {
+	cl := newTestCluster(t)
+	backend := sandbox.NewFake()
+	backend.ListTemplatesErr = errors.New("daemon unreachable")
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge) // first failure: logs
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge) // second consecutive failure: silent
+	require.Empty(t, buf.String(), "a repeated failure must not log again")
+}
+
+// TestRefreshLocalState_ListTemplatesRecoveryLogsOnce proves a tick that
+// succeeds after a failing streak logs a single Info recovery line, that a
+// tick that was never failing logs nothing on success, and that a tick that
+// is already healthy again stays silent.
+func TestRefreshLocalState_ListTemplatesRecoveryLogsOnce(t *testing.T) {
+	cl := newTestCluster(t)
+	backend := sandbox.NewFake()
+	backend.SetTemplates([]string{"myimage:v1"})
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	// A tick that succeeds while never failing logs nothing.
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+	require.Empty(t, buf.String(), "a never-failing tick must not log a recovery")
+
+	// The daemon goes down, then comes back.
+	backend.ListTemplatesErr = errors.New("daemon unreachable")
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+	buf.Reset()
+	backend.ListTemplatesErr = nil
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge)
+	require.Contains(t, buf.String(), "level=INFO", "recovery must log once, visible by default")
+
+	buf.Reset()
+	refreshLocalState(context.Background(), cl, mgr, statsC, log, edge) // still healthy: silent
+	require.Empty(t, buf.String(), "a tick that was already healthy must not log again")
+}
+
+// TestEdgeLog_WarnThenRecovered proves the shared edge-triggered mechanism
+// itself: a repeated failure logs nothing further, and recovery logs once.
+func TestEdgeLog_WarnThenRecovered(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	e := &edgeLog{}
+
+	e.warn(log, "check failed", errors.New("boom"))
+	require.Contains(t, buf.String(), "level=WARN")
+	require.Contains(t, buf.String(), "check failed")
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("boom")) // repeated failure: silent
+	require.Empty(t, buf.String())
+
+	buf.Reset()
+	e.recovered(log, "check recovered")
+	require.Contains(t, buf.String(), "level=INFO")
+	require.Contains(t, buf.String(), "check recovered")
+
+	buf.Reset()
+	e.recovered(log, "check recovered") // already healthy: silent
+	require.Empty(t, buf.String())
+}
+
+// TestEdgeLog_ReWarnsOnAnInterval proves an ongoing failure isn't silent
+// forever: it re-logs every reWarnEvery-th consecutive tick, so a multi-hour
+// outage still leaves a periodic trail an operator can find after onset (and
+// survives log rotation), instead of exactly one line at the start.
+func TestEdgeLog_ReWarnsOnAnInterval(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	e := &edgeLog{}
+
+	e.warn(log, "check failed", errors.New("boom")) // 1st: logs (transition)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	for i := 2; i < reWarnEvery; i++ {
+		buf.Reset()
+		e.warn(log, "check failed", errors.New("boom"))
+		require.Emptyf(t, buf.String(), "tick %d must be silent", i)
+	}
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("boom")) // Nth: re-logs
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	e.recovered(log, "check recovered")
+	require.Contains(t, buf.String(), "level=INFO")
+}
+
+// TestEdgeLog_ReLogsWhenTheErrorChanges proves a failure mode that changes
+// mid-outage (e.g. connection refused, then permission denied) is still
+// visible, not silenced by the interval in TestEdgeLog_ReWarnsOnAnInterval.
+func TestEdgeLog_ReLogsWhenTheErrorChanges(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	e := &edgeLog{}
+
+	e.warn(log, "check failed", errors.New("connection refused"))
+	require.Contains(t, buf.String(), "connection refused")
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("connection refused")) // same error: silent
+	require.Empty(t, buf.String())
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("permission denied")) // changed error: logs
+	require.Contains(t, buf.String(), "level=WARN")
+	require.Contains(t, buf.String(), "permission denied")
+
+	buf.Reset()
+	e.warn(log, "check failed", errors.New("permission denied")) // unchanged again: silent
+	require.Empty(t, buf.String())
+}
+
+// TestPollStats_EdgeTriggeredLogging proves pollStats shares edgeLog's
+// treatment: a first failure logs, a repeated one doesn't.
+func TestPollStats_EdgeTriggeredLogging(t *testing.T) {
+	callErr := errors.New("list failed")
+	failing := func(context.Context) ([]string, error) { return nil, callErr }
+	statsC := obsd.NewStatsCollector(sandbox.NewFake(), failing, obsd.DefaultProvisionLimit(), 4)
+	edge := &edgeLog{}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	pollStats(context.Background(), statsC, edge, log)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	pollStats(context.Background(), statsC, edge, log) // still failing: silent
+	require.Empty(t, buf.String())
+}
+
+// TestListSandboxRecords_EdgeTriggeredLogging proves listSandboxRecords shares
+// edgeLog's treatment: a first failure logs and reports ok=false, a repeated
+// one doesn't log again.
+func TestListSandboxRecords_EdgeTriggeredLogging(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	mgr := sandbox.NewManager("n1", sandbox.NewFake(), st, ids.NewGen("n1"))
+	require.NoError(t, st.Close()) // a closed store makes List fail
+
+	edge := &edgeLog{}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	_, ok := listSandboxRecords(context.Background(), mgr, edge, log)
+	require.False(t, ok)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	_, ok = listSandboxRecords(context.Background(), mgr, edge, log)
+	require.False(t, ok)
+	require.Empty(t, buf.String(), "a repeated failure must not log again")
+}
+
+// TestReconcileSandboxes_EdgeTriggeredLogging proves reconcileSandboxes shares
+// edgeLog's treatment: a first failure logs, a repeated one doesn't, and
+// recovery logs once.
+func TestReconcileSandboxes_EdgeTriggeredLogging(t *testing.T) {
+	backend := sandbox.NewFake()
+	backend.ListErr = errors.New("daemon unreachable")
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+
+	edge := &edgeLog{}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	reconcileSandboxes(context.Background(), mgr, edge, log)
+	require.Contains(t, buf.String(), "level=WARN")
+
+	buf.Reset()
+	reconcileSandboxes(context.Background(), mgr, edge, log) // still failing: silent
+	require.Empty(t, buf.String())
+
+	buf.Reset()
+	backend.ListErr = nil
+	reconcileSandboxes(context.Background(), mgr, edge, log)
+	require.Contains(t, buf.String(), "level=INFO")
 }

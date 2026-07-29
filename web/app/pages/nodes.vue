@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { requestableTemplate } from '../components/ProvisionModal'
+
 interface NodeSummary {
   node_id: string
   node_name: string
@@ -271,19 +273,33 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
             </div>
           </div>
 
-          <!-- Templates -->
+          <!-- Templates: show the requestable form (what Provision should send), not
+          the daemon's canonical gossiped string — see requestableTemplate. This is a
+          compact chip list, so a per-chip subtitle would be noisy; a tooltip carries
+          the canonical form instead, only when it actually differs. -->
           <div v-if="(node.templates ?? []).length" class="flex flex-col gap-1">
             <span class="text-xs text-muted uppercase tracking-wide font-medium">Templates</span>
             <div class="flex flex-wrap gap-1">
-              <UBadge
-                v-for="t in node.templates"
-                :key="t"
-                :label="t"
-                color="neutral"
-                variant="subtle"
-                size="xs"
-                class="font-mono"
-              />
+              <template v-for="t in node.templates" :key="t">
+                <UTooltip v-if="requestableTemplate(t) !== t" :text="`listed as ${t}`">
+                  <UBadge
+                    :label="requestableTemplate(t)"
+                    :title="`listed as ${t}`"
+                    color="neutral"
+                    variant="subtle"
+                    size="xs"
+                    class="font-mono"
+                  />
+                </UTooltip>
+                <UBadge
+                  v-else
+                  :label="t"
+                  color="neutral"
+                  variant="subtle"
+                  size="xs"
+                  class="font-mono"
+                />
+              </template>
             </div>
           </div>
 

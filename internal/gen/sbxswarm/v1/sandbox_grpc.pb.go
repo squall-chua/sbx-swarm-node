@@ -31,6 +31,7 @@ const (
 	SandboxService_PublishPort_FullMethodName    = "/sbxswarm.v1.SandboxService/PublishPort"
 	SandboxService_ListPorts_FullMethodName      = "/sbxswarm.v1.SandboxService/ListPorts"
 	SandboxService_UnpublishPort_FullMethodName  = "/sbxswarm.v1.SandboxService/UnpublishPort"
+	SandboxService_SaveTemplate_FullMethodName   = "/sbxswarm.v1.SandboxService/SaveTemplate"
 	SandboxService_GetStats_FullMethodName       = "/sbxswarm.v1.SandboxService/GetStats"
 	SandboxService_ListBlocked_FullMethodName    = "/sbxswarm.v1.SandboxService/ListBlocked"
 	SandboxService_PublishSandbox_FullMethodName = "/sbxswarm.v1.SandboxService/PublishSandbox"
@@ -58,6 +59,7 @@ type SandboxServiceClient interface {
 	PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*Port, error)
 	ListPorts(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListPortsResponse, error)
 	UnpublishPort(ctx context.Context, in *UnpublishPortRequest, opts ...grpc.CallOption) (*Empty, error)
+	SaveTemplate(ctx context.Context, in *SaveTemplateRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error)
 	ListBlocked(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*ListBlockedResponse, error)
 	PublishSandbox(ctx context.Context, in *PublishSandboxRequest, opts ...grpc.CallOption) (*Operation, error)
@@ -197,6 +199,16 @@ func (c *sandboxServiceClient) UnpublishPort(ctx context.Context, in *UnpublishP
 	return out, nil
 }
 
+func (c *sandboxServiceClient) SaveTemplate(ctx context.Context, in *SaveTemplateRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, SandboxService_SaveTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sandboxServiceClient) GetStats(ctx context.Context, in *IdRequest, opts ...grpc.CallOption) (*Stats, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Stats)
@@ -303,6 +315,7 @@ type SandboxServiceServer interface {
 	PublishPort(context.Context, *PublishPortRequest) (*Port, error)
 	ListPorts(context.Context, *IdRequest) (*ListPortsResponse, error)
 	UnpublishPort(context.Context, *UnpublishPortRequest) (*Empty, error)
+	SaveTemplate(context.Context, *SaveTemplateRequest) (*Empty, error)
 	GetStats(context.Context, *IdRequest) (*Stats, error)
 	ListBlocked(context.Context, *IdRequest) (*ListBlockedResponse, error)
 	PublishSandbox(context.Context, *PublishSandboxRequest) (*Operation, error)
@@ -357,6 +370,9 @@ func (UnimplementedSandboxServiceServer) ListPorts(context.Context, *IdRequest) 
 }
 func (UnimplementedSandboxServiceServer) UnpublishPort(context.Context, *UnpublishPortRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method UnpublishPort not implemented")
+}
+func (UnimplementedSandboxServiceServer) SaveTemplate(context.Context, *SaveTemplateRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveTemplate not implemented")
 }
 func (UnimplementedSandboxServiceServer) GetStats(context.Context, *IdRequest) (*Stats, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStats not implemented")
@@ -622,6 +638,24 @@ func _SandboxService_UnpublishPort_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxService_SaveTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxServiceServer).SaveTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxService_SaveTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxServiceServer).SaveTemplate(ctx, req.(*SaveTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SandboxService_GetStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IdRequest)
 	if err := dec(in); err != nil {
@@ -838,6 +872,10 @@ var SandboxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnpublishPort",
 			Handler:    _SandboxService_UnpublishPort_Handler,
+		},
+		{
+			MethodName: "SaveTemplate",
+			Handler:    _SandboxService_SaveTemplate_Handler,
 		},
 		{
 			MethodName: "GetStats",
