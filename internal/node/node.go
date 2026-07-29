@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -247,6 +248,10 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		lc, lm, ld := capt.Limits()
 		ac, am, ad := capt.Snapshot()
 		tmpls, _ := mgr.Backend().ListTemplates(context.Background())
+		// Sort to match peer rows: those come from gossip, which sorts before
+		// storing (membership.Cluster.UpdateLocalTemplates). GET /v1/nodes is
+		// public API, so self shouldn't be the one row in a different order.
+		slices.Sort(tmpls)
 		self := apiserver.NodeRow{
 			NodeID: id.NodeID, NodeName: cfg.NodeName, Draining: nodeSvc.Draining(),
 			Cordoned:      clusterInstance != nil && clusterInstance.LocalNodeState().Cordoned,
