@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -215,9 +216,23 @@ func (c *Cluster) UpdateLocalLoad(cpu, memKB, diskGB, utilCPU, utilMem float64) 
 // the UpdateNode call below only prompts a gossip round sooner, matching the
 // same locking and re-advertise shape as UpdateLocalLoad and
 // UpdateLocalSandboxIDs. Called from the node's 10s ticker.
+//
+// The backend's template order is not guaranteed stable across calls, so the
+// list is sorted before comparing and storing — otherwise an unchanged set
+// with a reshuffled order would look different every tick. A no-op call (same
+// set as already advertised) skips the StateVersion bump and the UpdateNode
+// gossip nudge, so a node whose templates never change doesn't double its
+// meta broadcast rate for nothing.
 func (c *Cluster) UpdateLocalTemplates(tmpls []string) {
+	sorted := append([]string(nil), tmpls...)
+	slices.Sort(sorted)
+
 	c.mu.Lock()
-	c.local.Templates = tmpls
+	if slices.Equal(c.local.Templates, sorted) {
+		c.mu.Unlock()
+		return
+	}
+	c.local.Templates = sorted
 	c.local.StateVersion++
 	ml := c.ml
 	c.mu.Unlock()
