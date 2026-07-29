@@ -3,6 +3,7 @@ package apiserver
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -51,6 +52,8 @@ type NodeService struct {
 	drainer                   func(actor string, keepGoing func() bool)             // optional; nil until wired by node.go
 	draining                  atomic.Bool
 	cordoned                  atomic.Bool
+	mu                        sync.Mutex // serializes Cordon/Uncordon/Drain: each is set-local, mirror-to-cluster, persist as one unit
+	sweeping                  bool       // guarded by mu; true while a Drain-started sweep goroutine is running
 }
 
 // NewNodeService returns a NodeService reporting the given identity.
@@ -124,6 +127,13 @@ func (s *NodeService) GetNodeInfo(ctx context.Context, _ *sbxv1.GetNodeInfoReque
 // Cordon marks the node as cordoned: the scheduler will not place new sandboxes
 // here. Existing sandboxes continue running.
 func (s *NodeService) Cordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.NodeInfo, error) {
+	// ponytail: holds mu across Cluster.SetCordoned, which blocks on a gossip
+	// broadcast for up to 5s. A concurrent Cordon/Uncordon/Drain queues behind
+	// that. Correctness over latency: these are rare operator calls, and this is
+	// what keeps the local flag, the cluster mirror and the persisted record from
+	// disagreeing. Upgrade path: make the mirror async if this ever hurts.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
@@ -140,6 +150,9 @@ func (s *NodeService) Cordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.
 
 // Uncordon removes the cordon so the node can accept new sandboxes again.
 func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.NodeInfo, error) {
+	// See the ponytail note on Cordon: same lock, same ceiling.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cordoned.Store(false)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(false)
@@ -159,7 +172,7 @@ func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv
 // is none. Used for a bulk operator action started here but finished by a
 // background goroutine, whose own context does not survive past this RPC.
 func actorOrSystem(ctx context.Context) string {
-	if a := principalFromContext(ctx).userRole; a != "" {
+	if a := actor(ctx); a != "" {
 		return a
 	}
 	return "system"
@@ -171,14 +184,27 @@ func actorOrSystem(ctx context.Context) string {
 // Nothing is migrated: a sandbox id names its owner node, so a sandbox cannot
 // move without changing identity.
 func (s *NodeService) Drain(ctx context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
+	// See the ponytail note on Cordon: same lock, same ceiling.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.draining.Store(true)
 	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
 	s.saveFlags()
-	if s.drainer != nil {
-		go s.drainer(actorOrSystem(ctx), s.draining.Load)
+	// A second Drain while a sweep is already running (e.g. a double-click) still
+	// cordons and returns NodeInfo normally; only the duplicate sweep is skipped,
+	// so two sweeps never race over the same running set.
+	if s.drainer != nil && !s.sweeping {
+		s.sweeping = true
+		sweepActor := actorOrSystem(ctx)
+		go func() {
+			s.drainer(sweepActor, s.draining.Load)
+			s.mu.Lock()
+			s.sweeping = false
+			s.mu.Unlock()
+		}()
 	}
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
