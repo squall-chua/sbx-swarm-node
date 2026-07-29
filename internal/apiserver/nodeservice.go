@@ -163,9 +163,11 @@ func actorOrSystem(ctx context.Context) string {
 	return "system"
 }
 
-// Drain cordons the node and records that the cordon came from a drain. The
-// marker is display only: the cordon is what blocks new placements. Nothing
-// migrates existing sandboxes away — that is not built.
+// Drain cordons the node, then publishes and stops every sandbox running on it,
+// in the background. The node ends up empty and git-backed work is saved. The
+// draining marker records why the node is out of service and survives a restart.
+// Nothing is migrated: a sandbox id names its owner node, so a sandbox cannot
+// move without changing identity.
 func (s *NodeService) Drain(ctx context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
 	s.draining.Store(true)
 	s.cordoned.Store(true)

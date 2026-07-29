@@ -24,14 +24,15 @@ _Avoid_: ban, block, evict (evicting a revoked node from routing is separate and
 
 **Cordon**:
 An operator action that stops new placements on a Node while leaving it trusted and its existing
-Sandboxes running. It survives a restart: only an explicit uncordon clears it, so a repaired host must
-be uncordoned deliberately (ADR-0023). Distinct from Revoke, which ejects the Node's identity entirely.
+Sandboxes running. It applies to any Node, clustered or standalone, and it survives a restart: only an
+explicit uncordon clears it, so a repaired host must be uncordoned deliberately (ADR-0023). Distinct
+from Revoke, which ejects the Node's identity entirely.
 _Avoid_: disable, pause, quarantine
 
 **Drain**:
-A Cordon that also records why it was applied, so an operator can tell a drained Node from a plainly
-cordoned one. The marker is display only — the Cordon is what blocks placement. Draining does not move
-existing Sandboxes off the Node; nothing migrates them.
+A Cordon followed by publishing and stopping every Sandbox on the Node, so the Node ends up empty and
+git-backed work is saved. It also records why the Node is out of service. Draining does not move
+Sandboxes to other Nodes — the swarm never does, because a Sandbox id names its owner Node.
 _Avoid_: evacuate, migrate (neither happens)
 
 **Swarm**:
