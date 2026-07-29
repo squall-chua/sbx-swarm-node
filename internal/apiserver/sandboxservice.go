@@ -368,7 +368,16 @@ func (s *SandboxService) SaveTemplate(ctx context.Context, r *sbxv1.SaveTemplate
 	if rec.Status == "running" {
 		return nil, status.Error(codes.FailedPrecondition, "stop the sandbox before saving it as a template")
 	}
-	if err := s.mgr.Backend().SaveTemplate(ctx, rec.BackendName, r.GetTag()); err != nil {
+	err = s.mgr.Backend().SaveTemplate(ctx, rec.BackendName, r.GetTag())
+	if s.audit != nil {
+		_ = s.audit.Record(audit.Entry{
+			Actor:   actor(ctx),
+			Action:  "template.save",
+			Target:  r.GetTag(),
+			Outcome: outcomeOf(err),
+		})
+	}
+	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			return nil, st.Err()
 		}
