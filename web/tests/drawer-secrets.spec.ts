@@ -1,6 +1,6 @@
 // @vitest-environment nuxt
 import { ref } from 'vue'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import SecretsTab from '../app/components/drawer/SecretsTab.vue'
 
@@ -10,7 +10,14 @@ vi.mock('../app/composables/useApi', () => ({ useApi: () => ({ put, get, del: vi
 vi.mock('../app/composables/useSession', () => ({ useSession: () => ({ isAdmin: ref(true) }) }))
 
 describe('SecretsTab', () => {
-  beforeEach(() => put.mockClear())
+  beforeEach(() => {
+    put.mockClear()
+    // Reset, not clear: a queued mockResolvedValueOnce that its own test never
+    // consumed would otherwise seed the next test's mount. Reset drops the
+    // queue and puts back the empty-list default.
+    get.mockReset()
+  })
+  afterEach(() => vi.unstubAllGlobals())
 
   it('adding a secret PUTs scope=id, host, env, value', async () => {
     const w = await mountSuspended(SecretsTab, { props: { id: 'n1.s1' } })
@@ -42,7 +49,6 @@ describe('SecretsTab', () => {
     await w.find('[data-test="secret-add"]').trigger('click')
     expect(confirmFn).toHaveBeenCalled()
     expect(put).not.toHaveBeenCalled()
-    vi.unstubAllGlobals()
   })
 
   it('does not prompt on a rotation (same env, same host)', async () => {
@@ -56,6 +62,5 @@ describe('SecretsTab', () => {
     await w.find('[data-test="secret-add"]').trigger('click')
     expect(confirmFn).not.toHaveBeenCalled()
     expect(put).toHaveBeenCalled()
-    vi.unstubAllGlobals()
   })
 })
