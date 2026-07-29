@@ -54,6 +54,10 @@ describe('requestableTemplate', () => {
     expect(requestableTemplate('docker.io/library/myimage:v1')).toBe('myimage:v1')
   })
 
+  it('leaves a plain bare tag unchanged', () => {
+    expect(requestableTemplate('myimage:v1')).toBe('myimage:v1')
+  })
+
   it('leaves a real registry reference untouched', () => {
     expect(requestableTemplate('ghcr.io/org/img:1')).toBe('ghcr.io/org/img:1')
     expect(requestableTemplate('docker.io/org/img:1')).toBe('docker.io/org/img:1')
