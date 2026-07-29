@@ -68,7 +68,12 @@ own rule: the reference has a `/`, and the first path component contains a `.` o
 a `:`, or is exactly `localhost`.
 
 - `ghcr.io/org/img:1` — registry. Any node can fetch it.
+- `localhost:5000/img:1` — registry. Docker's rule treats `localhost` as a host.
 - `myimage:v1` — bare. It exists only where it was saved.
+- `org/img:1` — **treated as bare**, even though Docker would read it as a Docker
+  Hub image. The shorthand is ambiguous with a locally saved two-part tag, so the
+  rule errs toward refusing placement rather than assuming a pull. Write
+  `docker.io/org/img:1` to make it travel. This belongs in the README.
 
 In `fits`, the template constraint applies only to bare references:
 
