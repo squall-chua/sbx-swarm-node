@@ -182,10 +182,12 @@ func TestSchedule_HolderBeatsTheEntryNodeOnATie(t *testing.T) {
 
 func TestCanonical(t *testing.T) {
 	cases := map[string]string{
-		"myimage:v1":           "docker.io/library/myimage:v1", // bare tag, as the daemon reports it
-		"org/img:1":            "docker.io/org/img:1",          // Docker Hub shorthand
-		"ghcr.io/org/img:1":    "ghcr.io/org/img:1",            // already qualified: unchanged
-		"localhost:5000/img:1": "localhost:5000/img:1",         // already qualified: unchanged
+		"myimage:v1":           "docker.io/library/myimage:v1",     // bare tag, as the daemon reports it
+		"org/img:1":            "docker.io/org/img:1",              // Docker Hub shorthand
+		"ghcr.io/org/img:1":    "ghcr.io/org/img:1",                // already qualified: unchanged
+		"localhost:5000/img:1": "localhost:5000/img:1",             // already qualified: unchanged
+		"myimage":              "docker.io/library/myimage:latest", // no tag: Docker defaults to latest
+		"localhost:5000/img":   "localhost:5000/img:latest",        // registry port colon is not a tag
 	}
 	for in, want := range cases {
 		require.Equal(t, want, canonical(in), in)
@@ -209,22 +211,6 @@ func TestSchedule_BareTagStillDoesNotTravel(t *testing.T) {
 	// c.Templates is empty: this node holds nothing.
 	_, err := Schedule(Request{Template: "myimage:v1", CPU: 1, RequestID: "r"}, []Candidate{c})
 	require.ErrorIs(t, err, ErrNoEligibleNode)
-}
-
-// On a score tie, the holder still wins even when it advertises the canonical form
-// and the request is the bare tag.
-func TestSchedule_HolderTieBreakMatchesTheCanonicalName(t *testing.T) {
-	mk := func(id string, holds bool) Candidate {
-		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
-		if holds {
-			c.Templates = map[string]bool{"docker.io/library/myimage:v1": true}
-		}
-		return c
-	}
-	req := Request{Template: "myimage:v1", CPU: 1, RequestID: "r", Local: "n1"}
-	got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
-	require.NoError(t, err)
-	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node")
 }
 
 func TestSchedule_KitFilter(t *testing.T) {

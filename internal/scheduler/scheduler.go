@@ -70,6 +70,10 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 		}
 		// A node that already holds the image beats one that would have to pull
 		// it. Only reached on an exact score tie, so real load still wins first.
+		// holds is used here only for consistency with fits; it cannot actually
+		// differ from a plain map read at this point, because every candidate
+		// that survived fits already holds the reference (under either spelling)
+		// or the reference was pullable and the check never applied.
 		if req.Template != "" {
 			if hi, hj := holds(ok[i], req.Template), holds(ok[j], req.Template); hi != hj {
 				return hi
@@ -114,16 +118,30 @@ func pullable(ref string) bool {
 // (proven live in TestSDKBackend_SaveRemoveTemplate). A node advertises what the
 // daemon lists, so the request has to be canonicalized before it is matched.
 //
-// Only a reference that names no registry is rewritten. Anything pullable is
-// already qualified and is returned unchanged.
+// Only a reference that names no registry is registry-qualified. Anything
+// pullable is already qualified and is left alone there.
+//
+// Docker also defaults a missing tag to "latest", so a reference with no tag on
+// its last path segment gets one appended. The tag check looks only at the last
+// path segment, so a registry host's port colon (as in "localhost:5000/img")
+// is never mistaken for a tag.
 func canonical(ref string) string {
-	if pullable(ref) {
-		return ref
+	out := ref
+	if !pullable(ref) {
+		if strings.Contains(ref, "/") {
+			out = "docker.io/" + ref
+		} else {
+			out = "docker.io/library/" + ref
+		}
 	}
-	if strings.Contains(ref, "/") {
-		return "docker.io/" + ref
+	last := out
+	if i := strings.LastIndex(out, "/"); i >= 0 {
+		last = out[i+1:]
 	}
-	return "docker.io/library/" + ref
+	if !strings.Contains(last, ":") {
+		out += ":latest"
+	}
+	return out
 }
 
 // holds reports whether a candidate advertises the requested template, under
