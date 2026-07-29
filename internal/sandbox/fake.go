@@ -270,10 +270,26 @@ func (b *Fake) ListTemplateInfo(_ context.Context) ([]TemplateInfo, error) {
 	defer b.mu.Unlock()
 	out := []TemplateInfo{{Repository: "fake/base", Tag: "latest", ID: "img-fake", Agent: "shell"}}
 	for _, t := range b.templates {
-		repo, tag, _ := strings.Cut(t, ":")
+		repo, tag := splitRepoTag(t)
 		out = append(out, TemplateInfo{Repository: repo, Tag: tag})
 	}
 	return out, nil
+}
+
+// splitRepoTag splits a ref into repository and tag at the LAST colon, but
+// only when that colon falls in the last path segment. This keeps a registry
+// host's port (e.g. "localhost:5000/img") from being mistaken for a tag,
+// while still splitting "localhost:5000/img:1" as repository "localhost:5000/img"
+// and tag "1".
+func splitRepoTag(ref string) (repo, tag string) {
+	prefix, last := "", ref
+	if i := strings.LastIndexByte(ref, '/'); i >= 0 {
+		prefix, last = ref[:i+1], ref[i+1:]
+	}
+	if i := strings.LastIndexByte(last, ':'); i >= 0 {
+		return prefix + last[:i], last[i+1:]
+	}
+	return ref, ""
 }
 
 // SaveTemplate records the call and adds the tag to the advertised templates.

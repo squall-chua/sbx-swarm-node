@@ -27,6 +27,15 @@ func TestFake_ListTemplates(t *testing.T) {
 	require.Equal(t, []string{"base:1", "gpu:2"}, got)
 }
 
+func TestFake_ListTemplateInfoSplitsPortedHostFromTag(t *testing.T) {
+	f := NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "localhost:5000/img:1"))
+
+	got, err := f.ListTemplateInfo(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, got, TemplateInfo{Repository: "localhost:5000/img", Tag: "1"})
+}
+
 func TestFake_SaveAndRemoveTemplate(t *testing.T) {
 	f := NewFake()
 	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
