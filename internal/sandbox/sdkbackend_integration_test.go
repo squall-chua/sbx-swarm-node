@@ -489,6 +489,12 @@ func TestSDKBackend_RefusesASandboxKindKit(t *testing.T) {
 // true with no matching secret present must also not block the create; a
 // credentials block is informational, not enforced. Verified against sbx
 // v0.37.0.
+//
+// This fixture declares no environment.variables (unlike mixin-kit), so it has
+// no side effect to observe as proof the kit was actually applied — the test
+// checks h.Kits(ctx) for that BEFORE asserting SecretList is empty, so it reads
+// "the kit really was applied — and even so, no secret appeared" rather than a
+// tautology that would also pass against a daemon that silently no-ops --kit.
 func TestSDKBackend_KitCredentialsNotInSecretList(t *testing.T) {
 	ref, err := filepath.Abs("testdata/credential-kit")
 	require.NoError(t, err)
@@ -509,6 +515,14 @@ func TestSDKBackend_KitCredentialsNotInSecretList(t *testing.T) {
 		Kits:       []string{"credkit"},
 	})
 	ctx := context.Background()
+
+	// Proof of application, not just acceptance: the daemon records the kit list
+	// on the sandbox, as absolute references.
+	h, err := sdksandbox.Get(ctx, b.cl, sb.Name)
+	require.NoError(t, err)
+	kits, err := h.Kits(ctx)
+	require.NoError(t, err)
+	require.Contains(t, kits, ref, "the credentials kit must actually be applied to the sandbox")
 
 	scoped, err := b.SecretList(ctx, sb.Name)
 	require.NoError(t, err)
