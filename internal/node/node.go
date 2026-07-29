@@ -231,6 +231,20 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		}
 		clusterInstance = cl
 		nodeSvc.SetCordoner(cl)
+		// A restart must not put a cordoned node back into service (ADR-0023).
+		// Restore through SetCordoned, not localNS: enforcement reads the routing
+		// table and NewCluster never seeds a self entry, so seeding localNS alone
+		// would advertise the cordon to peers while this node kept placing
+		// sandboxes on itself.
+		flags := loadNodeFlags(st, log)
+		if flags.Cordoned {
+			cl.SetCordoned(true)
+			log.Info("restored cordon from a previous run", "draining", flags.Draining)
+		}
+		nodeSvc.SetDraining(flags.Draining)
+		nodeSvc.SetFlagPersister(func(cordoned, draining bool) {
+			saveNodeFlags(st, log, nodeFlags{Cordoned: cordoned, Draining: draining})
+		})
 		nodeSvc.SetRevoker(cl)
 		// Re-gossip OwnedSandboxIDs on create/delete so peer node-state stays
 		// fresh (M5 scheduling reads gossiped owned-id sets).

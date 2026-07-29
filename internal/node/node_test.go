@@ -105,6 +105,41 @@ func TestNode_BootServeStop(t *testing.T) {
 	resp.Body.Close()
 }
 
+// TestNode_BootRestoresCordon proves a stored cordon survives a restart. The
+// assertion on n.cluster.LocalNodeState().Cordoned looks like it only proves
+// the gossiped state, not the routing table, but it proves both: nothing else
+// sets localNS.Cordoned at boot (that seeding is deliberately left alone), so
+// the only way this can be true is if SetCordoned ran, and SetCordoned upserts
+// the routing table in the same function. If a later change starts seeding
+// localNS.Cordoned again, this assertion stops being sufficient on its own.
+func TestNode_BootRestoresCordon(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-seed the flags as if this node had been cordoned before a restart.
+	st, err := store.Open(filepath.Join(dir, "node.db"))
+	require.NoError(t, err)
+	saveNodeFlags(st, obs.NewLogger("error", io.Discard), nodeFlags{Cordoned: true})
+	require.NoError(t, st.Close())
+
+	cfg := config.Default()
+	cfg.DataDir = dir
+	cfg.ListenAddr = "127.0.0.1:0"
+	// Cordon is inert without a cluster, so both of these are required.
+	cfg.GossipAddr = "127.0.0.1:0"
+	cfg.ClusterSecret = "test-secret"
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	require.True(t, n.cluster.LocalNodeState().Cordoned,
+		"a stored cordon must be restored at boot")
+}
+
 func TestWorkspaceResolver(t *testing.T) {
 	resolve := workspaceResolver([]config.WorkspaceConfig{
 		{Name: "data", HostPath: "/srv/data", ReadOnly: false},
