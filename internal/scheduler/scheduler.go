@@ -8,7 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"sort"
-	"strings"
+
+	"github.com/squall-chua/sbx-swarm-node/internal/imageref"
 )
 
 // ErrNoEligibleNode means no candidate passed every Placement constraint.
@@ -96,60 +97,11 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 	return out, nil
 }
 
-// pullable reports whether a template reference names a registry, so any node's
-// daemon can fetch it. This is Docker's own rule: the first path component is a
-// registry host when it contains a "." or a ":", or is exactly "localhost".
-//
-// "org/img:1" is deliberately NOT pullable here. Docker reads it as a Docker Hub
-// image, but it is ambiguous with a locally saved two-part tag, so the rule errs
-// toward refusing placement instead of assuming a pull (ADR-0024). Write
-// "docker.io/org/img:1" to make it travel.
-func pullable(ref string) bool {
-	i := strings.Index(ref, "/")
-	if i < 0 {
-		return false
-	}
-	host := ref[:i]
-	return host == "localhost" || strings.ContainsAny(host, ".:")
-}
-
-// canonical returns the reference the way the daemon reports it in its image list.
-// The daemon canonicalizes an unqualified repository the way Docker does, so a
-// template saved as "myimage:v1" is listed back as "docker.io/library/myimage:v1"
-// (proven live in TestSDKBackend_SaveRemoveTemplate). A node advertises what the
-// daemon lists, so the request has to be canonicalized before it is matched.
-//
-// Only a reference that names no registry is registry-qualified. Anything
-// pullable is already qualified and is left alone there.
-//
-// Docker also defaults a missing tag to "latest", so a reference with no tag on
-// its last path segment gets one appended. The tag check looks only at the last
-// path segment, so a registry host's port colon (as in "localhost:5000/img")
-// is never mistaken for a tag.
-func canonical(ref string) string {
-	out := ref
-	if !pullable(ref) {
-		if strings.Contains(ref, "/") {
-			out = "docker.io/" + ref
-		} else {
-			out = "docker.io/library/" + ref
-		}
-	}
-	last := out
-	if i := strings.LastIndex(out, "/"); i >= 0 {
-		last = out[i+1:]
-	}
-	if !strings.Contains(last, ":") {
-		out += ":latest"
-	}
-	return out
-}
-
 // holds reports whether a candidate advertises the requested template, under
 // either spelling. The fake backend advertises the bare tag it was given, while a
 // real daemon advertises the canonical form, so both have to match.
 func holds(c Candidate, ref string) bool {
-	return c.Templates[ref] || c.Templates[canonical(ref)]
+	return c.Templates[ref] || c.Templates[imageref.Canonical(ref)]
 }
 
 func fits(req Request, c Candidate) bool {
@@ -161,7 +113,7 @@ func fits(req Request, c Candidate) bool {
 			return false
 		}
 	}
-	if req.Template != "" && !pullable(req.Template) && !holds(c, req.Template) {
+	if req.Template != "" && !imageref.Pullable(req.Template) && !holds(c, req.Template) {
 		return false
 	}
 	for _, k := range req.Kits {

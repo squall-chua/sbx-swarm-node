@@ -137,20 +137,6 @@ func TestSchedule_NodeAffinityFiltersByLabel(t *testing.T) {
 	require.Equal(t, []string{"A"}, order) // eu excluded
 }
 
-func TestPullable(t *testing.T) {
-	cases := map[string]bool{
-		"ghcr.io/org/img:1":    true,  // registry host: has a dot
-		"localhost:5000/img:1": true,  // registry host: localhost
-		"registry:5000/img:1":  true,  // registry host: has a colon
-		"myimage:v1":           false, // bare tag: only where it was saved
-		"org/img:1":            false, // Docker Hub shorthand, deliberately bare
-		"alpine":               false,
-	}
-	for ref, want := range cases {
-		require.Equal(t, want, pullable(ref), ref)
-	}
-}
-
 func TestSchedule_RegistryTemplatePlacesOnANodeWithoutIt(t *testing.T) {
 	c := Candidate{NodeID: "n1", LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
 	// c.Templates is empty: this node holds nothing.
@@ -242,20 +228,6 @@ func TestSchedule_TieBreakMatchesTheCanonicalName(t *testing.T) {
 	got, err := Schedule(req, []Candidate{n1, n2})
 	require.NoError(t, err)
 	require.Equal(t, "n1", got[0], "only the canonical lookup finds n1's tagged form")
-}
-
-func TestCanonical(t *testing.T) {
-	cases := map[string]string{
-		"myimage:v1":           "docker.io/library/myimage:v1",     // bare tag, as the daemon reports it
-		"org/img:1":            "docker.io/org/img:1",              // Docker Hub shorthand
-		"ghcr.io/org/img:1":    "ghcr.io/org/img:1",                // already qualified: unchanged
-		"localhost:5000/img:1": "localhost:5000/img:1",             // already qualified: unchanged
-		"myimage":              "docker.io/library/myimage:latest", // no tag: Docker defaults to latest
-		"localhost:5000/img":   "localhost:5000/img:latest",        // registry port colon is not a tag
-	}
-	for in, want := range cases {
-		require.Equal(t, want, canonical(in), in)
-	}
 }
 
 // A node that saved "myimage:v1" advertises "docker.io/library/myimage:v1", because the
