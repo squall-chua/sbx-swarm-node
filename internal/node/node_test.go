@@ -378,7 +378,7 @@ func TestRefreshLocalState_NilClusterIsNoOp(t *testing.T) {
 	statsC := obsd.NewStatsCollector(sandbox.NewFake(), nil, obsd.DefaultProvisionLimit(), 4)
 
 	require.NotPanics(t, func() {
-		refreshLocalState(context.Background(), nil, mgr, statsC)
+		refreshLocalState(context.Background(), nil, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	})
 }
 
@@ -398,9 +398,38 @@ func TestRefreshLocalState_AdvertisesLoadAndTemplates(t *testing.T) {
 	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
 	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
 
-	refreshLocalState(context.Background(), cl, mgr, statsC)
+	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	ns := cl.LocalNodeState()
 	require.Equal(t, []string{"myimage:v1"}, ns.Templates)
 	require.Greater(t, ns.StateVersion, before, "peers only re-read a bumped state")
+}
+
+// TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped proves a failed
+// ListTemplates poll keeps the previously advertised templates (a persistently
+// failing daemon must not blank a node's advertised list) and logs the error
+// so the failure isn't silent.
+func TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped(t *testing.T) {
+	cl := newTestCluster(t)
+	backend := sandbox.NewFake()
+	backend.SetTemplates([]string{"myimage:v1"})
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("n1", backend, st, ids.NewGen("n1"))
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+	statsC := obsd.NewStatsCollector(backend, nil, obsd.DefaultProvisionLimit(), 4)
+
+	// First tick succeeds and advertises the template.
+	refreshLocalState(context.Background(), cl, mgr, statsC, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates)
+
+	// The daemon goes down: ListTemplates starts failing.
+	backend.ListTemplatesErr = errors.New("daemon unreachable")
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	refreshLocalState(context.Background(), cl, mgr, statsC, log)
+
+	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates, "a failed poll must not blank the advertised list")
+	require.Contains(t, buf.String(), "daemon unreachable", "the failure must be logged, not silently swallowed")
 }

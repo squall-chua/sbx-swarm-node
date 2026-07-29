@@ -139,7 +139,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 			}
 		}
 		_ = mgr.Reconcile(nctx)
-		refreshLocalState(nctx, clusterInstance, mgr, statsC)
+		refreshLocalState(nctx, clusterInstance, mgr, statsC, log)
 	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
 	if idle := cfg.IdleTimeoutDuration(); idle > 0 {
@@ -485,7 +485,7 @@ func (n *Node) Stop(ctx context.Context) error {
 // cluster. It is the clustered half of the node's 10s ticker, pulled out into
 // its own function so it can be unit-tested without booting a whole node. A
 // nil cluster (standalone node) is a no-op.
-func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox.Manager, statsC *obsd.StatsCollector) {
+func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox.Manager, statsC *obsd.StatsCollector, log *slog.Logger) {
 	if cl == nil {
 		return
 	}
@@ -497,6 +497,11 @@ func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox
 	// Polling also catches images added or removed outside our own RPCs.
 	if tmpls, err := mgr.Backend().ListTemplates(ctx); err == nil {
 		cl.UpdateLocalTemplates(tmpls)
+	} else {
+		// Keep the last known list — one failed tick shouldn't blank a node's
+		// advertised templates. Debug, not Warn: this can fire every 10s for
+		// as long as the daemon stays down, and would otherwise flood the log.
+		log.Debug("list templates failed, keeping previously advertised list", "err", err)
 	}
 }
 

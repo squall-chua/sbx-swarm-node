@@ -39,6 +39,10 @@ type Fake struct {
 	// list -- standing in for a transient daemon read failure.
 	PortsErr error
 
+	// ListTemplatesErr, when set, makes ListTemplates fail instead of
+	// returning the configured refs -- standing in for a daemon that is down.
+	ListTemplatesErr error
+
 	// SaveTemplateErr, when set, makes SaveTemplate fail instead of recording
 	// the call -- standing in for a backend rejection (e.g. tag in use).
 	SaveTemplateErr error
@@ -260,6 +264,9 @@ func (f *Fake) SetTemplates(t []string) {
 func (f *Fake) ListTemplates(_ context.Context) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListTemplatesErr != nil {
+		return nil, f.ListTemplatesErr
+	}
 	return append([]string(nil), f.templates...), nil
 }
 
