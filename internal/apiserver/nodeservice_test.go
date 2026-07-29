@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
@@ -177,6 +178,59 @@ func TestNodeService_FlagPersisterSeesEveryChange(t *testing.T) {
 func TestNodeService_NilFlagPersisterDoesNotPanic(t *testing.T) {
 	s := NewNodeService("n1", "node-1", "test")
 	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+}
+
+func TestNodeService_DrainCallsDrainerCordonDoesNot(t *testing.T) {
+	type call struct {
+		actor string
+	}
+	calls := make(chan call, 1)
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetDrainer(func(actor string, _ func() bool) { calls <- call{actor: actor} })
+
+	// Cordon must not trigger a sweep.
+	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	select {
+	case c := <-calls:
+		t.Fatalf("Cordon must not call the drainer, got %+v", c)
+	default:
+	}
+
+	// Drain runs the sweep in the background with the caller's actor.
+	ctx := context.WithValue(context.Background(), principalCtxKey{}, principal{userRole: "admin"})
+	_, err = s.Drain(ctx, &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+
+	select {
+	case c := <-calls:
+		require.Equal(t, "admin", c.actor)
+	case <-time.After(time.Second):
+		t.Fatal("Drain did not call the drainer")
+	}
+}
+
+func TestNodeService_DrainDrainerFallsBackToSystem(t *testing.T) {
+	calls := make(chan string, 1)
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetDrainer(func(actor string, _ func() bool) { calls <- actor })
+
+	_, err := s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+
+	select {
+	case actor := <-calls:
+		require.Equal(t, "system", actor, "an unauthenticated context falls back to system")
+	case <-time.After(time.Second):
+		t.Fatal("Drain did not call the drainer")
+	}
+}
+
+func TestNodeService_NilDrainerDoesNotPanic(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	_, err := s.Drain(context.Background(), &sbxv1.DrainRequest{})
 	require.NoError(t, err)
 }
 

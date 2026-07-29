@@ -227,6 +227,10 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	if flags.Cordoned {
 		log.Info("restored cordon from a previous run", "draining", flags.Draining)
 	}
+	nodeSvc.SetDrainer(func(actor string, keepGoing func() bool) {
+		n := sandboxes.DrainAll(nctx, actor, keepGoing)
+		log.Info("drain finished", "stopped", n)
+	})
 
 	if cfg.GossipAddr != "" && cfg.ClusterSecret != "" {
 		// Only build the cluster when a cluster_secret is configured. A pure

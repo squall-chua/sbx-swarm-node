@@ -48,6 +48,7 @@ type NodeService struct {
 	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
 	persistFlags              func(cordoned, draining bool)                         // optional; nil until wired by node.go
+	drainer                   func(actor string, keepGoing func() bool)             // optional; nil until wired by node.go
 	draining                  atomic.Bool
 	cordoned                  atomic.Bool
 }
@@ -73,6 +74,10 @@ func (s *NodeService) SetDraining(v bool) { s.draining.Store(v) }
 // not touch the cluster, so callers must mirror it to the Cordoner themselves
 // once one exists.
 func (s *NodeService) SetCordonedFlag(v bool) { s.cordoned.Store(v) }
+
+// SetDrainer wires the background sweep run by Drain (node.go). Optional and
+// nil-safe, so existing tests need no change.
+func (s *NodeService) SetDrainer(fn func(actor string, keepGoing func() bool)) { s.drainer = fn }
 
 // saveFlags persists the current flags if a persister is wired.
 func (s *NodeService) saveFlags() {
@@ -148,16 +153,29 @@ func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv
 	}, nil
 }
 
+// actorOrSystem returns the authenticated role from ctx, or "system" if there
+// is none. Used for a bulk operator action started here but finished by a
+// background goroutine, whose own context does not survive past this RPC.
+func actorOrSystem(ctx context.Context) string {
+	if a := principalFromContext(ctx).userRole; a != "" {
+		return a
+	}
+	return "system"
+}
+
 // Drain cordons the node and records that the cordon came from a drain. The
 // marker is display only: the cordon is what blocks new placements. Nothing
 // migrates existing sandboxes away — that is not built.
-func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
+func (s *NodeService) Drain(ctx context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
 	s.draining.Store(true)
 	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
 	s.saveFlags()
+	if s.drainer != nil {
+		go s.drainer(actorOrSystem(ctx), s.draining.Load)
+	}
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
