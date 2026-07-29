@@ -149,7 +149,19 @@ const columns: TableColumn<Template>[] = [
           :key="tmplName"
           class="flex items-start gap-3 rounded-md bg-elevated px-4 py-3"
         >
-          <span class="font-mono text-sm text-default min-w-0 shrink-0">{{ tmplName }}</span>
+          <!-- Show the requestable form here too, same rule as the table above:
+          `tmplName` comes straight from node gossip, which is the daemon's
+          canonical string. Keep the canonical form as a muted subtitle when it
+          differs, so this list stays consistent with the table. -->
+          <div class="flex flex-col min-w-0 shrink-0">
+            <span class="font-mono text-sm text-default">{{ requestableTemplate(tmplName) }}</span>
+            <span
+              v-if="requestableTemplate(tmplName) !== tmplName"
+              class="font-mono text-xs text-muted"
+            >
+              listed as {{ tmplName }}
+            </span>
+          </div>
           <div class="flex flex-wrap gap-1.5">
             <UBadge
               v-for="nodeName in templateNodeMap[tmplName]"
