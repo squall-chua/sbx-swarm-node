@@ -1,4 +1,4 @@
-# Design — close three small gaps, and close four items as do-nothing
+# Design — close three small gaps, and close five items as do-nothing
 
 Date: 2026-07-29
 Base: `main` @ `46c6286` (first drafted at `1036807`, revised after `feat/kits` merged)
@@ -10,7 +10,7 @@ Three places where the node reports something that is not true, or fails to
 report something that is. None of them is large. They share one theme: the node
 is quiet where it should speak.
 
-This design also closes four candidate items as **do nothing**. The reasoning is
+This design also closes five candidate items as **do nothing**. The reasoning is
 written down here so a later session does not reopen them.
 
 ## Sequencing — `feat/kits` has landed
@@ -238,6 +238,49 @@ Reopen if these paths ever move from shell-out to REST.
 Two concurrent `SetSecret` calls for the same env can both read the same
 placeholder, both write, and lose one update. Accepted: these writes are
 admin-driven and rare.
+
+### Item 9 — daemon settings
+
+`settings.List/Get/Set/Unset` are unused by the node. Scoped on 2026-07-29 and
+closed, because its stated justification does not survive a probe.
+
+The argument was that the kits work must reason about `kit.allowedSources` but
+cannot see it. Kits can see it, in the clearest form there is, at the moment it
+matters. Probed on the exact code path the SDK uses:
+
+- `sbx kit inspect --json <forbidden-ref>` exits **1** and writes the whole
+  explanation to **stderr**. It names `kit.allowedSources`, prints the current
+  allowlist, and gives the exact `sbx settings set` command that fixes it.
+- `kit.Inspect` (SDK `kit/kit.go:87-90`) returns that `*CLIError` unwrapped.
+- `CLIError.Error()` (SDK `internal/cli/cli.go:34`) formats `Stderr` into the
+  message.
+- `internal/sandbox/kits.go:101` already logs it as `"err", err`.
+
+So the boot warning already carries the daemon's full diagnosis. Reading the
+setting ourselves would duplicate it, less well.
+
+What remains is per-node comparison: settings are per-node, and a swarm operator
+cannot shell into every node to compare them. That is a real but thin case, and
+nothing concrete is asking for it. Roughly 15 files and ~250 lines by this
+repo's own calibration.
+
+Writing daemon settings through the node API is a separate trust decision and
+was not scoped.
+
+Reopen when someone actually needs to compare settings across nodes.
+
+### A related finding, also closed
+
+`admitKits` (`internal/sandbox/kits.go:78-113`) cannot tell a *transient* inspect
+failure (timeout, network blip) from a *permanent* refusal (the allowlist). It
+advertises the kit either way. A permanently forbidden kit is therefore
+advertised for the life of the process, and every create routed to it fails.
+
+Left alone on purpose. The transient case is why "advertise anyway" was chosen,
+and there is no clean signal separating the two: `client.ErrKitRejected` is
+produced only by `Validate`, never by `Inspect`, so telling them apart means
+matching on the daemon's prose. The boot warning is loud and fully diagnostic,
+which is a better trade than a brittle string match.
 
 ### Secret — a multi-host entry collapsing on an env-keyed replace
 

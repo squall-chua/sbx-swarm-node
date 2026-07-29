@@ -452,3 +452,7 @@ oversights:
 - Per-sandbox governance profile, mapping secret errors to `AlreadyExists`, the
   `SetSecret` read-then-write race, and the multi-host entry collapse. All four
   are closed as do-nothing with reasons in the spec.
+- Surfacing daemon settings, and changing how `admitKits` handles a kit the
+  daemon permanently refuses. Both closed as do-nothing in the spec on
+  2026-07-29. Do not "improve" `internal/sandbox/kits.go` while working on
+  Task 2; that file is not in this plan.
