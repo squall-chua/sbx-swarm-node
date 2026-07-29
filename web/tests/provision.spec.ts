@@ -50,16 +50,27 @@ describe('buildCreateBody', () => {
 })
 
 describe('requestableTemplate', () => {
-  it('strips the docker.io/library/ prefix the daemon adds to a saved template', () => {
+  it('strips the docker.io/library/ prefix the daemon adds to a saved single-part tag', () => {
     expect(requestableTemplate('docker.io/library/myimage:v1')).toBe('myimage:v1')
+  })
+
+  it('strips the docker.io/ prefix the daemon adds to a saved two-part tag', () => {
+    expect(requestableTemplate('docker.io/myorg/myimage:v1')).toBe('myorg/myimage:v1')
   })
 
   it('leaves a plain bare tag unchanged', () => {
     expect(requestableTemplate('myimage:v1')).toBe('myimage:v1')
   })
 
-  it('leaves a real registry reference untouched', () => {
+  it('leaves a plain two-part bare tag unchanged', () => {
+    expect(requestableTemplate('myorg/myimage:v1')).toBe('myorg/myimage:v1')
+  })
+
+  it('leaves a non-Docker-Hub registry reference untouched', () => {
     expect(requestableTemplate('ghcr.io/org/img:1')).toBe('ghcr.io/org/img:1')
-    expect(requestableTemplate('docker.io/org/img:1')).toBe('docker.io/org/img:1')
+  })
+
+  it('localhost registry reference untouched', () => {
+    expect(requestableTemplate('localhost:5000/img:1')).toBe('localhost:5000/img:1')
   })
 })

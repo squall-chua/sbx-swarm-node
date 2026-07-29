@@ -16,15 +16,26 @@ export type ProvisionForm = {
 
 // The daemon canonicalizes an unqualified saved template the way Docker does, so
 // "myimage:v1" is listed back (and advertised to peers) as
-// "docker.io/library/myimage:v1". That listed form is registry-shaped, so
-// requesting it tells placement the image can travel to any node — but a node
-// that never saved it can't pull it. Requesting the bare tag places it on the
-// node that actually holds it. Strip only that exact prefix: a genuine registry
-// reference like "ghcr.io/org/img:1" or "docker.io/org/img:1" must travel as-is.
-const DOCKER_LIBRARY_PREFIX = 'docker.io/library/'
+// "docker.io/library/myimage:v1", and "myorg/myimage:v1" as
+// "docker.io/myorg/myimage:v1". Both listed forms are registry-shaped, so
+// requesting them tells placement the image can travel to any node — but a
+// node that never saved it can't pull it. Requesting the bare form (the tag it
+// was actually saved under) places it on the node that actually holds it, so
+// strip a leading "docker.io/" — the "library/" segment on top of that is
+// Docker's own default-namespace marker and comes off with it. This also
+// reshapes a genuine Docker Hub reference like "docker.io/myorg/img:1" into
+// "myorg/img:1", pinning it to nodes that already hold it instead of letting
+// it travel — the safe reading when the two are ambiguous. An operator who
+// means Docker Hub can still type "docker.io/myorg/img:1" directly into the
+// template field. A real registry reference like "ghcr.io/org/img:1" is
+// untouched.
+const DOCKER_HUB_PREFIX = 'docker.io/'
+const DOCKER_HUB_LIBRARY_PREFIX = 'docker.io/library/'
 
 export function requestableTemplate(name: string): string {
-  return name.startsWith(DOCKER_LIBRARY_PREFIX) ? name.slice(DOCKER_LIBRARY_PREFIX.length) : name
+  if (name.startsWith(DOCKER_HUB_LIBRARY_PREFIX)) return name.slice(DOCKER_HUB_LIBRARY_PREFIX.length)
+  if (name.startsWith(DOCKER_HUB_PREFIX)) return name.slice(DOCKER_HUB_PREFIX.length)
+  return name
 }
 
 export function buildCreateBody(f: ProvisionForm): Record<string, any> {
