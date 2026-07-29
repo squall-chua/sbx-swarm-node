@@ -303,6 +303,33 @@ which is a better trade than a brittle string match.
 An entry covering several hosts collapses to one when replaced by env. The node
 never creates such an entry, though `sbx` can.
 
+### Item 5 — custom TLS certificate versus clustering
+
+Added 2026-07-29, after the rest of this section. `config.go:248` refuses
+`tls_cert_file` together with `cluster_secret`, and the question was whether that
+should change. It should not, and nothing needs building.
+
+The operator's path to a CA-issued certificate already exists. `console_addr`
+serves the **bare REST handler**, which `apiserver/server.go:44-45` describes as
+"SPA + `/v1` + SSE + terminal WS, no gRPC surface" — the same API, the same auth,
+with an operator-supplied certificate, and clustering does not forbid it. The name
+is what hides this: `console_*` reads as browsers-only when it also covers
+scripts, CI and any REST client.
+
+What stays uncovered is a **native gRPC** client wanting CA verification. The only
+gRPC dialers in the repo are the loopback to self (`apiserver/loopback.go:20`) and
+the peer pool (`peer/client.go:95`), so no shipped client needs it. Serving that
+case would mean a second trust path for peers, which is a large change to
+ADR-0004's model for a client that does not exist.
+
+`listen_addr`'s certificate is the node's identity: `tlsutil.GenerateForKey`
+makes the leaf public key the node public key, and that is what peers pin
+(`node.go:152-156`). An operator certificate there does not extend the trust
+model, it removes it.
+
+Result: keep the refusal, and fix the naming problem with one README paragraph
+pointing operators at the console listener.
+
 ## Corrections to earlier notes
 
 Three premises carried into this session were wrong, and the probes are recorded

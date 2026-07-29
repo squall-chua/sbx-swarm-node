@@ -177,6 +177,14 @@ A node serves **two** TLS listeners because the two audiences need different cer
 Browsers reject the pinned Ed25519 cert, so the console gets its own listener. Both
 share the same handler logic; only the gRPC port is omitted from the console one.
 
+**Want a CA-issued certificate?** Use the console listener. Despite the name, it
+serves the whole REST API — `/v1`, SSE, terminal and files — not only the SPA, so
+scripts and CI can use it as well as browsers. Point `console_tls_cert_file` and
+`console_tls_key_file` at your certificate. This works on a clustered node.
+`tls_cert_file` on `listen_addr` cannot, because that certificate is the node's
+identity and peers pin it (ADR-0004). The only thing the console listener does not
+carry is native gRPC.
+
 ```mermaid
 flowchart LR
     req["incoming request"] --> tls["TLS terminate"]
