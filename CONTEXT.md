@@ -184,7 +184,10 @@ advertises the templates it holds, and keeps re-advertising while it runs, so pe
 about half a minute. A registry-hosted reference (e.g. `ghcr.io/org/img:1`) is usable on every node and
 is the supported way to share one; a bare tag (e.g. `myimage:v1`) exists only on the node that saved it.
 Holding the image is a tie-break at placement, not a requirement, for a reference that travels — the
-swarm never moves image bytes between nodes (ADR-0024).
+swarm never moves image bytes between nodes (ADR-0024). A saved template is listed under the daemon's
+canonical name (`myimage:v1` becomes `docker.io/library/myimage:v1`); request it by the bare tag it was
+saved with, not that listed form, or placement treats it as registry-hosted and may pick a node that
+does not hold it.
 _Avoid_: image (bare), base
 
 **Kit**:

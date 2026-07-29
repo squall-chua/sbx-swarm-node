@@ -48,7 +48,11 @@ pick the best host for it, and forward the work there.
   To use one template across the swarm, push it to a registry and request it by its
   full reference, e.g. `ghcr.io/org/img:1`; a bare tag like `myimage:v1` only places
   on the node that holds it. Sharp edge: `org/img:1` is treated as a bare tag, so
-  write `docker.io/org/img:1` if you mean Docker Hub.
+  write `docker.io/org/img:1` if you mean Docker Hub. Another sharp edge: a node
+  lists a locally saved template under the daemon's canonical name, e.g. `myimage:v1`
+  becomes `docker.io/library/myimage:v1`; request it by the bare tag it was saved
+  with, not that listed form, or placement treats it as pullable and may land on a
+  node that cannot pull it.
 - **Wraps the real `sbx` daemon** (via [`sbx-go-sdk`](https://github.com/squall-chua/sbx-go-sdk))
   for `backend: sdk`, or a built-in fake for tests / daemonless nodes.
 - **Git-backed workspaces.** Provision clones a node-owned bare repo into the sandbox;
