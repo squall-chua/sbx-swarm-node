@@ -239,22 +239,27 @@ func (x *CreateSandboxRequest) GetKits() []string {
 }
 
 type Sandbox struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	OwnerNode     string                 `protobuf:"bytes,2,opt,name=owner_node,json=ownerNode,proto3" json:"owner_node,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Ports         []*Port                `protobuf:"bytes,4,rep,name=ports,proto3" json:"ports,omitempty"`
-	Labels        map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Branch        string                 `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                                // clone-mode recorded branch
-	LastPublish   string                 `protobuf:"bytes,7,opt,name=last_publish,json=lastPublish,proto3" json:"last_publish,omitempty"`   // RFC3339; empty if never published
-	Agent         string                 `protobuf:"bytes,8,opt,name=agent,proto3" json:"agent,omitempty"`                                  // the agent the sandbox runs (from its create spec)
-	Name          string                 `protobuf:"bytes,9,opt,name=name,proto3" json:"name,omitempty"`                                    // human-readable display name (custom or auto-derived); NOT the routing id
-	Workspaces    []*WorkspaceMount      `protobuf:"bytes,10,rep,name=workspaces,proto3" json:"workspaces,omitempty"`                       // workspaces mounted into the sandbox
-	CreatedAt     string                 `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`        // RFC3339 sandbox creation (provision) time
-	Cpus          int32                  `protobuf:"varint,12,opt,name=cpus,proto3" json:"cpus,omitempty"`                                  // provisioned vCPUs (from create spec)
-	MemoryBytes   int64                  `protobuf:"varint,13,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"` // provisioned memory (bytes)
-	DiskGb        float64                `protobuf:"fixed64,14,opt,name=disk_gb,json=diskGb,proto3" json:"disk_gb,omitempty"`               // provisioned/requested disk (GB)
-	Kits          []string               `protobuf:"bytes,15,rep,name=kits,proto3" json:"kits,omitempty"`                                   // kit names the sandbox was created with
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OwnerNode string                 `protobuf:"bytes,2,opt,name=owner_node,json=ownerNode,proto3" json:"owner_node,omitempty"`
+	Status    string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	// Ports known when the sandbox was created. Set only for a create that used
+	// kits, because a kit can publish ports the node never asked for; empty for
+	// every other sandbox. PublishPort and UnpublishPort do not update it, so it
+	// goes stale. ListPorts reads the backend live — use that when the answer
+	// must be current.
+	Ports         []*Port           `protobuf:"bytes,4,rep,name=ports,proto3" json:"ports,omitempty"`
+	Labels        map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Branch        string            `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                                // clone-mode recorded branch
+	LastPublish   string            `protobuf:"bytes,7,opt,name=last_publish,json=lastPublish,proto3" json:"last_publish,omitempty"`   // RFC3339; empty if never published
+	Agent         string            `protobuf:"bytes,8,opt,name=agent,proto3" json:"agent,omitempty"`                                  // the agent the sandbox runs (from its create spec)
+	Name          string            `protobuf:"bytes,9,opt,name=name,proto3" json:"name,omitempty"`                                    // human-readable display name (custom or auto-derived); NOT the routing id
+	Workspaces    []*WorkspaceMount `protobuf:"bytes,10,rep,name=workspaces,proto3" json:"workspaces,omitempty"`                       // workspaces mounted into the sandbox
+	CreatedAt     string            `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`        // RFC3339 sandbox creation (provision) time
+	Cpus          int32             `protobuf:"varint,12,opt,name=cpus,proto3" json:"cpus,omitempty"`                                  // provisioned vCPUs (from create spec)
+	MemoryBytes   int64             `protobuf:"varint,13,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"` // provisioned memory (bytes)
+	DiskGb        float64           `protobuf:"fixed64,14,opt,name=disk_gb,json=diskGb,proto3" json:"disk_gb,omitempty"`               // provisioned/requested disk (GB)
+	Kits          []string          `protobuf:"bytes,15,rep,name=kits,proto3" json:"kits,omitempty"`                                   // kit names the sandbox was created with
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
