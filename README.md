@@ -52,7 +52,9 @@ pick the best host for it, and forward the work there.
   lists a locally saved template under the daemon's canonical name, e.g. `myimage:v1`
   becomes `docker.io/library/myimage:v1`; request it by the bare tag it was saved
   with, not that listed form, or placement treats it as pullable and may land on a
-  node that cannot pull it.
+  node that cannot pull it. A bare digest reference like `myimage@sha256:...` can
+  never place: it is not registry-shaped, so it is not pullable, and it never
+  matches a node's `repository:tag` listing either.
 - **Wraps the real `sbx` daemon** (via [`sbx-go-sdk`](https://github.com/squall-chua/sbx-go-sdk))
   for `backend: sdk`, or a built-in fake for tests / daemonless nodes.
 - **Git-backed workspaces.** Provision clones a node-owned bare repo into the sandbox;
