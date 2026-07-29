@@ -13,6 +13,7 @@ const props = defineProps<{
     memory_bytes?: number
     labels?: Record<string, string>
     workspaces?: Array<{ name: string; read_only?: boolean }>
+    kits?: string[]
     ports?: Array<{ container_port: number; host_port?: number; protocol?: string }>
   }
 }>()
@@ -236,6 +237,21 @@ onMounted(fetchPorts)
               :key="w.name"
               :label="w.read_only ? `${w.name} (ro)` : w.name"
               :color="w.read_only ? 'neutral' : 'info'"
+              variant="subtle"
+              size="sm"
+              class="font-mono"
+            />
+          </div>
+        </template>
+
+        <template v-if="sandbox.kits && sandbox.kits.length > 0">
+          <span class="text-muted font-medium">Kits</span>
+          <div class="flex flex-wrap gap-1">
+            <UBadge
+              v-for="k in sandbox.kits"
+              :key="k"
+              :label="k"
+              color="neutral"
               variant="subtle"
               size="sm"
               class="font-mono"

@@ -16,4 +16,12 @@ describe('InfoTab actions', () => {
     await w.find('[data-test="stop"]').trigger('click')
     expect(post).toHaveBeenCalledWith('/v1/sandboxes/n1.s1/stop')
   })
+
+  it('shows a badge per kit', async () => {
+    const w = await mountSuspended(InfoTab, {
+      props: { sandbox: { id: 'n1.s1', status: 'running', ports: [], kits: ['tools', 'extras'] } },
+    })
+    expect(w.text()).toContain('tools')
+    expect(w.text()).toContain('extras')
+  })
 })

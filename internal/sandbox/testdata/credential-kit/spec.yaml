@@ -1,0 +1,18 @@
+# Proves the credentials-in-SecretList question (see the design doc's "Ports"
+# section and ADR-0022). `credentials` is a top-level LIST; each entry is a
+# declared NEED, not a value: {service, description, required}. There is no
+# value/token/env field to materialise, so a kit with this block must not add
+# anything to SecretList at either scope, even with required: true and no
+# matching secret present.
+#
+# Otherwise identical to ../mixin-kit/spec.yaml so admission is a given and the
+# test isolates the one thing being probed.
+schemaVersion: "2"
+kind: mixin
+name: swarm-node-credential-kit
+version: 0.0.1
+description: Fixture kit for the credentials-in-SecretList integration test.
+credentials:
+  - service: probe.example.com
+    description: probe credential
+    required: true

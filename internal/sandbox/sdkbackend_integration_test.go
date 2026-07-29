@@ -14,6 +14,10 @@ import (
 
 	sdksecret "github.com/squall-chua/sbx-go-sdk/secret"
 	"github.com/stretchr/testify/require"
+
+	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/ids"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 )
 
 // These integration tests need a running sbx daemon (NewSDKBackend uses
@@ -40,7 +44,13 @@ func noWorkspaces(string) (string, bool, bool) { return "", false, false }
 // daemon (the long-standing post-M7 gap).
 func dial(t *testing.T, resolve WorkspaceResolver) *SDKBackend {
 	t.Helper()
-	b, err := NewSDKBackend(context.Background(), resolve, slog.Default())
+	return dialKits(t, resolve, nil)
+}
+
+// dialKits is dial with configured kits, for the kit tests.
+func dialKits(t *testing.T, resolve WorkspaceResolver, kits map[string]string) *SDKBackend {
+	t.Helper()
+	b, err := NewSDKBackend(context.Background(), resolve, kits, slog.Default())
 	require.NoError(t, err, "connect daemon: need a running sbx daemon")
 	return b
 }
@@ -474,6 +484,151 @@ func TestSDKBackend_ExecInteractive(t *testing.T) {
 		}
 	}
 	t.Fatalf("did not see terminal echo; got: %q", out)
+}
+
+// TestSDKBackend_CreateWithKit proves the whole kit path against a live daemon: a
+// configured mixin is admitted, resolved by name, and applied at create. The
+// environment variable read from inside the sandbox is the proof it was applied,
+// not merely accepted.
+func TestSDKBackend_CreateWithKit(t *testing.T) {
+	ref, err := filepath.Abs("testdata/mixin-kit")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	b := dialKits(t, func(name string) (string, bool, bool) {
+		if name == "ws" {
+			return dir, false, true
+		}
+		return "", false, false
+	}, map[string]string{"testkit": ref})
+
+	require.Equal(t, []string{"testkit"}, b.AdmittedKits(), "the fixture mixin must be admitted")
+
+	sb := mkSandbox(t, b, CreateSpec{
+		Name:       "swarmkit-create",
+		Workspaces: []WorkspaceMount{{Name: "ws"}},
+		Kits:       []string{"testkit"},
+	})
+
+	ctx := context.Background()
+
+	// The daemon records the kit list on the sandbox, as absolute references.
+	h, err := sdksandbox.Get(ctx, b.cl, sb.Name)
+	require.NoError(t, err)
+	kits, err := h.Kits(ctx)
+	require.NoError(t, err)
+	require.Contains(t, kits, ref, "the recorded reference must be the absolute one")
+
+	out, err := b.Exec(ctx, sb.Name, []string{"printenv", "SWARM_KIT_TEST"}, ExecOpts{})
+	require.NoError(t, err)
+	require.Equal(t, "1", strings.TrimSpace(string(out.Stdout)), "the kit's environment variable must be applied")
+}
+
+// TestSDKBackend_RefusesASandboxKindKit proves the admission gate against real
+// daemon output. A kind: sandbox kit supplies the base image, which would make
+// the scheduler's template constraint a lie, so it must never be advertised.
+func TestSDKBackend_RefusesASandboxKindKit(t *testing.T) {
+	dir := t.TempDir()
+	spec := "schemaVersion: \"2\"\nkind: sandbox\nname: swarm-node-bad-kit\nversion: 0.0.1\nsandbox:\n  image: alpine:3\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "spec.yaml"), []byte(spec), 0o644))
+
+	b := dialKits(t, noWorkspaces, map[string]string{"badkit": dir})
+	require.Empty(t, b.AdmittedKits(), "a sandbox-kind kit must not be advertised")
+}
+
+// TestSDKBackend_KitCredentialsNotInSecretList settles the credentials-in-
+// SecretList question the design doc (and this file, before this test existed)
+// left open. A `credentials` entry declares a NEED ({service, description,
+// required}) — there is no value/token/env field on it — so there is nothing
+// for the daemon to materialise into the secret store, at any scope. required:
+// true with no matching secret present must also not block the create; a
+// credentials block is informational, not enforced. Verified against sbx
+// v0.37.0.
+//
+// This fixture declares no environment.variables (unlike mixin-kit), so it has
+// no side effect to observe as proof the kit was actually applied — the test
+// checks h.Kits(ctx) for that BEFORE asserting SecretList is empty, so it reads
+// "the kit really was applied — and even so, no secret appeared" rather than a
+// tautology that would also pass against a daemon that silently no-ops --kit.
+func TestSDKBackend_KitCredentialsNotInSecretList(t *testing.T) {
+	ref, err := filepath.Abs("testdata/credential-kit")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	b := dialKits(t, func(name string) (string, bool, bool) {
+		if name == "ws" {
+			return dir, false, true
+		}
+		return "", false, false
+	}, map[string]string{"credkit": ref})
+
+	require.Equal(t, []string{"credkit"}, b.AdmittedKits(), "a credentials block must not block admission")
+
+	sb := mkSandbox(t, b, CreateSpec{
+		Name:       "it-kit-cred",
+		Workspaces: []WorkspaceMount{{Name: "ws"}},
+		Kits:       []string{"credkit"},
+	})
+	ctx := context.Background()
+
+	// Proof of application, not just acceptance: the daemon records the kit list
+	// on the sandbox, as absolute references.
+	h, err := sdksandbox.Get(ctx, b.cl, sb.Name)
+	require.NoError(t, err)
+	kits, err := h.Kits(ctx)
+	require.NoError(t, err)
+	require.Contains(t, kits, ref, "the credentials kit must actually be applied to the sandbox")
+
+	scoped, err := b.SecretList(ctx, sb.Name)
+	require.NoError(t, err)
+	require.Empty(t, scoped.Stored, "a credentials entry declares a need, not a value; nothing to store")
+	require.Empty(t, scoped.Custom, "a credentials entry declares a need, not a value; nothing to store")
+
+	global, err := b.SecretList(ctx, "")
+	require.NoError(t, err)
+	require.Empty(t, global.Stored, "a credentials entry declares a need, not a value; nothing to store")
+	require.Empty(t, global.Custom, "a credentials entry declares a need, not a value; nothing to store")
+}
+
+// TestSDKBackend_KitPortsMatchLiveRead settles the Record.Ports-vs-live-read
+// question the design doc left open, against a kit that really publishes a
+// port. It goes through Manager.Create, not just the backend, because the
+// actual claim is that the node's best-effort post-create snapshot
+// (Record.Ports) does not lag a live ListPorts read. Verified against sbx
+// v0.37.0: no timing gap observed.
+func TestSDKBackend_KitPortsMatchLiveRead(t *testing.T) {
+	ref, err := filepath.Abs("testdata/ports-kit")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	b := dialKits(t, func(name string) (string, bool, bool) {
+		if name == "ws" {
+			return dir, false, true
+		}
+		return "", false, false
+	}, map[string]string{"portkit": ref})
+
+	require.Equal(t, []string{"portkit"}, b.AdmittedKits(), "a publishedPorts block must not block admission")
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	m := NewManager("node1", b, st, ids.NewGen("node1"))
+
+	ctx := context.Background()
+	rec, err := m.Create(ctx, CreateSpec{
+		Agent:      "shell",
+		Workspaces: []WorkspaceMount{{Name: "ws"}},
+		Kits:       []string{"portkit"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Remove(context.Background(), rec.BackendName) })
+
+	require.True(t, hasContainerPort(rec.Ports, 18081), "Manager.Create must snapshot the kit's published port")
+
+	live, err := b.Ports(ctx, rec.BackendName)
+	require.NoError(t, err)
+	require.Equal(t, rec.Ports, live, "the snapshot taken at create must agree with a live ListPorts read")
 }
 
 // TestSDKBackend_ReadOnlyWorkspaceRules pins sbx's positional read-only rule

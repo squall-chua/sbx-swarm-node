@@ -91,6 +91,7 @@ type CreateSandboxRequest struct {
 	Branch           string                 `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`                                                                                                                         // clone-mode: branch the agent works on / auto-publish target
 	Name             string                 `protobuf:"bytes,14,opt,name=name,proto3" json:"name,omitempty"`                                                                                                                             // optional human-readable display name (blank => auto-derived)
 	ReviewRef        *ReviewRef             `protobuf:"bytes,15,opt,name=review_ref,json=reviewRef,proto3" json:"review_ref,omitempty"`                                                                                                  // when set, node checks out the Review's head instead of the workspace default
+	Kits             []string               `protobuf:"bytes,16,rep,name=kits,proto3" json:"kits,omitempty"`                                                                                                                             // kit NAMES; node config resolves each to a reference (ADR-0022)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -230,6 +231,13 @@ func (x *CreateSandboxRequest) GetReviewRef() *ReviewRef {
 	return nil
 }
 
+func (x *CreateSandboxRequest) GetKits() []string {
+	if x != nil {
+		return x.Kits
+	}
+	return nil
+}
+
 type Sandbox struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -246,6 +254,7 @@ type Sandbox struct {
 	Cpus          int32                  `protobuf:"varint,12,opt,name=cpus,proto3" json:"cpus,omitempty"`                                  // provisioned vCPUs (from create spec)
 	MemoryBytes   int64                  `protobuf:"varint,13,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"` // provisioned memory (bytes)
 	DiskGb        float64                `protobuf:"fixed64,14,opt,name=disk_gb,json=diskGb,proto3" json:"disk_gb,omitempty"`               // provisioned/requested disk (GB)
+	Kits          []string               `protobuf:"bytes,15,rep,name=kits,proto3" json:"kits,omitempty"`                                   // kit names the sandbox was created with
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,6 +385,13 @@ func (x *Sandbox) GetDiskGb() float64 {
 		return x.DiskGb
 	}
 	return 0
+}
+
+func (x *Sandbox) GetKits() []string {
+	if x != nil {
+		return x.Kits
+	}
+	return nil
 }
 
 type GetSandboxRequest struct {
@@ -2379,7 +2395,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x19sbxswarm/v1/sandbox.proto\x12\vsbxswarm.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x18sbxswarm/v1/policy.proto\"A\n" +
 	"\x0eWorkspaceMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\xa9\a\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\xbd\a\n" +
 	"\x14CreateSandboxRequest\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1a\n" +
 	"\btemplate\x18\x02 \x01(\tR\btemplate\x12\x12\n" +
@@ -2399,7 +2415,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x06branch\x18\r \x01(\tR\x06branch\x12\x12\n" +
 	"\x04name\x18\x0e \x01(\tR\x04name\x125\n" +
 	"\n" +
-	"review_ref\x18\x0f \x01(\v2\x16.sbxswarm.v1.ReviewRefR\treviewRef\x1a6\n" +
+	"review_ref\x18\x0f \x01(\v2\x16.sbxswarm.v1.ReviewRefR\treviewRef\x12\x12\n" +
+	"\x04kits\x18\x10 \x03(\tR\x04kits\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
@@ -2411,7 +2428,7 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15NodeAntiAffinityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xff\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x93\x04\n" +
 	"\aSandbox\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -2431,7 +2448,8 @@ const file_sbxswarm_v1_sandbox_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\tR\tcreatedAt\x12\x12\n" +
 	"\x04cpus\x18\f \x01(\x05R\x04cpus\x12!\n" +
 	"\fmemory_bytes\x18\r \x01(\x03R\vmemoryBytes\x12\x17\n" +
-	"\adisk_gb\x18\x0e \x01(\x01R\x06diskGb\x1a9\n" +
+	"\adisk_gb\x18\x0e \x01(\x01R\x06diskGb\x12\x12\n" +
+	"\x04kits\x18\x0f \x03(\tR\x04kits\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"#\n" +

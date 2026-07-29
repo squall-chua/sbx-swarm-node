@@ -94,6 +94,7 @@ message CreateSandboxRequest {
   string branch = 13; // clone-mode: branch the agent works on / auto-publish target
   string name = 14;   // optional human-readable display name (blank => auto-derived)
   ReviewRef review_ref = 15; // when set, node checks out the Review's head instead of the workspace default
+  repeated string kits = 16; // kit NAMES; node config resolves each to a reference (ADR-0022)
 }
 
 message Sandbox {
@@ -111,6 +112,7 @@ message Sandbox {
   int32 cpus = 12;         // provisioned vCPUs (from create spec)
   int64 memory_bytes = 13; // provisioned memory (bytes)
   double disk_gb = 14;     // provisioned/requested disk (GB)
+  repeated string kits = 15; // kit names the sandbox was created with
 }
 
 message GetSandboxRequest { string id = 1; }

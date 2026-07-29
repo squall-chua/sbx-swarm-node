@@ -8,7 +8,7 @@ describe('buildCreateBody', () => {
       workspaces: [{ name: 'repo', read_only: true }],
       clone: true, branch: 'feat/x', strategy: 'bin-pack',
       env: [{ id: 0, k: 'FOO', v: 'bar' }], labels: [],
-      node_affinity: [], node_anti_affinity: [],
+      node_affinity: [], node_anti_affinity: [], kits: [],
     })
     expect(body.agent).toBe('claude')
     expect(body.workspaces).toEqual([{ name: 'repo', read_only: true }])
@@ -31,10 +31,20 @@ describe('buildCreateBody', () => {
         { id: 2, k: ' BAR ', v: '2' },    // key trimmed
         { id: 3, k: 'FOO', v: 'override' }, // duplicate: last wins
       ],
-      labels: [], node_affinity: [], node_anti_affinity: [],
+      labels: [], node_affinity: [], node_anti_affinity: [], kits: [],
     })
     expect(body.env).toEqual({ FOO: 'override', BAR: '2' })
     expect('template' in body).toBe(false) // optional: omitted when blank -> sbx uses the agent default
     expect('name' in body).toBe(false)     // optional: omitted when blank -> server derives a display name
+  })
+
+  it('sends kits when any are selected, and omits the key when none are', () => {
+    const base = {
+      name: '', agent: 'shell', template: '', cpus: 1, memory_bytes: 0, disk_gb: 0,
+      workspaces: [], clone: false, branch: '', strategy: '',
+      env: [], labels: [], node_affinity: [], node_anti_affinity: [],
+    }
+    expect(buildCreateBody({ ...base, kits: ['tools', 'extras'] }).kits).toEqual(['tools', 'extras'])
+    expect('kits' in buildCreateBody({ ...base, kits: [] })).toBe(false)
   })
 })

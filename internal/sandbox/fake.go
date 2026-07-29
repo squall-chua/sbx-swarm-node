@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -20,6 +21,7 @@ type Fake struct {
 	rules     []PolicyRule
 	secrets   map[string][]CustomSecret
 	templates []string
+	kits      map[string]bool
 
 	// Optional test hooks. When non-nil they override the default Exec/PublishPort/
 	// CopyFrom behavior (used to drive git-publish tests against real git repos).
@@ -27,11 +29,43 @@ type Fake struct {
 	PublishPortFunc func(name string, cp int) (PublishedPort, error)
 	CopyFromFunc    func(name, remotePath, localPath string) error
 	CopyToFunc      func(name, localPath, remotePath string) error
+
+	// KitPorts is seeded into a sandbox's ports when its create spec names a kit,
+	// standing in for ports a real kit publishes by itself.
+	KitPorts []PublishedPort
+
+	// PortsErr, when set, makes Ports fail instead of returning the recorded
+	// list -- standing in for a transient daemon read failure.
+	PortsErr error
 }
 
-// NewFake returns an empty fake backend.
-func NewFake() *Fake {
-	return &Fake{sandboxes: map[string]*BackendSandbox{}, ports: map[string][]PublishedPort{}, detached: map[string]bool{}}
+// NewFake returns an empty fake backend advertising the given kit names. It is
+// variadic so a test that does not care about kits can keep calling NewFake().
+func NewFake(kits ...string) *Fake {
+	f := &Fake{
+		sandboxes: map[string]*BackendSandbox{},
+		ports:     map[string][]PublishedPort{},
+		detached:  map[string]bool{},
+		kits:      make(map[string]bool, len(kits)),
+	}
+	for _, k := range kits {
+		f.kits[k] = true
+	}
+	return f
+}
+
+// AdmittedKits returns the fake's configured kit names, sorted. The fake never
+// inspects anything: it has no daemon, and it exists for tests and daemonless
+// nodes.
+func (f *Fake) AdmittedKits() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.kits))
+	for k := range f.kits {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (f *Fake) Create(_ context.Context, spec CreateSpec) (BackendSandbox, error) {
@@ -40,8 +74,16 @@ func (f *Fake) Create(_ context.Context, spec CreateSpec) (BackendSandbox, error
 	if _, ok := f.sandboxes[spec.Name]; ok {
 		return BackendSandbox{}, fmt.Errorf("exists: %s", spec.Name)
 	}
+	for _, k := range spec.Kits {
+		if !f.kits[k] {
+			return BackendSandbox{}, fmt.Errorf("unknown kit %q: %w", k, ErrUnknownKit)
+		}
+	}
 	sb := &BackendSandbox{Name: spec.Name, Status: "running"}
 	f.sandboxes[spec.Name] = sb
+	if len(spec.Kits) > 0 && len(f.KitPorts) > 0 {
+		f.ports[spec.Name] = append(f.ports[spec.Name], f.KitPorts...)
+	}
 	return *sb, nil
 }
 
@@ -143,6 +185,9 @@ func (f *Fake) PublishPort(_ context.Context, name string, cp int) (PublishedPor
 func (f *Fake) Ports(_ context.Context, name string) ([]PublishedPort, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.PortsErr != nil {
+		return nil, f.PortsErr
+	}
 	return f.ports[name], nil
 }
 

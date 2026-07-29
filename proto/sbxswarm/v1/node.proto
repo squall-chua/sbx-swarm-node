@@ -97,4 +97,5 @@ message NodeSummary {
   double actual_cpu = 15;
   double actual_mem = 16;
   repeated string git_workspaces = 17; // subset of `workspaces` whose node config is git-backed
+  repeated string kits = 18; // kit names this node advertises
 }

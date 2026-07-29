@@ -42,7 +42,7 @@ pick the best host for it, and forward the work there.
 ## What it does
 
 - **Provision sandboxes anywhere in the swarm.** A request hits any node; a scheduler
-  filters hosts by hard constraints (workspaces, template, capabilities, node labels,
+  filters hosts by hard constraints (workspaces, template, kits, capabilities, node labels,
   free capacity, not cordoned) and ranks the survivors by strategy (least-loaded,
   bin-pack, spread, least-actual-load). The chosen node creates the sandbox locally.
 - **Wraps the real `sbx` daemon** (via [`sbx-go-sdk`](https://github.com/squall-chua/sbx-go-sdk))
@@ -210,7 +210,7 @@ sequenceDiagram
     C->>A: POST /v1/sandboxes (CreateSandbox)
     A->>A: open Operation (async, returns op id)
     A->>S: candidates = self + gossiped peers
-    S->>S: filter by constraints<br/>(workspaces, template, caps,<br/>node affinity, capacity, not cordoned)
+    S->>S: filter by constraints<br/>(workspaces, template, kits, caps,<br/>node affinity, capacity, not cordoned)
     S->>S: rank by strategy<br/>(prefer entry node on tie)
     alt chosen == Node A
         A->>D: ProvisionLocal → SDK Create
@@ -408,6 +408,7 @@ each overriding the previous. Schema: [internal/config/config.go](internal/confi
 | `gossip_addr` | string | `:7946` | memberlist bind address. |
 | `labels{}` | map | – | This node's labels for affinity/anti-affinity placement. |
 | `workspaces[]` | list | – | Named host dirs to mount/clone. At least one is required to provision via the SDK. |
+| `kits[]` | list | – | `{ name, ref }`. `ref` is node-local (a dir, ZIP, or OCI reference) and never crosses the API — a caller names a kit and never supplies a reference (ADR-0022). |
 | `provision_limits` | `{cpu_cores, memory_bytes, disk_gb}` | auto-detected | Caps the capacity this node offers the swarm. `0` → auto-detect host. |
 | `default_strategy` | string | `least-loaded` | `least-loaded` \| `bin-pack` \| `spread`. (Requests may also ask for `least-actual-load`.) |
 | `default_sandbox_resources` | `{cpu_cores, memory_bytes, disk_gb}` | – | Applied when a request omits a resource. |
@@ -441,6 +442,11 @@ workspaces:
 A git-backed workspace is always mounted **read-only** into the sandbox — the agent
 works in its clone, never the base repo (ADR-0015). Upstream credentials are host-side
 git config, never in this file (ADR-0014).
+
+A kit (`kits[]`) is inspected at boot and admitted only if it is a `kind: mixin`
+declaring nothing that could exceed the capacity this node admitted. A refused kit is
+logged and not advertised. Adding a kit means editing config and restarting the node,
+the same as a template or a workspace.
 
 **Environment / flags** (override the YAML):
 
@@ -484,6 +490,7 @@ curl -sk -X POST $NODE/v1/sandboxes -H "Authorization: Bearer $KEY" \
         "cpus": 2,
         "memory_bytes": 2147483648,
         "workspaces": [{"name": "scratch", "read_only": false}],
+        "kits": ["my-tools"],
         "strategy": "least-loaded",
         "node_affinity": {"zone": "us-east-1a"}
       }'

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,6 +34,7 @@ func run() error {
 	}
 
 	log := obs.NewLogger(cfg.LogLevel, os.Stderr)
+	slog.SetDefault(log)
 	n, err := node.New(cfg, log, version)
 	if err != nil {
 		return err

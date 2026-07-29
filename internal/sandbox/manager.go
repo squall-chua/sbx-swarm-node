@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -15,6 +16,13 @@ import (
 
 // ErrNoCapacity means the node cannot admit the request within its provision limit.
 var ErrNoCapacity = errors.New("insufficient capacity")
+
+// ErrUnknownKit means the target node's admitted kit set does not have the
+// requested name. This is usually stale gossip -- a peer restarted with the
+// kit removed from its config after the caller's placement snapshot was taken
+// -- so the coordinator treats it as a NACK: placement retries the next
+// candidate instead of hard-failing.
+var ErrUnknownKit = errors.New("unknown kit")
 
 const bucket = "sandboxes"
 
@@ -161,6 +169,18 @@ func (m *Manager) Create(ctx context.Context, spec CreateSpec) (*Record, error) 
 	rec := &Record{
 		ID: id, BackendName: backendName, OwnerNode: m.nodeID,
 		Spec: spec, Status: bs.Status, CreatedAt: now, LastActivity: now, Labels: spec.Labels,
+	}
+	// A kit can publish ports the node never asked for. ListPorts reads the
+	// backend live while the Sandbox message's ports come from this record, so
+	// read once here and keep the two from disagreeing. Best effort: a failed
+	// read leaves the record's ports empty rather than failing the create.
+	if len(spec.Kits) > 0 {
+		if ports, perr := m.backend.Ports(ctx, backendName); perr == nil {
+			rec.Ports = ports
+		} else {
+			slog.Default().Warn("sandbox: kit ports read failed, record's ports may disagree with a live read",
+				"sandbox_id", id, "err", perr)
+		}
 	}
 	if err := m.save(rec); err != nil {
 		return nil, err

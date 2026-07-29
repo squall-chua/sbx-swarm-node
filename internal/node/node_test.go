@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,12 +19,59 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/config"
 	"github.com/squall-chua/sbx-swarm-node/internal/coordinator"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
+	"github.com/squall-chua/sbx-swarm-node/internal/ids"
 	"github.com/squall-chua/sbx-swarm-node/internal/obs"
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
+	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+// TestBuildBackend_FakeWithKitsWarns proves a fake-backend node with kits
+// declared in config gets a boot-time warning that the kits are advertised
+// but will not be applied (review Minor #7): the fake admits every configured
+// name unchecked and Fake.Create accepts a known name while doing nothing
+// with it, so such a node is a silent kit-less-create trap for a
+// kit-constrained placement.
+func TestBuildBackend_FakeWithKitsWarns(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	cfg := config.Default()
+	cfg.Kits = []config.KitConfig{{Name: "tools", Ref: "/opt/kits/tools"}}
+
+	_, err := buildBackend(cfg, log)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "kits", "expected a boot warning naming the unapplied kits")
+	require.Contains(t, buf.String(), "level=WARN")
+}
+
+func TestBuildBackend_FakeWithNoKitsIsQuiet(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	cfg := config.Default()
+
+	_, err := buildBackend(cfg, log)
+	require.NoError(t, err)
+	require.Empty(t, buf.String())
+}
+
+func TestKitMap(t *testing.T) {
+	got := kitMap([]config.KitConfig{
+		{Name: "tools", Ref: "/opt/kits/tools"},
+		{Name: "extras", Ref: "ghcr.io/acme/extras:v1"},
+	})
+	want := map[string]string{
+		"tools":  "/opt/kits/tools",
+		"extras": "ghcr.io/acme/extras:v1",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
+}
 
 func TestNode_BootServeStop(t *testing.T) {
 	cfg := config.Default()
@@ -192,6 +242,25 @@ func TestAttemptFor_DialFailureNacks(t *testing.T) {
 	require.ErrorIs(t, err, coordinator.ErrNack)
 }
 
+// TestAttemptFor_LocalUnknownKitNacks proves the LOCAL branch of attemptFor
+// (self == nodeID) NACKs on sandbox.ErrUnknownKit exactly like it already does
+// on sandbox.ErrNoCapacity, instead of surfacing a hard error that aborts the
+// whole placement. Combined with the coordinator package's existing proof that
+// ErrNack causes a retry against the next candidate, this shows a stale-gossip
+// unknown kit does not abort placement when another node could serve it.
+func TestAttemptFor_LocalUnknownKitNacks(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	mgr := sandbox.NewManager("self", sandbox.NewFake(), st, ids.NewGen("self")) // no kits admitted
+	mgr.SetCapacity(sandbox.NewCapacity(4, 1e9, 1e9))
+
+	attempt := attemptFor("self", &sbxv1.CreateSandboxRequest{Cpus: 1, MemoryBytes: 1, Kits: []string{"nope"}},
+		"op-x", mgr, nil, nil, nil, obs.NewLogger("error", io.Discard))
+	_, err = attempt(context.Background(), "self")
+	require.ErrorIs(t, err, coordinator.ErrNack)
+}
+
 func TestReapInterval(t *testing.T) {
 	require.Equal(t, 30*time.Second, reapInterval(30*time.Second))
 	require.Equal(t, time.Minute, reapInterval(10*time.Minute))
@@ -211,6 +280,46 @@ func TestNode_BootWithIdleTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, n.Stop(ctx))
+}
+
+// TestNode_BootAdvertisesConfiguredKits boots a node (default backend: fake,
+// no daemon needed) with a kit declared in config and checks the name reaches
+// the ListNodes-advertised set, i.e. the full config.Kits -> NodeSummary.kits
+// wiring at the three AdmittedKits() call sites in node.go, not just the
+// kitMap helper (TestKitMap).
+func TestNode_BootAdvertisesConfiguredKits(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = "127.0.0.1:0"
+	cfg.APIKeys = []config.APIKey{{Key: "adm", Role: "admin"}}
+	cfg.Kits = []config.KitConfig{{Name: "tools", Ref: "/opt/kits/tools"}}
+	require.NoError(t, cfg.Validate())
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	require.NoError(t, n.Start())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	req, _ := http.NewRequest(http.MethodGet, "https://"+n.Addr()+"/v1/nodes", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Nodes []struct {
+			Kits []string `json:"kits"`
+		} `json:"nodes"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body.Nodes, 1)
+	require.Equal(t, []string{"tools"}, body.Nodes[0].Kits)
 }
 
 func TestNode_SessionKeyIsSwarmWideWhenClustered(t *testing.T) {

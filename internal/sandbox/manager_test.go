@@ -1,7 +1,10 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -14,11 +17,18 @@ import (
 
 func newMgr(t *testing.T) (*Manager, *Fake) {
 	t.Helper()
+	f := NewFake()
+	return newMgrWith(t, f), f
+}
+
+// newMgrWith is newMgr with a caller-supplied fake, for tests that need one
+// configured before the manager sees it (kits, test hooks).
+func newMgrWith(t *testing.T, f *Fake) *Manager {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	f := NewFake()
-	return NewManager("node1", f, st, ids.NewGen("node1")), f
+	return NewManager("node1", f, st, ids.NewGen("node1"))
 }
 
 func TestManager_CreateGetListDelete(t *testing.T) {
@@ -83,6 +93,54 @@ func TestManager_DeleteReapsRecordlessOrphan(t *testing.T) {
 	require.NoError(t, m.Delete(ctx, rec.ID))
 	_, live = f.sandboxes[rec.BackendName]
 	require.False(t, live, "orphaned container must be removed")
+}
+
+func TestCreate_RecordsPortsWhenAKitIsUsed(t *testing.T) {
+	f := NewFake("tools")
+	f.KitPorts = []PublishedPort{{ContainerPort: 8080, HostPort: 32768}}
+	m := newMgrWith(t, f)
+
+	rec, err := m.Create(context.Background(), CreateSpec{Agent: "shell", Kits: []string{"tools"}})
+	require.NoError(t, err)
+	require.Equal(t, []PublishedPort{{ContainerPort: 8080, HostPort: 32768}}, rec.Ports)
+
+	reread, err := m.Get(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.Len(t, reread.Ports, 1, "the ports must be persisted, not only returned")
+}
+
+// TestCreate_KitPortsReadFailureIsLogged proves the best-effort Ports() read in
+// Create does not swallow a transient failure silently: the create must still
+// succeed (best-effort), but a warning naming the sandbox and the error must be
+// logged, since a swallowed failure here leaves the record's ports silently
+// disagreeing with a live ListPorts read.
+func TestCreate_KitPortsReadFailureIsLogged(t *testing.T) {
+	f := NewFake("tools")
+	f.PortsErr = errors.New("daemon unreachable")
+	m := newMgrWith(t, f)
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	rec, err := m.Create(context.Background(), CreateSpec{Agent: "shell", Kits: []string{"tools"}})
+	require.NoError(t, err, "create must still succeed on a best-effort ports-read failure")
+	require.Empty(t, rec.Ports)
+
+	logged := buf.String()
+	require.Contains(t, logged, rec.ID, "warning must name the sandbox")
+	require.Contains(t, logged, "daemon unreachable", "warning must carry the read error")
+}
+
+func TestCreate_NoKitNoPortLookup(t *testing.T) {
+	f := NewFake()
+	f.KitPorts = []PublishedPort{{ContainerPort: 9999, HostPort: 1}}
+	m := newMgrWith(t, f)
+
+	rec, err := m.Create(context.Background(), CreateSpec{Agent: "shell"})
+	require.NoError(t, err)
+	require.Empty(t, rec.Ports, "no kits means no port read")
 }
 
 // fakeNotifier records the owned-id sets pushed by the Manager.

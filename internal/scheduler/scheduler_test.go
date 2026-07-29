@@ -136,3 +136,22 @@ func TestSchedule_NodeAffinityFiltersByLabel(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"A"}, order) // eu excluded
 }
+
+func TestSchedule_KitFilter(t *testing.T) {
+	has := Candidate{NodeID: "a", LimitCPU: 4, LimitMem: 4_000_000, LimitDisk: 100,
+		Kits: map[string]bool{"tools": true}}
+	lacks := Candidate{NodeID: "b", LimitCPU: 4, LimitMem: 4_000_000, LimitDisk: 100,
+		Kits: map[string]bool{"other": true}}
+
+	if _, err := Schedule(Request{CPU: 1, Mem: 1, Disk: 1, Kits: []string{"tools"}, RequestID: "r"}, []Candidate{lacks}); err == nil {
+		t.Fatal("a node without the kit must not be a candidate")
+	}
+
+	order, err := Schedule(Request{CPU: 1, Mem: 1, Disk: 1, Kits: []string{"tools"}, RequestID: "r"}, []Candidate{lacks, has})
+	if err != nil {
+		t.Fatalf("want a placement, got %v", err)
+	}
+	if order[0] != "a" {
+		t.Fatalf("want node a, got %v", order)
+	}
+}

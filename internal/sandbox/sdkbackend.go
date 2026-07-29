@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 
 	sdkclient "github.com/squall-chua/sbx-go-sdk/client"
 	sdkexec "github.com/squall-chua/sbx-go-sdk/exec"
+	sdkkit "github.com/squall-chua/sbx-go-sdk/kit"
 	sdkpolicy "github.com/squall-chua/sbx-go-sdk/policy"
 	sdksandbox "github.com/squall-chua/sbx-go-sdk/sandbox"
 	sdksecret "github.com/squall-chua/sbx-go-sdk/secret"
@@ -28,17 +30,20 @@ type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok boo
 type SDKBackend struct {
 	cl      *sdkclient.Client
 	resolve WorkspaceResolver
+	kits    map[string]string // admitted kit name -> reference
 	log     *slog.Logger
 }
 
-// NewSDKBackend connects to the local daemon (auto-starting it if needed).
+// NewSDKBackend connects to the local daemon (auto-starting it if needed) and
+// admits the configured kits. kits maps a caller-facing kit name to its
+// configured reference; only admitted kits are resolvable and advertised.
 //
 // The daemon version is NOT enforced. The SDK's WithStrictVersion compared
 // api_version by exact string equality, and api_version bumps on every sbx
 // release — so a release with byte-identical wire types still blocked node
 // boot. A drifted daemon is logged once here and left running.
 // ponytail: warn-only; add a floor check if a real incompatibility shows up.
-func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, log *slog.Logger) (*SDKBackend, error) {
+func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, kits map[string]string, log *slog.Logger) (*SDKBackend, error) {
 	cl, err := sdkclient.New(ctx, sdkclient.WithAutoStart())
 	if err != nil {
 		return nil, fmt.Errorf("connect daemon: %w", err)
@@ -48,7 +53,11 @@ func NewSDKBackend(ctx context.Context, resolve WorkspaceResolver, log *slog.Log
 			"daemon_version", h.Version, "daemon_api_version", h.APIVersion,
 			"sdk_client_version", sdkclient.ClientVersion, "sdk_tested_api_version", sdkclient.TestedAPIVersion)
 	}
-	return &SDKBackend{cl: cl, resolve: resolve, log: log}, nil
+	// log is set here, not after: admitKits runs before the return, and a later
+	// warning path would panic on a nil logger (see logger() below).
+	b := &SDKBackend{cl: cl, resolve: resolve, log: log}
+	b.kits = admitKits(ctx, b.inspectKit, kits, log)
+	return b, nil
 }
 
 // logger never returns nil. Only NewSDKBackend sets log, so a construction path
@@ -61,6 +70,64 @@ func (b *SDKBackend) logger() *slog.Logger {
 	}
 	return b.log
 }
+
+// inspectKit loads a kit reference and reduces it to the facts admit() checks.
+func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error) {
+	info, err := sdkkit.Inspect(ctx, b.cl, ref)
+	if err != nil {
+		return KitInfo{}, err
+	}
+	return KitInfo{
+		Kind:          info.Manifest.Kind,
+		HasResources:  hasResources(info.Manifest.Resources),
+		HasRunOptions: len(info.Manifest.RunOptions) > 0,
+		HasTemplate:   info.Manifest.Template != "",
+		HasVolumes:    hasVolumes(info.Manifest.Volumes),
+	}, nil
+}
+
+// hasResources reports whether a kit's raw resources block declares anything.
+// The field is raw JSON, so its byte length is not a count: an absent field,
+// an explicit null, and an empty object all mean "no resources" despite
+// having different lengths (e.g. "{}" vs "{ }"). The shape is always an
+// object, so emptiness is decided by unmarshalling into a map and counting
+// keys; anything that fails to unmarshal as an object (including a list, which
+// has no meaning here) is treated as "declares resources" -- fail closed,
+// since an unparseable or unexpectedly-shaped block must not be read as safe.
+func hasResources(raw []byte) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return true
+	}
+	return len(m) > 0
+}
+
+// hasVolumes reports whether a kit's raw volumes block declares anything, the
+// same emptiness test as hasResources, except upstream's schema also lets a
+// kit author write volumes as a list (the modern form) alongside the legacy
+// map, so an empty list also reads as "no volumes" here.
+func hasVolumes(raw []byte) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return len(list) > 0
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return true
+	}
+	return len(m) > 0
+}
+
+// AdmittedKits returns the sorted names of the kits this node advertises.
+func (b *SDKBackend) AdmittedKits() []string { return kitNames(b.kits) }
 
 // translateNotFound maps the SDK's not-found sentinel to sandbox.ErrNotFound.
 func translateNotFound(err error) error {
@@ -139,6 +206,15 @@ func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbo
 			return BackendSandbox{}, err
 		}
 		opts = append(opts, sdksandbox.WithWorkspace(path))
+	}
+	for _, name := range spec.Kits {
+		ref, ok := b.kits[name]
+		if !ok {
+			return BackendSandbox{}, fmt.Errorf("unknown kit %q: %w", name, ErrUnknownKit)
+		}
+		// The SDK makes a local reference absolute when it builds the argument
+		// vector; an OCI reference passes through. The node does no path work.
+		opts = append(opts, sdksandbox.WithKit(ref))
 	}
 	sb, err := sdksandbox.Create(ctx, b.cl, opts...)
 	if err != nil {

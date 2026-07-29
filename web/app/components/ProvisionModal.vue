@@ -37,6 +37,19 @@ const workspaceOptions = computed<string[]>(() => {
   return Array.from(seen).sort()
 })
 
+// DISTINCT kits across all nodes. The union is right, not just the connected
+// node's: the scheduler filters candidates on kits anyway, so showing only this
+// node's kits would hide kits the swarm can honour.
+const kitOptions = computed<string[]>(() => {
+  const seen = new Set<string>()
+  for (const node of swarm?.nodes.value ?? []) {
+    for (const k of node.kits ?? []) {
+      seen.add(typeof k === 'string' ? k : String(k))
+    }
+  }
+  return Array.from(seen).sort()
+})
+
 const strategyOptions = [
   { label: 'Least loaded', value: 'least-loaded' },
   { label: 'Bin-pack', value: 'bin-pack' },
@@ -64,6 +77,7 @@ const defaultForm = (): ProvisionForm => ({
   clone: false,
   branch: '',
   strategy: '',
+  kits: [],
   env: [],
   labels: [],
   node_affinity: [],
@@ -284,10 +298,11 @@ function onClose() {
 
         <!-- Workspaces multi-select -->
         <div>
-          <label class="block text-sm font-medium text-default mb-1">
+          <label class="block text-sm font-medium text-default mb-1" for="prov-workspaces">
             Workspaces
           </label>
           <USelectMenu
+            id="prov-workspaces"
             v-model="selectedWorkspaceNames"
             :items="workspaceOptions"
             multiple
@@ -316,6 +331,22 @@ function onClose() {
               </label>
             </div>
           </div>
+        </div>
+
+        <!-- Kits multi-select -->
+        <div v-if="kitOptions.length > 0">
+          <label class="block text-sm font-medium text-default mb-1" for="prov-kits">
+            Kits
+          </label>
+          <USelectMenu
+            id="prov-kits"
+            v-model="form.kits"
+            :items="kitOptions"
+            multiple
+            placeholder="Select kits…"
+            aria-label="Kits"
+            class="w-full"
+          />
         </div>
 
         <!-- ── Advanced (collapsible) ────────────────────────────────────── -->
