@@ -140,9 +140,9 @@ func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv
 	}, nil
 }
 
-// Drain cordons the node and sets a draining flag so the M5 scheduler can
-// gracefully migrate sandboxes away. The draining flag is visible via
-// routing.Table.IsCordoned (both cordon and drain block new placements).
+// Drain cordons the node and records that the cordon came from a drain. The
+// marker is display only: the cordon is what blocks new placements. Nothing
+// migrates existing sandboxes away — that is not built.
 func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
 	s.draining.Store(true)
 	if s.cordoner != nil {

@@ -395,6 +395,13 @@ other's keys, and share capacity for scheduling. Notes:
 
 ## Configuration reference
 
+Configuration is read once, at startup. There is no reload: changing a workspace,
+a kit, a template constraint or a git provider means restarting the node. That is
+the intended design, not a gap. A restart is cheap — the sandbox daemon owns the
+sandboxes and the node reconciles its records against them at boot — and a cordon
+now survives a restart, so restarting a node you deliberately took out of service
+will not put it back into service.
+
 Config is layered: **defaults → YAML file (`--config`) → env vars (`SBX_…`) → flags**,
 each overriding the previous. Schema: [internal/config/config.go](internal/config/config.go).
 
