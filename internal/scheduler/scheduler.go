@@ -71,7 +71,7 @@ func Schedule(req Request, cands []Candidate) ([]string, error) {
 		// A node that already holds the image beats one that would have to pull
 		// it. Only reached on an exact score tie, so real load still wins first.
 		if req.Template != "" {
-			if hi, hj := ok[i].Templates[req.Template], ok[j].Templates[req.Template]; hi != hj {
+			if hi, hj := holds(ok[i], req.Template), holds(ok[j], req.Template); hi != hj {
 				return hi
 			}
 		}
@@ -108,6 +108,31 @@ func pullable(ref string) bool {
 	return host == "localhost" || strings.ContainsAny(host, ".:")
 }
 
+// canonical returns the reference the way the daemon reports it in its image list.
+// The daemon canonicalizes an unqualified repository the way Docker does, so a
+// template saved as "myimage:v1" is listed back as "docker.io/library/myimage:v1"
+// (proven live in TestSDKBackend_SaveRemoveTemplate). A node advertises what the
+// daemon lists, so the request has to be canonicalized before it is matched.
+//
+// Only a reference that names no registry is rewritten. Anything pullable is
+// already qualified and is returned unchanged.
+func canonical(ref string) string {
+	if pullable(ref) {
+		return ref
+	}
+	if strings.Contains(ref, "/") {
+		return "docker.io/" + ref
+	}
+	return "docker.io/library/" + ref
+}
+
+// holds reports whether a candidate advertises the requested template, under
+// either spelling. The fake backend advertises the bare tag it was given, while a
+// real daemon advertises the canonical form, so both have to match.
+func holds(c Candidate, ref string) bool {
+	return c.Templates[ref] || c.Templates[canonical(ref)]
+}
+
 func fits(req Request, c Candidate) bool {
 	if c.Cordoned {
 		return false
@@ -117,7 +142,7 @@ func fits(req Request, c Candidate) bool {
 			return false
 		}
 	}
-	if req.Template != "" && !pullable(req.Template) && !c.Templates[req.Template] {
+	if req.Template != "" && !pullable(req.Template) && !holds(c, req.Template) {
 		return false
 	}
 	for _, k := range req.Kits {
