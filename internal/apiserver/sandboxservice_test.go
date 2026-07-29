@@ -560,6 +560,14 @@ func TestSandboxService_SaveTemplateRejectsATagStartingWithDash(t *testing.T) {
 	require.Empty(t, fake.SavedTemplates())
 }
 
+func TestSandboxService_SaveTemplateMissingSandboxIsNotFound(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+
+	_, err := svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: "n1.missing", Tag: "myimage:v1"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
 func TestSandboxService_SaveTemplateKeepsBackendStatusCode(t *testing.T) {
 	svc := newSandboxSvc(t)
 	ctx := context.Background()
