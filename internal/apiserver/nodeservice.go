@@ -49,6 +49,7 @@ type NodeService struct {
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
 	persistFlags              func(cordoned, draining bool)                         // optional; nil until wired by node.go
 	draining                  atomic.Bool
+	cordoned                  atomic.Bool
 }
 
 // NewNodeService returns a NodeService reporting the given identity.
@@ -69,9 +70,9 @@ func (s *NodeService) SetFlagPersister(fn func(cordoned, draining bool)) { s.per
 func (s *NodeService) SetDraining(v bool) { s.draining.Store(v) }
 
 // saveFlags persists the current flags if a persister is wired.
-func (s *NodeService) saveFlags(cordoned bool) {
+func (s *NodeService) saveFlags() {
 	if s.persistFlags != nil {
-		s.persistFlags(cordoned, s.draining.Load())
+		s.persistFlags(s.cordoned.Load(), s.draining.Load())
 	}
 }
 
@@ -111,32 +112,34 @@ func (s *NodeService) GetNodeInfo(ctx context.Context, _ *sbxv1.GetNodeInfoReque
 // Cordon marks the node as cordoned: the scheduler will not place new sandboxes
 // here. Existing sandboxes continue running.
 func (s *NodeService) Cordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.NodeInfo, error) {
+	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
-	s.saveFlags(true)
+	s.saveFlags()
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
-		Cordoned: true,
+		Cordoned: s.cordoned.Load(),
 		Draining: s.draining.Load(),
 	}, nil
 }
 
 // Uncordon removes the cordon so the node can accept new sandboxes again.
 func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.NodeInfo, error) {
+	s.cordoned.Store(false)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(false)
 	}
 	s.draining.Store(false)
-	s.saveFlags(false)
+	s.saveFlags()
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
-		Cordoned: false,
-		Draining: false,
+		Cordoned: s.cordoned.Load(),
+		Draining: s.draining.Load(),
 	}, nil
 }
 
@@ -145,16 +148,17 @@ func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv
 // migrates existing sandboxes away — that is not built.
 func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
 	s.draining.Store(true)
+	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
-	s.saveFlags(true)
+	s.saveFlags()
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
-		Cordoned: true,
-		Draining: true,
+		Cordoned: s.cordoned.Load(),
+		Draining: s.draining.Load(),
 	}, nil
 }
 
@@ -187,6 +191,11 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 
 // Draining reports this node's drain flag (self-only; not gossiped).
 func (s *NodeService) Draining() bool { return s.draining.Load() }
+
+// Cordoned reports this node's cordon. This flag is the single source of truth
+// about self: the cluster publishes it to peers but does not own it, so a
+// standalone node can be cordoned like any other.
+func (s *NodeService) Cordoned() bool { return s.cordoned.Load() }
 
 // ListNodes returns self plus gossiped peers (a node present here is alive by
 // construction — dead nodes are removed from routing).

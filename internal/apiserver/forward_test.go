@@ -47,7 +47,7 @@ func TestForward_UnaryGetSandbox(t *testing.T) {
 	// --- Routing table + peer pool for server A ---
 	const addrB = "nB-bufnet"
 	tbl := routing.NewTable("nA")
-	tbl.Upsert("nB", addrB, false, nil)
+	tbl.Upsert("nB", addrB, nil)
 
 	dialB := func(ctx context.Context, _ string) (net.Conn, error) {
 		return lisB.DialContext(ctx)
@@ -94,7 +94,7 @@ func TestForward_UnaryGetSandbox(t *testing.T) {
 // locally; one with a peer node_id is forwarded (and errors when the peer is unreachable).
 func TestForwarder_RoutesCordonByNodeID(t *testing.T) {
 	tbl := routing.NewTable("self")
-	tbl.Upsert("peer2", "127.0.0.1:65501", false, nil) // unreachable addr; we assert dial is attempted
+	tbl.Upsert("peer2", "127.0.0.1:65501", nil) // unreachable addr; we assert dial is attempted
 
 	fwd := NewForwarder(tbl, peer.NewPool(peer.WithCreds(insecure.NewCredentials())), "self")
 	interceptor := fwd.UnaryInterceptor()

@@ -1,5 +1,5 @@
 // Package routing resolves which node owns a sandbox (by its self-routing id
-// prefix, ADR-0002) and tracks node addresses + cordon state.
+// prefix, ADR-0002) and tracks node addresses.
 package routing
 
 import (
@@ -8,9 +8,8 @@ import (
 )
 
 type entry struct {
-	addr     string
-	cordoned bool
-	pubkey   []byte
+	addr   string
+	pubkey []byte
 }
 
 // Table is the in-memory node directory (rebuilt from gossip).
@@ -23,15 +22,14 @@ type Table struct {
 // NewTable returns a table for the local node id.
 func NewTable(self string) *Table { return &Table{self: self, m: map[string]entry{}} }
 
-// Upsert records a node's address, cordon flag, and (if non-empty) gossiped
-// pubkey. An empty pubkey preserves any previously-pinned key, so meta-tier
-// (UDP) updates do not clobber the bulk-tier (TCP) pubkey.
-func (t *Table) Upsert(nodeID, addr string, cordoned bool, pubkey []byte) {
+// Upsert records a node's address and (if non-empty) gossiped pubkey. An empty
+// pubkey preserves any previously-pinned key, so meta-tier (UDP) updates do not
+// clobber the bulk-tier (TCP) pubkey.
+func (t *Table) Upsert(nodeID, addr string, pubkey []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	e := t.m[nodeID]
 	e.addr = addr
-	e.cordoned = cordoned
 	if len(pubkey) > 0 {
 		e.pubkey = pubkey
 	}
@@ -73,13 +71,6 @@ func (t *Table) Addr(nodeID string) (string, bool) {
 	defer t.mu.RUnlock()
 	e, ok := t.m[nodeID]
 	return e.addr, ok
-}
-
-// IsCordoned reports a node's cordon state.
-func (t *Table) IsCordoned(nodeID string) bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.m[nodeID].cordoned
 }
 
 // Peers returns all known node ids except self.

@@ -179,3 +179,17 @@ func TestNodeService_NilFlagPersisterDoesNotPanic(t *testing.T) {
 	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
 	require.NoError(t, err)
 }
+
+func TestNodeService_CordonWithoutClusterIsReal(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test") // no cordoner: standalone
+	require.False(t, s.Cordoned())
+
+	info, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	require.True(t, info.Cordoned)
+	require.True(t, s.Cordoned(), "the reply must not claim a cordon the node did not take")
+
+	_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	require.False(t, s.Cordoned())
+}
