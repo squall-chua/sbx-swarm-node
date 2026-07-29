@@ -122,9 +122,11 @@ async function doAction(action: string) {
 async function doSaveTemplate() {
   saveTemplateOpen.value = false
   actionLoading.value = 'save-template'
+  const tag = templateTag.value
   try {
-    await api.post(`/v1/sandboxes/${props.sandbox.id}/template`, { tag: templateTag.value })
-    toast.add({ title: `Saved template ${templateTag.value}`, color: 'success', icon: 'i-lucide-check-circle' })
+    await api.post(`/v1/sandboxes/${props.sandbox.id}/template`, { tag })
+    templateTag.value = '' // clear so a re-open doesn't pre-fill a stale tag
+    toast.add({ title: `Saved template ${tag}`, color: 'success', icon: 'i-lucide-check-circle' })
   } catch (e: any) {
     toast.add({ title: 'Failed to save template', description: e?.message, color: 'error' })
   } finally {
@@ -379,8 +381,8 @@ onMounted(fetchPorts)
           </UFormField>
         </template>
         <template #footer="{ close }">
-          <UButton label="Cancel" color="neutral" variant="outline" @click="close" />
-          <UButton data-test="save-template-confirm" label="Save" color="neutral" :disabled="!templateTag" @click="doSaveTemplate" />
+          <UButton label="Cancel" color="neutral" variant="outline" @click="templateTag = ''; close()" />
+          <UButton data-test="save-template-confirm" label="Save" :disabled="!templateTag" @click="doSaveTemplate" />
         </template>
       </UModal>
     </template>
