@@ -45,6 +45,17 @@ const canAdd = computed(() =>
 
 async function doAdd() {
   if (!canAdd.value) return
+  // Replace is keyed on env alone, so the same env under a different host
+  // destroys the old host's credential, and values are write-only so it cannot
+  // be recovered. Same host is a rotation: the placeholder is reused and the
+  // value inside the sandbox does not change, so it needs no prompt.
+  const env = addEnv.value.trim()
+  const host = addHost.value.trim()
+  const clash = secrets.value.custom.find(c => c.env === env && c.host !== host)
+  if (clash && !confirm(
+    `${env} is already set for ${clash.host}.\n\n`
+    + `Saving it for ${host} destroys the ${clash.host} credential. It cannot be recovered.\n\n`
+    + `Continue?`)) return
   addLoading.value = true
   try {
     await api.put(`/v1/sandboxes/${props.id}/secrets`, {
