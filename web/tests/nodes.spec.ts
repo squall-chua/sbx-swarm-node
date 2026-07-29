@@ -18,8 +18,10 @@ vi.mock('../app/composables/useSwarm', () => ({
 
 // A templates chip wraps in UTooltip when it differs from its requestable form,
 // which needs UApp's TooltipProvider; stub it (renders its slot) like the
-// Overview test does, since this test mounts the page bare.
-const mountOpts = { global: { stubs: { UTooltip: { template: '<div><slot /></div>' } } } }
+// Overview test does, since this test mounts the page bare. The stub carries
+// the `text` prop through as a data attribute so the canonical form the
+// tooltip would show is still assertable.
+const mountOpts = { global: { stubs: { UTooltip: { props: ['text'], template: '<div :data-tooltip-text="text"><slot /></div>' } } } }
 
 describe('Nodes', () => {
   it('cordon posts the target node_id in the body', async () => {
@@ -35,9 +37,11 @@ describe('Nodes', () => {
     expect(kits.text()).toContain('extras')
   })
 
-  it('shows the requestable template form on the chip, not the canonical gossiped string', async () => {
+  it('shows the requestable template form on the chip, carrying the canonical form on the tooltip and title', async () => {
     const w = await mountSuspended(Nodes, mountOpts)
-    expect(w.text()).toContain('smoketpl:v1')
-    expect(w.text()).not.toContain('docker.io/library/smoketpl:v1')
+    const badge = w.find('[title="listed as docker.io/library/smoketpl:v1"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('smoketpl:v1')
+    expect(w.find('[data-tooltip-text="listed as docker.io/library/smoketpl:v1"]').exists()).toBe(true)
   })
 })
