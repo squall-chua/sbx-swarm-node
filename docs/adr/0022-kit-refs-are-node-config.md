@@ -2,7 +2,9 @@
 
 A kit is named in a create request and resolved to a reference by node config. The request carries
 kit **names** only; a kit **reference** — a local directory, a ZIP, or an OCI reference — is never
-accepted over the API. An unknown name is rejected with `InvalidArgument`.
+accepted over the API. An unknown name fails create — asynchronously, as `op.Error`, since
+`CreateSandbox` returns an `Operation`; in the swarm path it usually fails earlier still, as
+`ErrNoEligibleNode`, because no candidate node advertises the name at all.
 
 Why: `sbx kit add` takes a reference, so the obvious API is to accept one. Two things make that a
 bad trade. A local reference is a host filesystem path, and letting a client name a path on the
