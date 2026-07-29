@@ -188,6 +188,9 @@ func TestNode_StandaloneCordonBlocksPlacement(t *testing.T) {
 		_ = n.Stop(ctx)
 	})
 
+	// Verify the node genuinely has no cluster.
+	require.Nil(t, n.cluster)
+
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	authed := func(req *http.Request) *http.Request {
 		req.Header.Set("Authorization", "Bearer adm")

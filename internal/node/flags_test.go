@@ -34,3 +34,13 @@ func TestNodeFlags_RoundTrip(t *testing.T) {
 	saveNodeFlags(st, log, nodeFlags{})
 	require.Equal(t, nodeFlags{}, loadNodeFlags(st, log))
 }
+
+func TestNodeFlags_CorruptJSONReadsFalse(t *testing.T) {
+	log := obs.NewLogger("error", io.Discard)
+	st := openTestStore(t)
+	// Write invalid JSON directly to the same bucket and key that saveNodeFlags uses.
+	err := st.Put(flagsBucket, flagsKey, []byte("not valid json {"))
+	require.NoError(t, err)
+	// loadNodeFlags should fall back to all-false when JSON unmarshalling fails.
+	require.Equal(t, nodeFlags{}, loadNodeFlags(st, log))
+}

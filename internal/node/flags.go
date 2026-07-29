@@ -23,10 +23,10 @@ type nodeFlags struct {
 // loadNodeFlags reads the stored flags. A missing value is the normal case on a
 // fresh node and reads as all-false.
 //
-// A read error also falls back to all-false, which un-cordons the node — the
-// very failure this feature exists to stop. It is logged at error level rather
-// than failing the boot: a node that refuses to start is worse than one that
-// starts uncordoned and says so loudly.
+// A read error falls back to all-false, which un-cordons the node.
+// This is the very failure this feature exists to stop.
+// It is logged at error level rather than failing the boot.
+// A node that refuses to start is worse than one that starts uncordoned and says so loudly.
 func loadNodeFlags(st *store.Store, log *slog.Logger) nodeFlags {
 	raw, ok, err := st.Get(flagsBucket, flagsKey)
 	if err != nil {
@@ -44,9 +44,9 @@ func loadNodeFlags(st *store.Store, log *slog.Logger) nodeFlags {
 	return f
 }
 
-// saveNodeFlags persists the flags. Best effort: a write failure is logged and
-// the RPC still succeeds, because refusing an operator's cordon because the disk
-// is unhappy would be worse than losing it on the next restart.
+// saveNodeFlags persists the flags. Best effort: write failure is logged but the
+// RPC still succeeds. It is better to have a node succeed and lose the state on
+// restart than to refuse an operator's cordon request because of a disk error.
 func saveNodeFlags(st *store.Store, log *slog.Logger, f nodeFlags) {
 	raw, err := json.Marshal(f)
 	if err != nil { // unreachable for two bools; kept so the error is never dropped silently
