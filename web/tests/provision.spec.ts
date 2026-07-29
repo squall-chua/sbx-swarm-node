@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCreateBody } from '../app/components/ProvisionModal'
+import { buildCreateBody, requestableTemplate } from '../app/components/ProvisionModal'
 
 describe('buildCreateBody', () => {
   it('maps the form to a snake_case CreateSandbox body, dropping empties', () => {
@@ -46,5 +46,16 @@ describe('buildCreateBody', () => {
     }
     expect(buildCreateBody({ ...base, kits: ['tools', 'extras'] }).kits).toEqual(['tools', 'extras'])
     expect('kits' in buildCreateBody({ ...base, kits: [] })).toBe(false)
+  })
+})
+
+describe('requestableTemplate', () => {
+  it('strips the docker.io/library/ prefix the daemon adds to a saved template', () => {
+    expect(requestableTemplate('docker.io/library/myimage:v1')).toBe('myimage:v1')
+  })
+
+  it('leaves a real registry reference untouched', () => {
+    expect(requestableTemplate('ghcr.io/org/img:1')).toBe('ghcr.io/org/img:1')
+    expect(requestableTemplate('docker.io/org/img:1')).toBe('docker.io/org/img:1')
   })
 })

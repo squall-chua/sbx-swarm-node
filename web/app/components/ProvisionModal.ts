@@ -14,6 +14,19 @@ export type ProvisionForm = {
   node_affinity: KVRow[]; node_anti_affinity: KVRow[]
 }
 
+// The daemon canonicalizes an unqualified saved template the way Docker does, so
+// "myimage:v1" is listed back (and advertised to peers) as
+// "docker.io/library/myimage:v1". That listed form is registry-shaped, so
+// requesting it tells placement the image can travel to any node — but a node
+// that never saved it can't pull it. Requesting the bare tag places it on the
+// node that actually holds it. Strip only that exact prefix: a genuine registry
+// reference like "ghcr.io/org/img:1" or "docker.io/org/img:1" must travel as-is.
+const DOCKER_LIBRARY_PREFIX = 'docker.io/library/'
+
+export function requestableTemplate(name: string): string {
+  return name.startsWith(DOCKER_LIBRARY_PREFIX) ? name.slice(DOCKER_LIBRARY_PREFIX.length) : name
+}
+
 export function buildCreateBody(f: ProvisionForm): Record<string, any> {
   const body: Record<string, any> = {
     agent: f.agent, cpus: f.cpus,
