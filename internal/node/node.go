@@ -777,7 +777,8 @@ func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, requestID string,
 	return func(ctx context.Context, nodeID string) (string, error) {
 		if nodeID == self {
 			rec, err := apiserver.ProvisionLocal(ctx, mgr, gitWS, apiserver.ToSpecForProvision(spec))
-			if err == sandbox.ErrNoCapacity || errors.Is(err, sandbox.ErrUnknownKit) {
+			if errors.Is(err, sandbox.ErrNoCapacity) || errors.Is(err, sandbox.ErrUnknownKit) {
+				log.Warn("provision: local node can't accept, skipping", "node_id", nodeID, "err", err)
 				return "", coordinator.ErrNack
 			}
 			if err != nil {
@@ -802,6 +803,7 @@ func attemptFor(self string, spec *sbxv1.CreateSandboxRequest, requestID string,
 			return "", err
 		}
 		if !reply.Accepted {
+			log.Warn("provision: target declined, skipping", "node_id", nodeID, "reason", reply.Reason)
 			return "", coordinator.ErrNack
 		}
 		return reply.SandboxId, nil

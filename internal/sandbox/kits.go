@@ -13,6 +13,9 @@ import (
 // kitInspectTimeout bounds each kit's boot-time inspection independently.
 // Kits are inspected concurrently, so one slow reference costs its own
 // timeout, not the whole set's. A var, not a const, so a test can shorten it.
+// Tests mutate this global directly and restore it via t.Cleanup: safe only
+// because internal/ has no t.Parallel() today. Don't add t.Parallel() to
+// this package without revisiting that.
 var kitInspectTimeout = 15 * time.Second
 
 // KitInfo is the part of a kit's manifest the node checks before advertising the
