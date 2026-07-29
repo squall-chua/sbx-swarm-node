@@ -101,6 +101,12 @@ message Sandbox {
   string id = 1;
   string owner_node = 2;
   string status = 3;
+  // Ports known when the sandbox was created. Set only for a create that used
+  // kits, because a kit can publish ports the node never asked for, and even
+  // then only if that read succeeded; empty for every other sandbox.
+  // PublishPort and UnpublishPort do not update it, so it goes stale.
+  // ListPorts reads the backend live — use that when the answer must be
+  // current.
   repeated Port ports = 4;
   map<string, string> labels = 5;
   string branch = 6;       // clone-mode recorded branch

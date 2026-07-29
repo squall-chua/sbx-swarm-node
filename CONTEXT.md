@@ -109,6 +109,15 @@ key, plus an optional CA trust — held per workspace and applied host-side to b
 REST API. Never gossiped, never placed in Sandbox-visible state, never returned to the Agency, never logged.
 _Avoid_: token (bare), secret (that is the Sandbox-injected kind), key
 
+**Custom secret**:
+The Sandbox-injected secret, keyed by host and env. The node never holds the value: the daemon issues a
+placeholder that stands in for it inside the Sandbox, and the real credential lives behind the egress proxy.
+Values are write-only — never stored, returned, or logged by the node. Two operations share one call and
+behave very differently. _Rotate_ (same env, same host) reuses the placeholder, so the value inside the
+Sandbox does not change and only the credential behind the proxy moves. _Re-point_ (same env, different
+host) destroys the old host's credential, unrecoverably.
+_Avoid_: credential (that is the Workspace kind), env var, token
+
 **Publish**:
 The post-sandbox step that retrieves the agent's branch from the sandbox clone and pushes it upstream,
 executed via the workspace's configured, node-local pipeline. Branch-only; asynchronous (an Operation).

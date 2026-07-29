@@ -220,6 +220,13 @@ func (b *SDKBackend) Create(ctx context.Context, spec CreateSpec) (BackendSandbo
 	if err != nil {
 		return BackendSandbox{}, err
 	}
+	// The daemon can refuse a workspace mount by policy and still start the
+	// sandbox, so the agent comes up silently without its workspace. It reports
+	// one bool for the whole sandbox, so we cannot name which mount was denied.
+	if sb.MountPolicyDenied() {
+		b.logger().Warn("daemon denied a workspace mount by policy; sandbox is running without it",
+			"sandbox", sb.Name())
+	}
 	return BackendSandbox{Name: sb.Name(), Status: sb.State()}, nil
 }
 
