@@ -47,6 +47,7 @@ type NodeService struct {
 	revoker                   Revoker                                               // optional; nil when not in cluster mode
 	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
+	removeTemplate            func(ctx context.Context, ref string) error           // optional; nil until wired by node.go
 	draining                  atomic.Bool
 }
 
@@ -148,6 +149,12 @@ func (s *NodeService) SetTemplateLister(fn func(context.Context) ([]sandbox.Temp
 	s.templateLister = fn
 }
 
+// SetTemplateRemover wires template deletion (node.go). Optional: without it,
+// RemoveTemplate answers Unavailable rather than pretending to delete.
+func (s *NodeService) SetTemplateRemover(fn func(ctx context.Context, ref string) error) {
+	s.removeTemplate = fn
+}
+
 // ListTemplates returns the local node's templates with metadata.
 func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesRequest) (*sbxv1.ListTemplatesResponse, error) {
 	out := &sbxv1.ListTemplatesResponse{}
@@ -164,6 +171,22 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 		})
 	}
 	return out, nil
+}
+
+// RemoveTemplate deletes one template image from this node's image store and
+// returns what is left. Cross-node calls arrive here already forwarded by
+// node_id (ADR-0018), so this only ever removes locally.
+func (s *NodeService) RemoveTemplate(ctx context.Context, r *sbxv1.RemoveTemplateRequest) (*sbxv1.ListTemplatesResponse, error) {
+	if r.GetRef() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ref is required")
+	}
+	if s.removeTemplate == nil {
+		return nil, status.Error(codes.Unavailable, "no sandbox backend on this node")
+	}
+	if err := s.removeTemplate(ctx, r.GetRef()); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return s.ListTemplates(ctx, &sbxv1.ListTemplatesRequest{})
 }
 
 // Draining reports this node's drain flag (self-only; not gossiped).

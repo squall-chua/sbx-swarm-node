@@ -12,6 +12,33 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestNodeService_RemoveTemplate(t *testing.T) {
+	f := sandbox.NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateLister(f.ListTemplateInfo)
+	s.SetTemplateRemover(f.RemoveTemplate)
+
+	resp, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.NoError(t, err)
+	for _, tm := range resp.Templates {
+		require.NotEqual(t, "myimage:v1", tm.Repository+":"+tm.Tag)
+	}
+}
+
+func TestNodeService_RemoveTemplateNeedsARef(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestNodeService_RemoveTemplateWithoutABackend(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test") // no remover wired
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+}
+
 func TestNodeService_GetNodeInfo(t *testing.T) {
 	svc := NewNodeService("node-abc", "alpha", "v9")
 	out, err := svc.GetNodeInfo(context.Background(), &sbxv1.GetNodeInfoRequest{})
