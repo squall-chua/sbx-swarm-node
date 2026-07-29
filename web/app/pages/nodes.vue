@@ -284,6 +284,7 @@ const nodes = computed(() => swarm?.nodes.value ?? [])
                 <UTooltip v-if="requestableTemplate(t) !== t" :text="`listed as ${t}`">
                   <UBadge
                     :label="requestableTemplate(t)"
+                    :title="`listed as ${t}`"
                     color="neutral"
                     variant="subtle"
                     size="xs"
