@@ -355,6 +355,9 @@ func (s *SandboxService) SaveTemplate(ctx context.Context, r *sbxv1.SaveTemplate
 	if r.GetTag() == "" {
 		return nil, status.Error(codes.InvalidArgument, "tag is required")
 	}
+	if strings.HasPrefix(r.GetTag(), "-") {
+		return nil, status.Error(codes.InvalidArgument, "tag must not start with -")
+	}
 	rec, err := s.mgr.Get(ctx, r.GetId())
 	if errors.Is(err, sandbox.ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "sandbox not found")

@@ -546,6 +546,20 @@ func TestSandboxService_SaveTemplateNeedsATag(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
+func TestSandboxService_SaveTemplateRejectsATagStartingWithDash(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+	rec, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	fake := svc.mgr.Backend().(*sandbox.Fake)
+
+	// A leading "-" would be read as a CLI flag by the shelled-out template save;
+	// refuse it up front instead of letting the backend fail confusingly.
+	_, err = svc.SaveTemplate(ctx, &sbxv1.SaveTemplateRequest{Id: rec.ID, Tag: "-v1"})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Empty(t, fake.SavedTemplates())
+}
+
 func TestSandboxService_SaveTemplateKeepsBackendStatusCode(t *testing.T) {
 	svc := newSandboxSvc(t)
 	ctx := context.Background()
