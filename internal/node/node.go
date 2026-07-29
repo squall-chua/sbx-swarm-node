@@ -504,9 +504,11 @@ func refreshLocalState(ctx context.Context, cl *membership.Cluster, mgr *sandbox
 		cl.UpdateLocalTemplates(tmpls)
 	} else {
 		// Keep the last known list — one failed tick shouldn't blank a node's
-		// advertised templates. Debug, not Warn: this can fire every 10s for
-		// as long as the daemon stays down, and would otherwise flood the log.
-		log.Debug("list templates failed, keeping previously advertised list", "err", err)
+		// advertised templates. Warn, matching the other skip-and-log sites in
+		// this file: it repeats every 10s for as long as the daemon stays
+		// down, and that repetition is the point -- an accurate signal of an
+		// ongoing problem, not something to bury at debug.
+		log.Warn("list templates failed, keeping previously advertised list", "err", err)
 	}
 }
 

@@ -427,9 +427,13 @@ func TestRefreshLocalState_ListTemplatesErrorIsLoggedAndSkipped(t *testing.T) {
 	// The daemon goes down: ListTemplates starts failing.
 	backend.ListTemplatesErr = errors.New("daemon unreachable")
 	var buf bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	// Default handler options (no Level override): the default log_level is
+	// "info", so this proves the failure is visible without an operator
+	// having to turn on debug logging.
+	log := slog.New(slog.NewTextHandler(&buf, nil))
 	refreshLocalState(context.Background(), cl, mgr, statsC, log)
 
 	require.Equal(t, []string{"myimage:v1"}, cl.LocalNodeState().Templates, "a failed poll must not blank the advertised list")
 	require.Contains(t, buf.String(), "daemon unreachable", "the failure must be logged, not silently swallowed")
+	require.Contains(t, buf.String(), "level=WARN", "must log at a level visible by default, not buried at debug")
 }
