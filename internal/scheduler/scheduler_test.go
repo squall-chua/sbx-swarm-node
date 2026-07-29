@@ -180,6 +180,52 @@ func TestSchedule_HolderBeatsTheEntryNodeOnATie(t *testing.T) {
 	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node")
 }
 
+// The holder tie-break sits after the score comparison, so it must win a tie
+// under every ranking strategy, not just the default. bin-pack, spread and
+// least-actual-load all score both nodes equal here, so each one reaches the
+// same tie-break as TestSchedule_HolderBeatsTheEntryNodeOnATie.
+func TestSchedule_HolderBeatsTheEntryNodeOnATie_BinPack(t *testing.T) {
+	mk := func(id string, holds bool) Candidate {
+		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+		if holds {
+			c.Templates = map[string]bool{"ghcr.io/org/img:1": true}
+		}
+		return c
+	}
+	req := Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r", Local: "n1", Strategy: "bin-pack"}
+	got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
+	require.NoError(t, err)
+	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node under bin-pack")
+}
+
+func TestSchedule_HolderBeatsTheEntryNodeOnATie_Spread(t *testing.T) {
+	mk := func(id string, holds bool) Candidate {
+		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+		if holds {
+			c.Templates = map[string]bool{"ghcr.io/org/img:1": true}
+		}
+		return c
+	}
+	req := Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r", Local: "n1", Strategy: "spread"}
+	got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
+	require.NoError(t, err)
+	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node under spread")
+}
+
+func TestSchedule_HolderBeatsTheEntryNodeOnATie_LeastActualLoad(t *testing.T) {
+	mk := func(id string, holds bool) Candidate {
+		c := Candidate{NodeID: id, LimitCPU: 8, LimitMem: 8 << 20, LimitDisk: 100}
+		if holds {
+			c.Templates = map[string]bool{"ghcr.io/org/img:1": true}
+		}
+		return c
+	}
+	req := Request{Template: "ghcr.io/org/img:1", CPU: 1, RequestID: "r", Local: "n1", Strategy: "least-actual-load"}
+	got, err := Schedule(req, []Candidate{mk("n1", false), mk("n2", true)})
+	require.NoError(t, err)
+	require.Equal(t, "n2", got[0], "a node holding the image must win over the entry node under least-actual-load")
+}
+
 // Two identical unloaded nodes. n1 advertises the daemon's tagged form of an
 // untagged request, so only the canonical lookup finds it.
 func TestSchedule_TieBreakMatchesTheCanonicalName(t *testing.T) {
