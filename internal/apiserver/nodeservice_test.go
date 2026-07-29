@@ -39,6 +39,23 @@ func TestNodeService_RemoveTemplateWithoutABackend(t *testing.T) {
 	require.Equal(t, codes.Unavailable, status.Code(err))
 }
 
+func TestNodeService_RemoveTemplateRefusesAnotherNode(t *testing.T) {
+	f := sandbox.NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+
+	called := false
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateLister(f.ListTemplateInfo)
+	s.SetTemplateRemover(func(ctx context.Context, ref string) error {
+		called = true
+		return f.RemoveTemplate(ctx, ref)
+	})
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{NodeId: "n2", Ref: "myimage:v1"})
+	require.Equal(t, codes.NotFound, status.Code(err))
+	require.False(t, called, "the backend remover must not run for another node's id")
+}
+
 func TestNodeService_GetNodeInfo(t *testing.T) {
 	svc := NewNodeService("node-abc", "alpha", "v9")
 	out, err := svc.GetNodeInfo(context.Background(), &sbxv1.GetNodeInfoRequest{})

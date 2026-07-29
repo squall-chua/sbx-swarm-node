@@ -176,7 +176,17 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 // RemoveTemplate deletes one template image from this node's image store and
 // returns what is left. Cross-node calls arrive here already forwarded by
 // node_id (ADR-0018), so this only ever removes locally.
+//
+// A node_id naming some other node is refused here rather than trusted to the
+// interceptor: the interceptor forwards to the owning peer only when it has an
+// address for that node, and otherwise falls through to this local handler
+// (unknown or departed peer, or a standalone node with no forwarder at all).
+// Without this guard that fallback would delete the wrong node's image and
+// report success, with no node identity in the reply to reveal the mistake.
 func (s *NodeService) RemoveTemplate(ctx context.Context, r *sbxv1.RemoveTemplateRequest) (*sbxv1.ListTemplatesResponse, error) {
+	if id := r.GetNodeId(); id != "" && id != s.nodeID {
+		return nil, status.Error(codes.NotFound, "unknown node")
+	}
 	if r.GetRef() == "" {
 		return nil, status.Error(codes.InvalidArgument, "ref is required")
 	}
