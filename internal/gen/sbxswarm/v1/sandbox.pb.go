@@ -244,10 +244,11 @@ type Sandbox struct {
 	OwnerNode string                 `protobuf:"bytes,2,opt,name=owner_node,json=ownerNode,proto3" json:"owner_node,omitempty"`
 	Status    string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	// Ports known when the sandbox was created. Set only for a create that used
-	// kits, because a kit can publish ports the node never asked for; empty for
-	// every other sandbox. PublishPort and UnpublishPort do not update it, so it
-	// goes stale. ListPorts reads the backend live — use that when the answer
-	// must be current.
+	// kits, because a kit can publish ports the node never asked for, and even
+	// then only if that read succeeded; empty for every other sandbox.
+	// PublishPort and UnpublishPort do not update it, so it goes stale.
+	// ListPorts reads the backend live — use that when the answer must be
+	// current.
 	Ports         []*Port           `protobuf:"bytes,4,rep,name=ports,proto3" json:"ports,omitempty"`
 	Labels        map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Branch        string            `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`                                // clone-mode recorded branch

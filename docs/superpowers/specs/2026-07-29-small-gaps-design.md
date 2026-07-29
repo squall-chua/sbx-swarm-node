@@ -130,6 +130,13 @@ Because there is no local mount policy control, this warning most likely only
 ever fires under a remote governance policy, which we do not run. It is cheap
 insurance that costs nothing when it never fires.
 
+The log is also the **only** signal. A denied mount still returns a successful
+`Create`, so the API caller, the `Sandbox` message and the console all keep
+showing a healthy sandbox. That is the right trade while nothing can trigger a
+denial. If remote governance is ever put in front of these nodes, this becomes
+a field on the record, not a log line. It reopens together with the per-sandbox
+governance profile item below.
+
 ## Change 3 — confirm before a custom secret re-point destroys a credential
 
 ### What is wrong
@@ -167,6 +174,15 @@ line 90, so it adds no new pattern.
 That fires on rotation, which is the common and safe case. A dialog that appears
 on the normal path is a dialog people learn to click through, which costs us the
 one case we actually care about.
+
+### A known limit
+
+The confirm is advisory, not a gate. It reads the list the console already
+fetched. `fetchSecrets` turns a failed GET into a toast and leaves that list
+empty, so a re-point after a failed load asks nothing. The list can also be
+stale if another operator wrote in between. The node-side warn in
+`SDKBackend.SecretSet` stays the backstop. Do not read this guard as protection
+the daemon enforces.
 
 ### How to verify
 
