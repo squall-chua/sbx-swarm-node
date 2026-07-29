@@ -761,6 +761,22 @@ func (b *SDKBackend) ListTemplateInfo(ctx context.Context) ([]TemplateInfo, erro
 	return out, nil
 }
 
+// SaveTemplate snapshots the sandbox as a template image. The SDK shells out to
+// `sbx template save NAME TAG`; the daemon refuses a running sandbox, and the
+// CLI's prompt fails on a non-interactive stdin, so the caller stops it first.
+func (b *SDKBackend) SaveTemplate(ctx context.Context, name, tag string) error {
+	sb, err := b.handle(ctx, name)
+	if err != nil {
+		return err
+	}
+	return sb.SaveTemplate(ctx, tag)
+}
+
+// RemoveTemplate deletes a template image by ref (REST DELETE on the daemon).
+func (b *SDKBackend) RemoveTemplate(ctx context.Context, ref string) error {
+	return sdktemplate.Remove(ctx, b.cl, ref)
+}
+
 // ExecInteractive opens a Terminal session via the SDK's hijacking attach.
 func (b *SDKBackend) ExecInteractive(ctx context.Context, name string, cmd []string, tty bool) (Session, error) {
 	sb, err := b.handle(ctx, name)

@@ -179,6 +179,11 @@ type Backend interface {
 	ListTemplates(ctx context.Context) ([]string, error)
 	// ListTemplateInfo returns the local daemon's templates with metadata.
 	ListTemplateInfo(ctx context.Context) ([]TemplateInfo, error)
+	// SaveTemplate snapshots a sandbox as a reusable template image. The daemon
+	// refuses to snapshot a running sandbox, so the caller must stop it first.
+	SaveTemplate(ctx context.Context, name, tag string) error
+	// RemoveTemplate deletes one template image from this node's image store.
+	RemoveTemplate(ctx context.Context, ref string) error
 	// AdmittedKits returns the sorted names of the kits this node advertises.
 	AdmittedKits() []string
 	Start(ctx context.Context, name string) error
