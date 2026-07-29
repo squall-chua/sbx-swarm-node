@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
 	"google.golang.org/grpc/codes"
@@ -48,6 +49,7 @@ type NodeService struct {
 	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
 	removeTemplate            func(ctx context.Context, ref string) error           // optional; nil until wired by node.go
+	audit                     *audit.Log                                            // optional; nil until wired by node.go
 	draining                  atomic.Bool
 }
 
@@ -155,6 +157,10 @@ func (s *NodeService) SetTemplateRemover(fn func(ctx context.Context, ref string
 	s.removeTemplate = fn
 }
 
+// SetAudit wires the audit log (node.go). Optional: without it, RemoveTemplate
+// still deletes but records nothing.
+func (s *NodeService) SetAudit(a *audit.Log) { s.audit = a }
+
 // ListTemplates returns the local node's templates with metadata.
 func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesRequest) (*sbxv1.ListTemplatesResponse, error) {
 	out := &sbxv1.ListTemplatesResponse{}
@@ -193,7 +199,16 @@ func (s *NodeService) RemoveTemplate(ctx context.Context, r *sbxv1.RemoveTemplat
 	if s.removeTemplate == nil {
 		return nil, status.Error(codes.Unavailable, "no sandbox backend on this node")
 	}
-	if err := s.removeTemplate(ctx, r.GetRef()); err != nil {
+	err := s.removeTemplate(ctx, r.GetRef())
+	if s.audit != nil {
+		_ = s.audit.Record(audit.Entry{
+			Actor:   actor(ctx),
+			Action:  "template.remove",
+			Target:  r.GetRef(),
+			Outcome: outcomeOf(err),
+		})
+	}
+	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return s.ListTemplates(ctx, &sbxv1.ListTemplatesRequest{})

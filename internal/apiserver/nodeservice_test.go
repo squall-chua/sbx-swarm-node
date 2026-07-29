@@ -3,14 +3,25 @@ package apiserver
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
+	"github.com/squall-chua/sbx-swarm-node/internal/audit"
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
 	"github.com/squall-chua/sbx-swarm-node/internal/sandbox"
+	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func newTestAudit(t *testing.T) *audit.Log {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return audit.New(st, func() int64 { return 1 })
+}
 
 func TestNodeService_RemoveTemplate(t *testing.T) {
 	f := sandbox.NewFake()
@@ -25,6 +36,45 @@ func TestNodeService_RemoveTemplate(t *testing.T) {
 	for _, tm := range resp.Templates {
 		require.NotEqual(t, "myimage:v1", tm.Repository+":"+tm.Tag)
 	}
+}
+
+func TestNodeService_RemoveTemplateWritesAudit(t *testing.T) {
+	f := sandbox.NewFake()
+	require.NoError(t, f.SaveTemplate(context.Background(), "sb-1", "myimage:v1"))
+	a := newTestAudit(t)
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateLister(f.ListTemplateInfo)
+	s.SetTemplateRemover(f.RemoveTemplate)
+	s.SetAudit(a)
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.NoError(t, err)
+
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "template.remove", entries[0].Action)
+	require.Equal(t, "myimage:v1", entries[0].Target)
+	require.Equal(t, "ok", entries[0].Outcome)
+}
+
+func TestNodeService_RemoveTemplateWritesAuditOnFailure(t *testing.T) {
+	a := newTestAudit(t)
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetTemplateRemover(func(context.Context, string) error { return errors.New("boom") })
+	s.SetAudit(a)
+
+	_, err := s.RemoveTemplate(context.Background(), &sbxv1.RemoveTemplateRequest{Ref: "myimage:v1"})
+	require.Error(t, err)
+
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "template.remove", entries[0].Action)
+	require.Equal(t, "myimage:v1", entries[0].Target)
+	require.Equal(t, "error", entries[0].Outcome)
 }
 
 func TestNodeService_RemoveTemplateNeedsARef(t *testing.T) {
