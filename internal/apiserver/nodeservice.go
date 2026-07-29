@@ -69,6 +69,11 @@ func (s *NodeService) SetFlagPersister(fn func(cordoned, draining bool)) { s.per
 // cordon is what blocks placement.
 func (s *NodeService) SetDraining(v bool) { s.draining.Store(v) }
 
+// SetCordonedFlag restores the cordon at boot (node.go). Local only: it does
+// not touch the cluster, so callers must mirror it to the Cordoner themselves
+// once one exists.
+func (s *NodeService) SetCordonedFlag(v bool) { s.cordoned.Store(v) }
+
 // saveFlags persists the current flags if a persister is wired.
 func (s *NodeService) saveFlags() {
 	if s.persistFlags != nil {

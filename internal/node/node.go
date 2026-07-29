@@ -59,6 +59,7 @@ type Node struct {
 	cancel     context.CancelFunc  // cancels background collector goroutines
 	cluster    *membership.Cluster // nil when not in cluster mode
 	pool       *peer.Pool          // nil when not in cluster mode
+	nodeSvc    *apiserver.NodeService
 }
 
 // New constructs a node: it establishes identity, opens the store, loads the TLS
@@ -214,6 +215,19 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	// Build NodeService before cluster so we can wire the Cordoner below.
 	nodeSvc := apiserver.NewNodeService(id.NodeID, cfg.NodeName, version)
 
+	// A restart must not put a cordoned node back into service (ADR-0023). The
+	// flag is restored locally and unconditionally: it is what enforcement reads,
+	// with or without a cluster.
+	flags := loadNodeFlags(st, log)
+	nodeSvc.SetCordonedFlag(flags.Cordoned)
+	nodeSvc.SetDraining(flags.Draining)
+	nodeSvc.SetFlagPersister(func(cordoned, draining bool) {
+		saveNodeFlags(st, log, nodeFlags{Cordoned: cordoned, Draining: draining})
+	})
+	if flags.Cordoned {
+		log.Info("restored cordon from a previous run", "draining", flags.Draining)
+	}
+
 	if cfg.GossipAddr != "" && cfg.ClusterSecret != "" {
 		// Only build the cluster when a cluster_secret is configured. A pure
 		// standalone node (no secret, no seeds) skips gossip entirely.
@@ -231,20 +245,9 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		}
 		clusterInstance = cl
 		nodeSvc.SetCordoner(cl)
-		// A restart must not put a cordoned node back into service (ADR-0023).
-		// Restore through SetCordoned, not localNS: enforcement reads the routing
-		// table and NewCluster never seeds a self entry, so seeding localNS alone
-		// would advertise the cordon to peers while this node kept placing
-		// sandboxes on itself.
-		flags := loadNodeFlags(st, log)
 		if flags.Cordoned {
-			cl.SetCordoned(true)
-			log.Info("restored cordon from a previous run", "draining", flags.Draining)
+			cl.SetCordoned(true) // tell the peers what we already know
 		}
-		nodeSvc.SetDraining(flags.Draining)
-		nodeSvc.SetFlagPersister(func(cordoned, draining bool) {
-			saveNodeFlags(st, log, nodeFlags{Cordoned: cordoned, Draining: draining})
-		})
 		nodeSvc.SetRevoker(cl)
 		// Re-gossip OwnedSandboxIDs on create/delete so peer node-state stays
 		// fresh (M5 scheduling reads gossiped owned-id sets).
@@ -360,6 +363,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		cancel:  cancel,
 		cluster: clusterInstance,
 		pool:    pool,
+		nodeSvc: nodeSvc,
 		srv: &http.Server{
 			Handler:   handler,
 			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}},

@@ -107,10 +107,9 @@ func TestNode_BootServeStop(t *testing.T) {
 	resp.Body.Close()
 }
 
-// TestNode_BootRestoresCordon proves a stored cordon reaches the cluster's
-// gossiped state at boot. It does not yet prove NodeService.Cordoned(), the
-// flag enforcement now reads (see internal/apiserver.NodeService.Cordoned);
-// wiring that restore is a later task.
+// TestNode_BootRestoresCordon proves a stored cordon is restored on both
+// halves: the local flag, which is what enforcement reads, and the cluster's
+// gossiped state, which is what peers read.
 func TestNode_BootRestoresCordon(t *testing.T) {
 	dir := t.TempDir()
 
@@ -123,7 +122,8 @@ func TestNode_BootRestoresCordon(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = dir
 	cfg.ListenAddr = "127.0.0.1:0"
-	// Cordon is inert without a cluster, so both of these are required.
+	// A cluster is no longer needed to observe a cordon (Task 3), but keep one
+	// here so the mirror-to-cluster half is covered too.
 	cfg.GossipAddr = "127.0.0.1:0"
 	cfg.ClusterSecret = "test-secret"
 
@@ -135,8 +135,34 @@ func TestNode_BootRestoresCordon(t *testing.T) {
 		_ = n.Stop(ctx)
 	})
 
-	require.True(t, n.cluster.LocalNodeState().Cordoned,
-		"a stored cordon must be restored at boot")
+	require.True(t, n.nodeSvc.Cordoned(), "a stored cordon must be restored at boot")
+	require.True(t, n.cluster.LocalNodeState().Cordoned, "and it must reach the peers")
+}
+
+// TestNode_BootRestoresCordon_Standalone proves the restore and the persister
+// wiring do not depend on a cluster: a standalone node's cordon must survive a
+// restart too.
+func TestNode_BootRestoresCordon_Standalone(t *testing.T) {
+	dir := t.TempDir()
+
+	st, err := store.Open(filepath.Join(dir, "node.db"))
+	require.NoError(t, err)
+	saveNodeFlags(st, obs.NewLogger("error", io.Discard), nodeFlags{Cordoned: true})
+	require.NoError(t, st.Close())
+
+	cfg := config.Default()
+	cfg.DataDir = dir
+	cfg.ListenAddr = "127.0.0.1:0"
+
+	n, err := New(cfg, obs.NewLogger("error", io.Discard), "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(ctx)
+	})
+
+	require.True(t, n.nodeSvc.Cordoned(), "a standalone node's stored cordon must be restored too")
 }
 
 // TestNode_StandaloneCordonBlocksPlacement proves the point of this task: a
