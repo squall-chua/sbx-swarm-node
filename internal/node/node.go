@@ -59,6 +59,7 @@ type Node struct {
 	cancel     context.CancelFunc  // cancels background collector goroutines
 	cluster    *membership.Cluster // nil when not in cluster mode
 	pool       *peer.Pool          // nil when not in cluster mode
+	nodeSvc    *apiserver.NodeService
 }
 
 // New constructs a node: it establishes identity, opens the store, loads the TLS
@@ -214,6 +215,23 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	// Build NodeService before cluster so we can wire the Cordoner below.
 	nodeSvc := apiserver.NewNodeService(id.NodeID, cfg.NodeName, version)
 
+	// A restart must not put a cordoned node back into service (ADR-0023). The
+	// flag is restored locally and unconditionally: it is what enforcement reads,
+	// with or without a cluster.
+	flags := loadNodeFlags(st, log)
+	nodeSvc.SetCordonedFlag(flags.Cordoned)
+	nodeSvc.SetDraining(flags.Draining)
+	nodeSvc.SetFlagPersister(func(cordoned, draining bool) {
+		saveNodeFlags(st, log, nodeFlags{Cordoned: cordoned, Draining: draining})
+	})
+	if flags.Cordoned {
+		log.Info("restored cordon from a previous run", "draining", flags.Draining)
+	}
+	nodeSvc.SetDrainer(func(actor string, keepGoing func() bool) {
+		n := sandboxes.DrainAll(nctx, actor, keepGoing)
+		log.Info("drain finished", "stopped", n)
+	})
+
 	if cfg.GossipAddr != "" && cfg.ClusterSecret != "" {
 		// Only build the cluster when a cluster_secret is configured. A pure
 		// standalone node (no secret, no seeds) skips gossip entirely.
@@ -231,6 +249,9 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		}
 		clusterInstance = cl
 		nodeSvc.SetCordoner(cl)
+		if flags.Cordoned {
+			cl.SetCordoned(true) // tell the peers what we already know
+		}
 		nodeSvc.SetRevoker(cl)
 		// Re-gossip OwnedSandboxIDs on create/delete so peer node-state stays
 		// fresh (M5 scheduling reads gossiped owned-id sets).
@@ -245,7 +266,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		tmpls, _ := mgr.Backend().ListTemplates(context.Background())
 		self := apiserver.NodeRow{
 			NodeID: id.NodeID, NodeName: cfg.NodeName, Draining: nodeSvc.Draining(),
-			Cordoned:      clusterInstance != nil && clusterInstance.LocalNodeState().Cordoned,
+			Cordoned:      nodeSvc.Cordoned(),
 			Labels:        cfg.Labels,
 			Capabilities:  []string{"clone", "stats", "exec", "write-files"},
 			Workspaces:    workspaceNames(cfg.Workspaces),
@@ -272,7 +293,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	})
 
 	coord := coordinator.New(func() []scheduler.Candidate {
-		return buildCandidates(id.NodeID, cfg, capt, mgr, clusterInstance, tbl)
+		return buildCandidates(id.NodeID, cfg, capt, mgr, clusterInstance, nodeSvc.Cordoned())
 	})
 	sandboxes.WithPlacement(
 		func(ctx context.Context, req scheduler.Request, spec *sbxv1.CreateSandboxRequest) (string, error) {
@@ -301,7 +322,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		Forward:   fwd,
 		Routing:   tbl,
 		Peers:     pool,
-		Internal:  apiserver.NewInternalService(mgr, gitWS, func() bool { return tbl.IsCordoned(id.NodeID) }),
+		Internal:  apiserver.NewInternalService(mgr, gitWS, nodeSvc.Cordoned),
 		NodeSvc:   nodeSvc, // pre-wired with Cordoner (nil-safe if no cluster)
 		Pins: func(nodeID string) (crypto.PublicKey, bool) {
 			pk, ok := tbl.PubKey(nodeID)
@@ -346,6 +367,7 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		cancel:  cancel,
 		cluster: clusterInstance,
 		pool:    pool,
+		nodeSvc: nodeSvc,
 		srv: &http.Server{
 			Handler:   handler,
 			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h2", "http/1.1"}},
@@ -714,7 +736,7 @@ func rowFromState(ns membership.NodeState) apiserver.NodeRow {
 }
 
 // buildCandidates assembles the self candidate (live local capacity) + gossiped peers.
-func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mgr *sandbox.Manager, cl *membership.Cluster, tbl *routing.Table) []scheduler.Candidate {
+func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mgr *sandbox.Manager, cl *membership.Cluster, selfCordoned bool) []scheduler.Candidate {
 	lc, lm, ld := capt.Limits()
 	ac, am, ad := capt.Snapshot()
 	recs, _ := mgr.List(context.Background())
@@ -735,7 +757,7 @@ func buildCandidates(self string, cfg *config.Config, capt *sandbox.Capacity, mg
 		AllocCPU: ac, AllocMem: am, AllocDisk: ad,
 		Sandboxes: len(recs),
 		ActualCPU: selfUtilCPU, ActualMem: selfUtilMem,
-		Cordoned: tbl.IsCordoned(self),
+		Cordoned: selfCordoned,
 	}}
 	if cl == nil {
 		return out

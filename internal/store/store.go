@@ -16,7 +16,7 @@ import (
 const SchemaVersion uint64 = 1
 
 var (
-	bucketNames = []string{"meta", "sandboxes", "operations", "idempotency", "blocked_egress", "audit", "revoked"}
+	bucketNames = []string{"meta", "sandboxes", "operations", "idempotency", "blocked_egress", "audit", "revoked", "node"}
 	schemaKey   = []byte("schema_version")
 	bucketMeta  = []byte("meta")
 )

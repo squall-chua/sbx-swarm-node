@@ -94,7 +94,7 @@ func TestOwnerProxy_PinnedForwardToOwner(t *testing.T) {
 
 	leafPub := backend.Certificate().PublicKey
 	tbl := routing.NewTable("nA")
-	tbl.Upsert("nB", addr, false, nil)
+	tbl.Upsert("nB", addr, nil)
 
 	resolver := func(nodeID string) (crypto.PublicKey, bool) {
 		if nodeID == "nB" {
@@ -123,7 +123,7 @@ func TestOwnerProxy_PinMismatchFailsClosed(t *testing.T) {
 
 	wrongPub, _, _ := ed25519.GenerateKey(rand.Reader)
 	tbl := routing.NewTable("nA")
-	tbl.Upsert("nB", addr, false, nil)
+	tbl.Upsert("nB", addr, nil)
 	resolver := func(string) (crypto.PublicKey, bool) { return wrongPub, true }
 	h := OwnerProxy(tbl, resolver, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 

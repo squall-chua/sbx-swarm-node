@@ -3,6 +3,7 @@ package apiserver
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 
 	sbxv1 "github.com/squall-chua/sbx-swarm-node/internal/gen/sbxswarm/v1"
@@ -47,7 +48,12 @@ type NodeService struct {
 	revoker                   Revoker                                               // optional; nil when not in cluster mode
 	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
+	persistFlags              func(cordoned, draining bool)                         // optional; nil until wired by node.go
+	drainer                   func(actor string, keepGoing func() bool)             // optional; nil until wired by node.go
 	draining                  atomic.Bool
+	cordoned                  atomic.Bool
+	mu                        sync.Mutex // serializes Cordon/Uncordon/Drain: each is set-local, mirror-to-cluster, persist as one unit
+	sweeping                  bool       // guarded by mu; true while a Drain-started sweep goroutine is running
 }
 
 // NewNodeService returns a NodeService reporting the given identity.
@@ -58,6 +64,32 @@ func NewNodeService(nodeID, nodeName, version string) *NodeService {
 // SetCordoner wires the cluster's cordon controller. Called from node.New after
 // the cluster is built; nil-safe so existing NodeService tests pass unchanged.
 func (s *NodeService) SetCordoner(c Cordoner) { s.cordoner = c }
+
+// SetFlagPersister wires the store-backed save of the cordon and drain flags
+// (node.go). Optional and nil-safe, so existing tests need no change.
+func (s *NodeService) SetFlagPersister(fn func(cordoned, draining bool)) { s.persistFlags = fn }
+
+// SetDraining restores the drain marker at boot (node.go). Display only: the
+// cordon is what blocks placement.
+func (s *NodeService) SetDraining(v bool) { s.draining.Store(v) }
+
+// SetCordonedFlag restores the cordon at boot (node.go). It is a boot-time
+// back door around the normal Cordon/Uncordon/Drain path: it does not touch
+// the cluster, so callers must mirror it to the Cordoner themselves once one
+// exists, and it does not persist, so it must not be used outside of boot
+// restore.
+func (s *NodeService) SetCordonedFlag(v bool) { s.cordoned.Store(v) }
+
+// SetDrainer wires the background sweep run by Drain (node.go). Optional and
+// nil-safe, so existing tests need no change.
+func (s *NodeService) SetDrainer(fn func(actor string, keepGoing func() bool)) { s.drainer = fn }
+
+// saveFlags persists the current flags if a persister is wired.
+func (s *NodeService) saveFlags() {
+	if s.persistFlags != nil {
+		s.persistFlags(s.cordoned.Load(), s.draining.Load())
+	}
+}
 
 // SetRevoker wires the cluster's revocation controller. nil-safe; standalone
 // leaves it nil so revocation degrades to FailedPrecondition/empty.
@@ -95,47 +127,91 @@ func (s *NodeService) GetNodeInfo(ctx context.Context, _ *sbxv1.GetNodeInfoReque
 // Cordon marks the node as cordoned: the scheduler will not place new sandboxes
 // here. Existing sandboxes continue running.
 func (s *NodeService) Cordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.NodeInfo, error) {
+	// ponytail: holds mu across Cluster.SetCordoned, which blocks on a gossip
+	// broadcast for up to 5s. A concurrent Cordon/Uncordon/Drain queues behind
+	// that. Correctness over latency: these are rare operator calls, and this is
+	// what keeps the local flag, the cluster mirror and the persisted record from
+	// disagreeing. Upgrade path: make the mirror async if this ever hurts.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
+	s.saveFlags()
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
-		Cordoned: true,
+		Cordoned: s.cordoned.Load(),
 		Draining: s.draining.Load(),
 	}, nil
 }
 
 // Uncordon removes the cordon so the node can accept new sandboxes again.
 func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.NodeInfo, error) {
+	// See the ponytail note on Cordon: same lock, same ceiling.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cordoned.Store(false)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(false)
 	}
 	s.draining.Store(false)
+	s.saveFlags()
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
-		Cordoned: false,
-		Draining: false,
+		Cordoned: s.cordoned.Load(),
+		Draining: s.draining.Load(),
 	}, nil
 }
 
-// Drain cordons the node and sets a draining flag so the M5 scheduler can
-// gracefully migrate sandboxes away. The draining flag is visible via
-// routing.Table.IsCordoned (both cordon and drain block new placements).
-func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
+// actorOrSystem returns the authenticated role from ctx, or "system" if there
+// is none. Used for a bulk operator action started here but finished by a
+// background goroutine, whose own context does not survive past this RPC.
+func actorOrSystem(ctx context.Context) string {
+	if a := actor(ctx); a != "" {
+		return a
+	}
+	return "system"
+}
+
+// Drain cordons the node, then publishes and stops every sandbox running on it,
+// in the background. The node ends up empty and git-backed work is saved. The
+// draining marker records why the node is out of service and survives a restart.
+// Nothing is migrated: a sandbox id names its owner node, so a sandbox cannot
+// move without changing identity.
+func (s *NodeService) Drain(ctx context.Context, _ *sbxv1.DrainRequest) (*sbxv1.NodeInfo, error) {
+	// See the ponytail note on Cordon: same lock, same ceiling.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.draining.Store(true)
+	s.cordoned.Store(true)
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
+	}
+	s.saveFlags()
+	// A second Drain while a sweep is already running (e.g. a double-click) still
+	// cordons and returns NodeInfo normally; only the duplicate sweep is skipped,
+	// so two sweeps never race over the same running set.
+	if s.drainer != nil && !s.sweeping {
+		s.sweeping = true
+		sweepActor := actorOrSystem(ctx)
+		go func() {
+			s.drainer(sweepActor, s.draining.Load)
+			s.mu.Lock()
+			s.sweeping = false
+			s.mu.Unlock()
+		}()
 	}
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
 		Version:  s.version,
-		Cordoned: true,
-		Draining: true,
+		Cordoned: s.cordoned.Load(),
+		Draining: s.draining.Load(),
 	}, nil
 }
 
@@ -168,6 +244,11 @@ func (s *NodeService) ListTemplates(ctx context.Context, _ *sbxv1.ListTemplatesR
 
 // Draining reports this node's drain flag (self-only; not gossiped).
 func (s *NodeService) Draining() bool { return s.draining.Load() }
+
+// Cordoned reports this node's cordon. This flag is the single source of truth
+// about self: the cluster publishes it to peers but does not own it, so a
+// standalone node can be cordoned like any other.
+func (s *NodeService) Cordoned() bool { return s.cordoned.Load() }
 
 // ListNodes returns self plus gossiped peers (a node present here is alive by
 // construction — dead nodes are removed from routing).

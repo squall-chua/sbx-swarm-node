@@ -393,6 +393,61 @@ func TestReapIdle_PublishesThenStops(t *testing.T) {
 	require.Equal(t, "stopped", got.Status)
 }
 
+// Two running sandboxes, one labelled idle-stop: off.
+// DrainAll stops both: that label protects against the idle timer, not
+// against an operator.
+func TestSandboxService_DrainAllStopsEverythingRunning(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+
+	rec1, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	rec2, err := svc.mgr.Create(ctx, sandbox.CreateSpec{Labels: map[string]string{"idle-stop": "off"}})
+	require.NoError(t, err)
+	require.Equal(t, "running", rec1.Status)
+	require.Equal(t, "running", rec2.Status)
+
+	n := svc.DrainAll(ctx, "admin", func() bool { return true })
+	require.Equal(t, 2, n)
+
+	got1, err := svc.mgr.Get(ctx, rec1.ID)
+	require.NoError(t, err)
+	require.Equal(t, "stopped", got1.Status)
+
+	got2, err := svc.mgr.Get(ctx, rec2.ID)
+	require.NoError(t, err)
+	require.Equal(t, "stopped", got2.Status, "idle-stop: off must not exempt a sandbox from a drain")
+}
+
+// keepGoing returns false after the first sandbox. The second is left
+// running, because Uncordon during a sweep must cancel it.
+func TestSandboxService_DrainAllStopsWhenCancelled(t *testing.T) {
+	svc := newSandboxSvc(t)
+	ctx := context.Background()
+
+	rec1, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+	rec2, err := svc.mgr.Create(ctx, sandbox.CreateSpec{})
+	require.NoError(t, err)
+
+	calls := 0
+	keepGoing := func() bool {
+		calls++
+		return calls == 1 // true for the first sandbox, false from then on
+	}
+
+	n := svc.DrainAll(ctx, "admin", keepGoing)
+	require.Equal(t, 1, n)
+
+	got1, err := svc.mgr.Get(ctx, rec1.ID)
+	require.NoError(t, err)
+	require.Equal(t, "stopped", got1.Status)
+
+	got2, err := svc.mgr.Get(ctx, rec2.ID)
+	require.NoError(t, err)
+	require.Equal(t, "running", got2.Status, "cancelling the sweep must leave the second sandbox running")
+}
+
 func TestStopSandbox_AutoPublishesThenStops(t *testing.T) {
 	svc, rec, upstream, al := gitPublishFixture(t)
 
