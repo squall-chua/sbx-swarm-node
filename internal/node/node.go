@@ -116,31 +116,6 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 	netC := obsd.NewNetLogCollector(backend, mgr.ResolveVMToID)
 	sandboxes.WithObserve(apiserver.ObserveDeps{Stats: statsC, NetLog: netC, Backend: backend, Mgr: mgr})
 	idleEnabled := cfg.IdleTimeoutDuration() > 0
-	go runTicker(nctx, 10*time.Second, func() {
-		_ = statsC.PollOnce(nctx)
-		// Surface the spec §9 actual_util reconstruction on /metrics.
-		au := statsC.ActualUtil()
-		metrics.SetActualUtil(au.CPU, au.Mem)
-		// Update the sandbox status gauge from manager records. Reset first so
-		// statuses absent from this snapshot don't retain stale values.
-		if recs, err := mgr.List(nctx); err == nil {
-			counts := map[string]int{}
-			for _, r := range recs {
-				counts[r.Status]++
-				if idleEnabled && r.Status == "running" {
-					if u, ok := statsC.Latest(r.BackendName); ok && u.CPUPercent >= cpuActiveThreshold {
-						_ = mgr.BumpActivity(nctx, r.ID) // observed work counts as Activity
-					}
-				}
-			}
-			metrics.ResetSandboxes()
-			for status, n := range counts {
-				metrics.SetSandboxes(status, n)
-			}
-		}
-		_ = mgr.Reconcile(nctx)
-		refreshLocalState(nctx, clusterInstance, mgr, statsC, log)
-	})
 	go runTicker(nctx, 15*time.Second, func() { _ = netC.PollOnce(nctx) })
 	if idle := cfg.IdleTimeoutDuration(); idle > 0 {
 		go runTicker(nctx, reapInterval(idle), func() { sandboxes.ReapIdle(nctx, time.Now()) })
@@ -233,6 +208,36 @@ func New(cfg *config.Config, log *slog.Logger, version string) (*Node, error) {
 		// fresh (M5 scheduling reads gossiped owned-id sets).
 		mgr.SetOwnedIDsNotifier(cl)
 	}
+
+	// Started here, after clusterInstance is done being assigned above: this
+	// ticker's closure reads clusterInstance, and starting the goroutine only
+	// once that assignment is finished (in program order, before the `go`
+	// even runs) avoids a data race between the two.
+	go runTicker(nctx, 10*time.Second, func() {
+		_ = statsC.PollOnce(nctx)
+		// Surface the spec §9 actual_util reconstruction on /metrics.
+		au := statsC.ActualUtil()
+		metrics.SetActualUtil(au.CPU, au.Mem)
+		// Update the sandbox status gauge from manager records. Reset first so
+		// statuses absent from this snapshot don't retain stale values.
+		if recs, err := mgr.List(nctx); err == nil {
+			counts := map[string]int{}
+			for _, r := range recs {
+				counts[r.Status]++
+				if idleEnabled && r.Status == "running" {
+					if u, ok := statsC.Latest(r.BackendName); ok && u.CPUPercent >= cpuActiveThreshold {
+						_ = mgr.BumpActivity(nctx, r.ID) // observed work counts as Activity
+					}
+				}
+			}
+			metrics.ResetSandboxes()
+			for status, n := range counts {
+				metrics.SetSandboxes(status, n)
+			}
+		}
+		_ = mgr.Reconcile(nctx)
+		refreshLocalState(nctx, clusterInstance, mgr, statsC, log)
+	})
 
 	nodeSvc.SetTemplateLister(mgr.Backend().ListTemplateInfo)
 	nodeSvc.SetTemplateRemover(mgr.Backend().RemoveTemplate)
