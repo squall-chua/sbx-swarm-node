@@ -52,7 +52,10 @@ pick the best host for it, and forward the work there.
   lists a locally saved template under the daemon's canonical name, e.g. `myimage:v1`
   becomes `docker.io/library/myimage:v1`; request it by the bare tag it was saved
   with, not that listed form, or placement treats it as pullable and may land on a
-  node that cannot pull it. A bare digest reference like `myimage@sha256:...` can
+  node that cannot pull it. A two-part saved tag hits the same edge with no
+  client-side fix: `myorg/myimage:v1` is listed as `docker.io/myorg/myimage:v1`,
+  and requesting that form tells placement it travels, same as a real Docker Hub
+  reference would. A bare digest reference like `myimage@sha256:...` can
   never place: it is not registry-shaped, so it is not pullable, and it never
   matches a node's `repository:tag` listing either.
 - **Wraps the real `sbx` daemon** (via [`sbx-go-sdk`](https://github.com/squall-chua/sbx-go-sdk))
