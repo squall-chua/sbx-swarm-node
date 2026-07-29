@@ -43,3 +43,12 @@ while the RPC still answered `Cordoned: true` — a node that reported itself ou
 taking work. The local flag closes that. Teaching `routing.Table.Upsert` to arbitrate on
 `StateVersion` was considered and rejected as unnecessary — once a node advertises the correct value
 on rejoin, last-writer-wins is right.
+
+An older binary that does not know about the `node` bucket opens the database without error and simply
+leaves it untouched. This means an operator who downgrades the binary, uncordons the node, and then
+upgrades again will find the node cordoned once more — the downgrade uncordoned it on the operator's
+request, but the old binary never wrote the `Cordoned: false` value to the new bucket, so the previous
+cordoned state remains on disk. The cordon is restored when the newer binary starts and reads the
+persisted flag. This asymmetry is the safer failure mode: a rolled-back and re-upgraded node ends up
+idle rather than quietly returning to service, and it is inherent to the schema change that carries no
+version bump. An operator performing a rollback should account for this during recovery.
