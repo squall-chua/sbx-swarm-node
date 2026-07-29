@@ -70,9 +70,11 @@ func (s *NodeService) SetFlagPersister(fn func(cordoned, draining bool)) { s.per
 // cordon is what blocks placement.
 func (s *NodeService) SetDraining(v bool) { s.draining.Store(v) }
 
-// SetCordonedFlag restores the cordon at boot (node.go). Local only: it does
-// not touch the cluster, so callers must mirror it to the Cordoner themselves
-// once one exists.
+// SetCordonedFlag restores the cordon at boot (node.go). It is a boot-time
+// back door around the normal Cordon/Uncordon/Drain path: it does not touch
+// the cluster, so callers must mirror it to the Cordoner themselves once one
+// exists, and it does not persist, so it must not be used outside of boot
+// restore.
 func (s *NodeService) SetCordonedFlag(v bool) { s.cordoned.Store(v) }
 
 // SetDrainer wires the background sweep run by Drain (node.go). Optional and

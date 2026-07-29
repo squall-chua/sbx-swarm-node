@@ -73,12 +73,12 @@ type InternalService struct {
 	sbxv1.UnimplementedInternalServiceServer
 	mgr      *sandbox.Manager
 	gitWS    map[string]*git.Workspace
-	cordoned func() bool // self-cordon check; nil when standalone (never cordoned)
+	cordoned func() bool // self-cordon check; reports this node's own cordon state; nil skips the check
 	dedup    *dedup
 }
 
 // NewInternalService builds the internal service. cordoned reports this node's
-// own cordon state (nil = standalone, never cordoned).
+// own cordon state; a nil hook skips the check.
 func NewInternalService(mgr *sandbox.Manager, gitWS map[string]*git.Workspace, cordoned func() bool) *InternalService {
 	return &InternalService{mgr: mgr, gitWS: gitWS, cordoned: cordoned, dedup: newDedup(5*time.Minute, 1024)}
 }

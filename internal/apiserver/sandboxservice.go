@@ -411,8 +411,10 @@ func (s *SandboxService) ReapIdle(ctx context.Context, now time.Time) int {
 // so a sandbox cannot move without changing identity.
 //
 // keepGoing is re-checked before each sandbox so an uncordon cancels the sweep.
-// actor is carried in because the caller's context dies with its RPC, and the
-// audit should not record a bulk operator action as "system".
+// ctx is also checked, so node shutdown stops the sweep instead of running it
+// to a failing finish. actor is carried in because the caller's context dies
+// with its RPC, and the audit should not record a bulk operator action as
+// "system".
 func (s *SandboxService) DrainAll(ctx context.Context, actor string, keepGoing func() bool) int {
 	recs, err := s.mgr.List(ctx)
 	if err != nil {
@@ -424,7 +426,7 @@ func (s *SandboxService) DrainAll(ctx context.Context, actor string, keepGoing f
 		if rec.Status != "running" {
 			continue
 		}
-		if !keepGoing() {
+		if !keepGoing() || ctx.Err() != nil {
 			break
 		}
 		// publish-then-stop, same order and the same "a publish failure does not

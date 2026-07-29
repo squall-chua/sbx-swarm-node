@@ -183,12 +183,13 @@ func TestNodeService_NilFlagPersisterDoesNotPanic(t *testing.T) {
 
 func TestNodeService_DrainCallsDrainerCordonDoesNot(t *testing.T) {
 	type call struct {
-		actor string
+		actor     string
+		keepGoing func() bool
 	}
 	calls := make(chan call, 1)
 
 	s := NewNodeService("n1", "node-1", "test")
-	s.SetDrainer(func(actor string, _ func() bool) { calls <- call{actor: actor} })
+	s.SetDrainer(func(actor string, keepGoing func() bool) { calls <- call{actor: actor, keepGoing: keepGoing} })
 
 	// Cordon must not trigger a sweep.
 	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
@@ -207,6 +208,12 @@ func TestNodeService_DrainCallsDrainerCordonDoesNot(t *testing.T) {
 	select {
 	case c := <-calls:
 		require.Equal(t, "admin", c.actor)
+		// The keepGoing handed to the drainer must be live, not a stub: it must
+		// go false once the node is uncordoned, so the sweep actually stops.
+		require.True(t, c.keepGoing(), "keepGoing must be true while still draining")
+		_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+		require.NoError(t, err)
+		require.False(t, c.keepGoing(), "keepGoing must go false after Uncordon")
 	case <-time.After(time.Second):
 		t.Fatal("Drain did not call the drainer")
 	}
