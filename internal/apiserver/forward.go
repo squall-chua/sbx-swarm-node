@@ -8,7 +8,9 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/peer"
 	"github.com/squall-chua/sbx-swarm-node/internal/routing"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // Forwarder routes unary RPCs to the owning node when the sandbox id is remote.
@@ -60,7 +62,9 @@ func (f *Forwarder) UnaryInterceptor() grpc.UnaryServerInterceptor {
 			if nodeID, ok := routableNode(req); ok && nodeID != f.self {
 				addr, ok := f.tbl.Addr(nodeID)
 				if !ok {
-					return handler(ctx, req) // unknown node: let local handler answer
+					// Do not fall through to the local handler: that would cordon,
+					// uncordon, or drain this node instead of the one named.
+					return nil, status.Errorf(codes.NotFound, "node %q not found", nodeID)
 				}
 				conn, err := f.pool.Conn(addr, nodeID)
 				if err != nil {

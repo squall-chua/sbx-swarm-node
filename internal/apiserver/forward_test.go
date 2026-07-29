@@ -16,7 +16,9 @@ import (
 	"github.com/squall-chua/sbx-swarm-node/internal/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -115,6 +117,28 @@ func TestForwarder_RoutesCordonByNodeID(t *testing.T) {
 	_, err = interceptor(ctx, &sbxv1.CordonRequest{NodeId: "peer2"}, &grpc.UnaryServerInfo{FullMethod: "/sbxswarm.v1.NodeService/Cordon"}, handler)
 	require.Error(t, err, "forwarding to an unreachable peer should error")
 	require.False(t, called, "peer-targeted cordon must not run the local handler")
+}
+
+// TestForwarder_CordonUnknownNode_ReturnsNotFound: a Cordon naming a node id
+// that is neither self nor in the routing table must fail with NotFound and
+// must not fall through to the local handler (which would cordon this node
+// instead of the one the operator named).
+func TestForwarder_CordonUnknownNode_ReturnsNotFound(t *testing.T) {
+	tbl := routing.NewTable("self") // "ghost" is not upserted: unknown to the routing table.
+	fwd := NewForwarder(tbl, peer.NewPool(peer.WithCreds(insecure.NewCredentials())), "self")
+	interceptor := fwd.UnaryInterceptor()
+
+	svc := NewNodeService("self", "self-name", "v1")
+	handler := func(ctx context.Context, req any) (any, error) {
+		return svc.Cordon(ctx, req.(*sbxv1.CordonRequest))
+	}
+
+	_, err := interceptor(context.Background(), &sbxv1.CordonRequest{NodeId: "ghost"},
+		&grpc.UnaryServerInfo{FullMethod: "/sbxswarm.v1.NodeService/Cordon"}, handler)
+	require.Error(t, err)
+	require.Equal(t, codes.NotFound, status.Code(err))
+	require.Contains(t, err.Error(), "ghost")
+	require.False(t, svc.Cordoned(), "unknown-node cordon must not cordon the receiving node")
 }
 
 // TestForward_LocalPassthrough: a request for a local sandbox goes to the local handler.
