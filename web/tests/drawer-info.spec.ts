@@ -77,4 +77,22 @@ describe('InfoTab actions', () => {
     expect(body.find('[data-test="save-template-confirm"]').attributes('disabled')).toBeDefined()
     w.unmount()
   })
+
+  it('clears the tag on cancel, so reopening does not resubmit the old tag', async () => {
+    const w = await mountSuspended(InfoTab, {
+      props: { sandbox: { id: 'n1.s1', status: 'stopped', ports: [] } },
+      attachTo: document.body,
+    })
+    const body = new DOMWrapper(document.body)
+    await w.find('[data-test="save-template"]').trigger('click')
+    await body.find('[data-test="save-template-tag"]').setValue('myimage:v1')
+    const cancel = body.findAll('button').find((el) => el.text() === 'Cancel')
+    await cancel!.trigger('click')
+
+    // Reopen: the tag input must be empty, and Save must be disabled again.
+    await w.find('[data-test="save-template"]').trigger('click')
+    expect((body.find('[data-test="save-template-tag"]').element as HTMLInputElement).value).toBe('')
+    expect(body.find('[data-test="save-template-confirm"]').attributes('disabled')).toBeDefined()
+    w.unmount()
+  })
 })
