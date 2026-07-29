@@ -234,13 +234,19 @@ function onClose() {
             <label class="block text-sm font-medium text-default mb-1" for="prov-template">
               Template <span class="text-muted font-normal">(optional)</span>
             </label>
-            <USelect
+            <!-- USelectMenu, not USelect: a listed template is only ever the
+            requestable form of what THIS swarm already holds. create-item is
+            the escape hatch for a reference no node holds yet, or a genuinely
+            pullable image that was never saved (and so isn't listed stripped). -->
+            <USelectMenu
               id="prov-template"
               v-model="form.template"
               :items="templateOptions"
-              placeholder="Default (agent's image)"
+              create-item
+              placeholder="Default (agent's image), or type a reference"
               aria-label="Sandbox template"
               class="w-full"
+              @create="form.template = $event"
             />
           </div>
 
