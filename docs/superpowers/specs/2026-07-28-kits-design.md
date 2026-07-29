@@ -108,8 +108,11 @@ is async: it returns an `Operation`, and a placement failure lands in `op.Error`
 scheduler filters out every node that doesn't advertise the kit, so placement fails with
 `ErrNoEligibleNode` before any node is even tried. If a candidate's advertisement is stale — see
 "An unknown kit is a NACK, not a hard error" below — the failure instead surfaces as
-`ErrNoCapacity` once every candidate has NACKed. An unknown workspace has none of this: it is
-still rejected synchronously as `InvalidArgument`, and that comparison was never changed.
+`ErrNoCapacity` once every candidate has NACKed. An unknown workspace reaches the same
+`ErrNoEligibleNode` for the same reason: `fits()` filters on workspace names too, immediately
+above the kit filter. The only real difference is the terminal case, where a stale advertisement
+makes an unknown workspace a hard error instead of a NACK — see "An unknown kit is a NACK, not a
+hard error" below.
 
 ## Backend
 
