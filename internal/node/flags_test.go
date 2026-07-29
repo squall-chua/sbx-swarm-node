@@ -44,3 +44,13 @@ func TestNodeFlags_CorruptJSONReadsFalse(t *testing.T) {
 	// loadNodeFlags should fall back to all-false when JSON unmarshalling fails.
 	require.Equal(t, nodeFlags{}, loadNodeFlags(st, log))
 }
+
+func TestNodeFlags_UnreadableStoreReadsFalse(t *testing.T) {
+	log := obs.NewLogger("error", io.Discard)
+	st, err := store.Open(filepath.Join(t.TempDir(), "node.db"))
+	require.NoError(t, err)
+	// Close the store without registering t.Cleanup, so we can test the read-error case.
+	_ = st.Close()
+	// loadNodeFlags should fall back to all-false when the store read fails.
+	require.Equal(t, nodeFlags{}, loadNodeFlags(st, log))
+}
