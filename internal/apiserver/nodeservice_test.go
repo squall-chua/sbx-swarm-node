@@ -152,3 +152,30 @@ func TestNodeService_ListNodes_Kits(t *testing.T) {
 	require.Len(t, resp.Nodes, 1)
 	require.Equal(t, []string{"extras", "tools"}, resp.Nodes[0].Kits)
 }
+
+func TestNodeService_FlagPersisterSeesEveryChange(t *testing.T) {
+	type call struct{ cordoned, draining bool }
+	var got []call
+
+	s := NewNodeService("n1", "node-1", "test")
+	s.SetFlagPersister(func(c, d bool) { got = append(got, call{c, d}) })
+
+	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+	_, err = s.Drain(context.Background(), &sbxv1.DrainRequest{})
+	require.NoError(t, err)
+	_, err = s.Uncordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+
+	require.Equal(t, []call{
+		{cordoned: true, draining: false},  // Cordon
+		{cordoned: true, draining: true},   // Drain also sets the marker
+		{cordoned: false, draining: false}, // Uncordon clears both
+	}, got)
+}
+
+func TestNodeService_NilFlagPersisterDoesNotPanic(t *testing.T) {
+	s := NewNodeService("n1", "node-1", "test")
+	_, err := s.Cordon(context.Background(), &sbxv1.CordonRequest{})
+	require.NoError(t, err)
+}

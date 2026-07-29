@@ -47,6 +47,7 @@ type NodeService struct {
 	revoker                   Revoker                                               // optional; nil when not in cluster mode
 	nodeLister                func() []NodeRow                                      // optional; nil until wired by node.go
 	templateLister            func(context.Context) ([]sandbox.TemplateInfo, error) // optional; nil until wired by node.go
+	persistFlags              func(cordoned, draining bool)                         // optional; nil until wired by node.go
 	draining                  atomic.Bool
 }
 
@@ -58,6 +59,21 @@ func NewNodeService(nodeID, nodeName, version string) *NodeService {
 // SetCordoner wires the cluster's cordon controller. Called from node.New after
 // the cluster is built; nil-safe so existing NodeService tests pass unchanged.
 func (s *NodeService) SetCordoner(c Cordoner) { s.cordoner = c }
+
+// SetFlagPersister wires the store-backed save of the cordon and drain flags
+// (node.go). Optional and nil-safe, so existing tests need no change.
+func (s *NodeService) SetFlagPersister(fn func(cordoned, draining bool)) { s.persistFlags = fn }
+
+// SetDraining restores the drain marker at boot (node.go). Display only: the
+// cordon is what blocks placement.
+func (s *NodeService) SetDraining(v bool) { s.draining.Store(v) }
+
+// saveFlags persists the current flags if a persister is wired.
+func (s *NodeService) saveFlags(cordoned bool) {
+	if s.persistFlags != nil {
+		s.persistFlags(cordoned, s.draining.Load())
+	}
+}
 
 // SetRevoker wires the cluster's revocation controller. nil-safe; standalone
 // leaves it nil so revocation degrades to FailedPrecondition/empty.
@@ -98,6 +114,7 @@ func (s *NodeService) Cordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv1.
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
+	s.saveFlags(true)
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
@@ -113,6 +130,7 @@ func (s *NodeService) Uncordon(_ context.Context, _ *sbxv1.CordonRequest) (*sbxv
 		s.cordoner.SetCordoned(false)
 	}
 	s.draining.Store(false)
+	s.saveFlags(false)
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
@@ -130,6 +148,7 @@ func (s *NodeService) Drain(_ context.Context, _ *sbxv1.DrainRequest) (*sbxv1.No
 	if s.cordoner != nil {
 		s.cordoner.SetCordoned(true)
 	}
+	s.saveFlags(true)
 	return &sbxv1.NodeInfo{
 		NodeId:   s.nodeID,
 		NodeName: s.nodeName,
