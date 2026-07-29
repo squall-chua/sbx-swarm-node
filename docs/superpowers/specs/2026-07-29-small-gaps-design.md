@@ -1,7 +1,7 @@
 # Design — close three small gaps, and close four items as do-nothing
 
 Date: 2026-07-29
-Base: `main` @ `1036807`
+Base: `main` @ `46c6286` (first drafted at `1036807`, revised after `feat/kits` merged)
 Probed against: `sbx` v0.37.0 (api `0.24.0`), sbx-go-sdk v0.1.9
 
 ## The problem
@@ -13,87 +13,73 @@ is quiet where it should speak.
 This design also closes four candidate items as **do nothing**. The reasoning is
 written down here so a later session does not reopen them.
 
-## Sequencing — build after `feat/kits` lands
+## Sequencing — `feat/kits` has landed
 
-**Do not start the code until `feat/kits` is merged.**
+This design was first drafted at `1036807`, when `feat/kits` was unmerged and
+conflicted with five of the files here. That gate is gone: kits merged as PR #11
+at `46c6286`.
 
-`feat/kits` is unmerged, 17 ahead and 19 behind `main`, and already has a known
-conflict in `internal/sandbox/sdkbackend.go`. It touches five of the files this
-batch needs:
+The merge invalidated the original change 1. See the section below. Changes 2, 3
+and 4 were re-checked against the merged tree and are unaffected, except that
+the console `doAdd` now uses `api.put`, not POST.
 
-| File | Needed by | Touched by `feat/kits` |
-|---|---|---|
-| `proto/sbxswarm/v1/sandbox.proto` | change 1 | yes |
-| `internal/gen/sbxswarm/v1/sandbox.pb.go` | change 1 (regenerated) | yes |
-| `internal/apiserver/sandboxservice.go` | change 1 | yes |
-| `internal/sandbox/sdkbackend.go` | change 2 | yes, and it already conflicts here |
-| `CONTEXT.md` | change 4 | yes |
+## Change 1 — say what the record's ports actually are
 
-`feat/kits` also inserts its kit loop directly above
-`sb, err := sdksandbox.Create(...)`, about four lines from where change 2 goes.
-That is close enough to create a second conflict in a file that already has one.
-A regenerated `sandbox.pb.go` conflict is worse still, because it cannot be
-resolved by hand in any pleasant way.
+### What changed under us
 
-Only `internal/sandbox/record.go`,
-`web/app/components/drawer/SecretsTab.vue` and
-`web/tests/drawer-secrets.spec.ts` are clear of `feat/kits`.
+The first draft of this design proposed deleting `Record.Ports`, on the evidence
+that it was never written anywhere. That was true at `1036807`. It is false now.
 
-## Change 1 — stop pretending the sandbox record holds ports
+`feat/kits` commit `675c846`, *"fix(sandbox): record ports after a create that
+used kits"*, added a write at `internal/sandbox/manager.go:172-183`: after a
+create whose spec carries kits, the manager reads the backend's ports once and
+stores them on the record. A kit can publish ports the node never asked for, so
+without this the `Sandbox` message would show nothing for them.
 
-### What is wrong
+That fix is correct and stays. Deleting the field would revert it.
 
-`Record.Ports` is **never written**. Not once, anywhere in the repo.
+### What is left wrong
 
-It was born dead in `9dd123b` (2026-06-16). That commit added the field, added
-the loop in `toProto` that reads it, and added `ListPorts` that reads the
-backend live. Nothing was ever added to fill the record. So field 4 of the
-`Sandbox` message is always an empty list.
+The field is now populated inconsistently:
 
-`web/app/components/drawer/InfoTab.vue:51` seeds its port list from that field,
-then immediately refetches from `ListPorts` on mount, so the console never
-noticed.
+- **kit sandbox** — a create-time snapshot of the ports.
+- **non-kit sandbox** — always empty, even after ports are published.
+- **either kind** — `PublishPort` and `UnpublishPort`
+  (`internal/apiserver/sandboxservice.go:511-531`) write only to the backend and
+  never touch the record, so the snapshot goes stale.
 
-### Why not fill it instead
+A consumer cannot tell "this sandbox has no ports" from "we did not record any".
 
-Filling it would mean one daemon call per sandbox on every `ListSandboxes`.
-`ListPorts` already reads the backend live and is the honest answer. The record
-should not mirror live backend state.
+### Why not just drop the `len(spec.Kits) > 0` guard
 
-### Why the proto field is deprecated, not removed
+Considered and rejected. Only a kit can publish a port *during* create. For
+every other sandbox that read would return empty and be a wasted daemon call on
+every create. The guard is right.
 
-`internal/apiserver/server.go:92` sets `EmitUnpopulated: true`, so the REST JSON
-emits `"ports": []` on every sandbox response today. Removing the field would
-make that key vanish, not stay empty.
+### Why not keep the record fresh instead
 
-`README.md:272` records that the Agency is allowed to drift in version against
-this node, so `/v1/` is a published contract with an outside reader, not only
-the embedded console. Nothing can be *using* the values, because there are none,
-but a client doing `res.ports.length` would go from `0` to a crash.
+Updating `rec.Ports` inside `PublishPort` and `UnpublishPort` would deliver what
+the kits comment set out to do. It was rejected for this batch: it puts a store
+write into the port write path of two RPCs, which is more than a "small gap"
+warrants, and `ListPorts` already answers the live question correctly.
 
-Deprecating costs one annotation, removes every line of dead Go, and leaves the
-JSON byte-identical.
+Reopen it if a consumer ever needs the `Sandbox` message alone to be accurate.
 
 ### The change
 
-- `internal/sandbox/record.go` — delete the `Ports []PublishedPort` field.
-- `internal/apiserver/sandboxservice.go` — in `toProto`, delete the `ports` loop
-  and the `Ports: ports` field.
-- `proto/sbxswarm/v1/sandbox.proto` — mark field 4 `[deprecated = true]` and add
-  a comment: the field is always empty, and `ListPorts` is the live source.
-  Regenerate.
+`proto/sbxswarm/v1/sandbox.proto` — add a comment above field 4 stating that it
+holds the ports known when the sandbox was created, that it is populated only
+for a create that used kits, that it is not updated by `PublishPort` or
+`UnpublishPort`, and that `ListPorts` is the live source.
 
-`PublishedPort` stays. The backend interface still uses it.
-
-Old store files carrying a `ports` key are ignored on load. The values there
-were never meaningful.
+No behaviour change. No Go change. Nothing is deprecated, because the field now
+carries real data for kit sandboxes.
 
 ### How to verify
 
+- `buf generate` produces only the comment change
 - `go build ./... && go vet ./...`, plus `go vet -tags integration ./internal/...`
-- `buf generate` produces no unexpected diff
-- `go test ./...`
-- The REST response for a sandbox still contains `"ports": []`
+- `go test ./...` stays green
 
 ## Change 2 — warn when the daemon denied a workspace mount
 
@@ -166,12 +152,12 @@ outcomes:
 
 ### The change
 
-`web/app/components/drawer/SecretsTab.vue`, in `doAdd`: before posting, if
+`web/app/components/drawer/SecretsTab.vue`, in `doAdd`: before the `api.put`, if
 `secrets.custom` holds an entry with the same `env` under a **different** host,
 ask for confirmation. Name the old host and say the old credential cannot be
 recovered.
 
-Rotation posts silently.
+Rotation goes through silently.
 
 This uses the same native `confirm()` the stored-secret delete already uses at
 line 90, so it adds no new pattern.
@@ -187,9 +173,9 @@ one case we actually care about.
 In `web/tests/drawer-secrets.spec.ts`:
 
 - `window.confirm` stubbed to return false, adding an env that exists under a
-  different host: no POST is made.
-- Adding an env that exists under the same host: no prompt, and the POST goes
-  out.
+  different host: no `api.put` is made.
+- Adding an env that exists under the same host: no prompt, and the `api.put`
+  goes out.
 
 ## Change 4 — define the term the glossary already points at
 
@@ -263,9 +249,13 @@ never creates such an entry, though `sbx` can.
 Three premises carried into this session were wrong, and the probes are recorded
 above:
 
-1. `Sandbox.ports` and `ListPorts` do **not** agree today. The record side is
-   permanently empty.
+1. `Sandbox.ports` and `ListPorts` do **not** agree. At `1036807` the record
+   side was permanently empty; since `675c846` it holds a create-time snapshot
+   for kit sandboxes only, and goes stale after a publish either way.
 2. The node cannot set a node-wide default profile. It has no profile support of
    any kind.
 3. `MountPolicyDenied` is cheaper than expected, because `Get` and `List`
    already fetch the struct that carries it.
+
+A fourth, from this session's own first draft: a premise verified against `main`
+expires the moment another branch lands. Re-probe after every merge, not once.
