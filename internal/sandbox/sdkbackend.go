@@ -23,7 +23,7 @@ import (
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
 type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok bool)
 
-// SDKBackend implements Backend over sbx-go-sdk v0.1.9. Workspaces are resolved
+// SDKBackend implements Backend over sbx-go-sdk v0.1.10. Workspaces are resolved
 // to host paths via the resolver (config-provided). It is a thin translation
 // layer: lifecycle/exec/ports/files all resolve a *sandbox.Sandbox handle by
 // name and call the SDK, mapping the SDK's not-found sentinel to ErrNotFound.
@@ -615,8 +615,13 @@ func (b *SDKBackend) PolicyList(ctx context.Context, scope string) ([]PolicyRule
 }
 
 // PolicyProfiles returns the raw profile listing text as a single-element slice.
+//
+// ponytail: stays on the deprecated sdkpolicy.Profiles. Its replacement,
+// ProfileNames, only lists *governance* profiles and returns an empty slice on
+// an ungoverned host — it does not report the CLI's built-in profiles this
+// returns. Switch when a caller actually needs the names as a slice.
 func (b *SDKBackend) PolicyProfiles(ctx context.Context) ([]string, error) {
-	raw, err := sdkpolicy.Profiles(ctx, b.cl)
+	raw, err := sdkpolicy.Profiles(ctx, b.cl) //nolint:staticcheck // see note above
 	if err != nil {
 		return nil, err
 	}
@@ -722,7 +727,7 @@ func (b *SDKBackend) SecretRemove(ctx context.Context, scope, host string) error
 
 // SecretRemoveStored deletes a stored (service/registry) secret by name in scope
 // ("" = node-global). Stored secrets are keyed by name, so this uses the SDK's
-// positional `secret rm <scope> <name>` (sdksecret.Remove) — not the --host form.
+// `secret rm [--sandbox SCOPE] <name>` (sdksecret.Remove) — not the --host form.
 func (b *SDKBackend) SecretRemoveStored(ctx context.Context, scope, name string) error {
 	return sdksecret.Remove(ctx, b.cl, scope, name)
 }
