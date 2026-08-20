@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
+	sdkkit "github.com/squall-chua/sbx-go-sdk/kit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -83,4 +84,55 @@ func TestDedupePorts(t *testing.T) {
 		{ContainerPort: 8080, HostPort: 54176},
 		{ContainerPort: 9090, HostPort: 54177},
 	}, out, "duplicate (container, host) pairs collapse; distinct mappings stay")
+}
+
+// sbx v0.39.0 reshaped `kit inspect --json`: no manifest wrapper, and the three
+// capacity/isolation fields moved into the sandbox block. A mixin still reads as
+// declaring nothing, and each moved field still reaches admit().
+func TestKitInfoFrom(t *testing.T) {
+	tests := []struct {
+		name string
+		info sdkkit.Info
+		want KitInfo
+	}{
+		{
+			"a mixin has no sandbox block",
+			sdkkit.Info{Kind: "mixin"},
+			KitInfo{Kind: "mixin"},
+		},
+		{
+			"image was template",
+			sdkkit.Info{Kind: "sandbox", Sandbox: []byte(`{"image":"alpine:3.20"}`)},
+			KitInfo{Kind: "sandbox", HasTemplate: true},
+		},
+		{
+			"command.default was runOptions",
+			sdkkit.Info{Kind: "mixin", Sandbox: []byte(`{"command":{"default":["--foo"]}}`)},
+			KitInfo{Kind: "mixin", HasRunOptions: true},
+		},
+		{
+			"resources moved into the sandbox block",
+			sdkkit.Info{Kind: "mixin", Sandbox: []byte(`{"resources":{"cpu":2}}`)},
+			KitInfo{Kind: "mixin", HasResources: true},
+		},
+		{
+			"volumes moved to the top level",
+			sdkkit.Info{Kind: "mixin", Volumes: []byte(`[{"path":"/data"}]`)},
+			KitInfo{Kind: "mixin", HasVolumes: true},
+		},
+		{
+			"an unparseable sandbox block fails closed",
+			sdkkit.Info{Kind: "mixin", Sandbox: []byte(`not json`)},
+			KitInfo{Kind: "mixin", HasResources: true},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := kitInfoFrom(tc.info)
+			require.Equal(t, tc.want, got)
+			if tc.want != (KitInfo{Kind: "mixin"}) {
+				require.Error(t, admit(got), "every non-empty case must be refused")
+			}
+		})
+	}
 }

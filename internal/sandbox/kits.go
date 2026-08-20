@@ -23,26 +23,26 @@ var kitInspectTimeout = 15 * time.Second
 // facts, and the SDK's shape tracks an EXPERIMENTAL upstream schema.
 type KitInfo struct {
 	Kind          string // "mixin" | "sandbox"
-	HasResources  bool   // manifest.resources is non-empty
-	HasRunOptions bool   // manifest.runOptions is non-empty
-	HasTemplate   bool   // manifest.template is set: would swap the sandbox's base image
-	HasVolumes    bool   // manifest.volumes is non-empty: host mounts bypassing workspaceResolver's read-only guarantee (ADR-0015)
+	HasResources  bool   // sandbox.resources is non-empty
+	HasRunOptions bool   // sandbox.command.default is non-empty
+	HasTemplate   bool   // sandbox.image is set: would swap the sandbox's base image
+	HasVolumes    bool   // volumes is non-empty: host mounts bypassing workspaceResolver's read-only guarantee (ADR-0015)
 }
 
 // admit reports why a kit must not be advertised, or nil when it may be.
 //
 // Only kind "mixin" is supported: a "sandbox" kit supplies the base image, which
-// would make the scheduler's template constraint a lie. The SDK documents nine
-// further Manifest fields as meaningful only for a "sandbox" kit and empty for a
-// mixin -- an expectation, not a promise. Four of those nine are checked here,
-// because each could hand a sandbox more than the node admitted if that
-// expectation ever breaks: resources and runOptions could exceed the capacity
-// this node advertised to the swarm; template would change the base image, the
-// exact harm the Kind check above exists to prevent, reached by a different
-// field; and volumes would mount host paths outside workspaceResolver, bypassing
-// the ADR-0015 read-only guarantee. The remaining five (sourceURL, binary,
-// aiFilename, build, security) carry no capacity or isolation harm and are not
-// checked.
+// would make the scheduler's template constraint a lie. The SDK documents the
+// whole sandbox block, and the security block that pairs with it, as meaningful
+// only for a "sandbox" kit and empty for a mixin -- an expectation, not a
+// promise. Four fields are checked here, because each could hand a sandbox more
+// than the node admitted if that expectation ever breaks: resources and
+// command.default could exceed the capacity this node advertised to the swarm;
+// image would change the base image, the exact harm the Kind check above exists
+// to prevent, reached by a different field; and volumes would mount host paths
+// outside workspaceResolver, bypassing the ADR-0015 read-only guarantee. The
+// rest (sourceURL, entrypoint, agentInstructions, build, security) carry no
+// capacity or isolation harm and are not checked.
 func admit(i KitInfo) error {
 	if i.Kind != "mixin" {
 		return fmt.Errorf("kind is %q, want \"mixin\"", i.Kind)

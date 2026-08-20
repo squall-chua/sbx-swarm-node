@@ -155,10 +155,8 @@ github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/sirupsen/logrus v1.6.0/go.mod h1:7uNnSEd1DgxDLC74fIahvMZmmYsHGZGEOFrfsX/uA88=
-github.com/squall-chua/sbx-go-sdk v0.1.9 h1:sEq4QvmadNhln6ix9+E80pCoCfpgkU2ELTJyNaPDPb8=
-github.com/squall-chua/sbx-go-sdk v0.1.9/go.mod h1:VhbIsubAjsK0+pXgom8UxA+dHi753ePSsVZlCcT2/wE=
-github.com/squall-chua/sbx-go-sdk v0.1.10 h1:VQpSAH3+x+23giVj3J3iYnltDk1Bn9pN1OAYHUZuXJ0=
-github.com/squall-chua/sbx-go-sdk v0.1.10/go.mod h1:VhbIsubAjsK0+pXgom8UxA+dHi753ePSsVZlCcT2/wE=
+github.com/squall-chua/sbx-go-sdk v0.1.11 h1:4kaG6XChcU4vVHnPxi6UP6GGLjgQM/cRG2L/mC1t4xA=
+github.com/squall-chua/sbx-go-sdk v0.1.11/go.mod h1:VhbIsubAjsK0+pXgom8UxA+dHi753ePSsVZlCcT2/wE=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=

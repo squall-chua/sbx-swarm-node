@@ -23,7 +23,7 @@ import (
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
 type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok bool)
 
-// SDKBackend implements Backend over sbx-go-sdk v0.1.10. Workspaces are resolved
+// SDKBackend implements Backend over sbx-go-sdk v0.1.11. Workspaces are resolved
 // to host paths via the resolver (config-provided). It is a thin translation
 // layer: lifecycle/exec/ports/files all resolve a *sandbox.Sandbox handle by
 // name and call the SDK, mapping the SDK's not-found sentinel to ErrNotFound.
@@ -77,13 +77,39 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 	if err != nil {
 		return KitInfo{}, err
 	}
+	return kitInfoFrom(info), nil
+}
+
+// kitInfoFrom reduces the SDK's kit report to the facts admit() checks.
+//
+// sbx v0.39.0 flattened `kit inspect --json`: the old manifest wrapper is gone,
+// so kind and volumes now sit at the top level, and three fields moved into the
+// new "sandbox" block -- template became image, runOptions became
+// command.default, and resources stayed named but moved in. A schemaVersion "1"
+// kit is normalized up to the same shape, so only this one reading is needed.
+func kitInfoFrom(info sdkkit.Info) KitInfo {
+	var sb struct {
+		Image     string          `json:"image"`
+		Resources json.RawMessage `json:"resources"`
+		Command   struct {
+			Default []string `json:"default"`
+		} `json:"command"`
+	}
+	if raw := bytes.TrimSpace(info.Sandbox); len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &sb); err != nil {
+			// Fail closed, as hasResources does: a sandbox block that will not
+			// parse must not read as "declares nothing". HasResources alone is
+			// enough for admit() to refuse the kit.
+			return KitInfo{Kind: info.Kind, HasResources: true}
+		}
+	}
 	return KitInfo{
-		Kind:          info.Manifest.Kind,
-		HasResources:  hasResources(info.Manifest.Resources),
-		HasRunOptions: len(info.Manifest.RunOptions) > 0,
-		HasTemplate:   info.Manifest.Template != "",
-		HasVolumes:    hasVolumes(info.Manifest.Volumes),
-	}, nil
+		Kind:          info.Kind,
+		HasResources:  hasResources(sb.Resources),
+		HasRunOptions: len(sb.Command.Default) > 0,
+		HasTemplate:   sb.Image != "",
+		HasVolumes:    hasVolumes(info.Volumes),
+	}
 }
 
 // hasResources reports whether a kit's raw resources block declares anything.
