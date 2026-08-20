@@ -77,12 +77,27 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 	if err != nil {
 		return KitInfo{}, err
 	}
+	// sbx v0.39.0 flattened `kit inspect --json` onto the kit spec v2 shape:
+	// the manifest wrapper is gone, and template/runOptions/resources moved
+	// into a "sandbox" block. See kit.Info's doc comment for the full map.
+	var sb struct {
+		Image     string          `json:"image"`
+		Resources json.RawMessage `json:"resources"`
+		Command   struct {
+			Default []string `json:"default"`
+		} `json:"command"`
+	}
+	if len(info.Sandbox) > 0 {
+		if err := json.Unmarshal(info.Sandbox, &sb); err != nil {
+			return KitInfo{}, fmt.Errorf("kit %q: decoding sandbox block: %w", ref, err)
+		}
+	}
 	return KitInfo{
-		Kind:          info.Manifest.Kind,
-		HasResources:  hasResources(info.Manifest.Resources),
-		HasRunOptions: len(info.Manifest.RunOptions) > 0,
-		HasTemplate:   info.Manifest.Template != "",
-		HasVolumes:    hasVolumes(info.Manifest.Volumes),
+		Kind:          info.Kind,
+		HasResources:  hasResources(sb.Resources),
+		HasRunOptions: len(sb.Command.Default) > 0,
+		HasTemplate:   sb.Image != "",
+		HasVolumes:    hasVolumes(info.Volumes),
 	}, nil
 }
 
