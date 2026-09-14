@@ -273,9 +273,10 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	// GC the sandbox's proxy-injected custom secrets. The daemon keys them by
-	// scope (BackendName) and does NOT drop them when the sandbox is removed, so
-	// they orphan in `secret ls`. Best-effort: a cleanup failure must not fail
-	// the delete — the sandbox is already gone.
+	// scope (BackendName); before sbx v0.42.0 it did NOT drop them when the
+	// sandbox was removed, so they orphaned in `secret ls`. Kept for older
+	// daemons. Best-effort: a cleanup failure must not fail the delete — the
+	// sandbox is already gone.
 	m.removeCustomSecrets(ctx, rec.BackendName)
 	m.mu.Lock()
 	err = m.store.Delete(bucket, id)
