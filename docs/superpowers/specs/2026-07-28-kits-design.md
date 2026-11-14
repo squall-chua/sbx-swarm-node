@@ -12,7 +12,9 @@ optional `files/` directory — that contributes configuration to a sandbox: env
 variables, egress caps, install commands, and agent context. sbx-go-sdk v0.1.9 wraps the whole
 command, so nothing in this design needs new SDK work. (Since sbx v0.51.0 the node admits only
 kit spec v3 kits, which declare behaviour as `capabilities` and have no `environment`,
-`credentials` or `ports` fields; see the update note under Tests.)
+`credentials` or `ports` fields. The node admits only the `network-policy@1` and `port@1`
+capabilities, so the environment variables and install commands above describe v1/v2 kits;
+see the update note under Tests.)
 
 A kit has two kinds. A `mixin` extends a sandbox. A `sandbox` kit supplies the base image
 instead. Upstream marks the whole command EXPERIMENTAL: "this command may change or be removed
@@ -142,7 +144,9 @@ After a create whose spec named kits, the node calls `Ports()` once and stores t
 Without this the node reports two different answers. `ListPorts` reads the backend live, while
 the `Sandbox` message's `ports` field is built from `rec.Ports`. Today nothing can publish a
 port without the node recording it, so the two always agree; a kit declaring `publishedPorts`
-would be the first thing to break that.
+would be the first thing to break that. (Since sbx v0.51.0 that is a v3 kit with a
+`com.docker.sandbox/port@1` capability; `kit inspect` still reports it as `ports`, and the
+snapshot above is unchanged.)
 
 Two related visibility questions, for the record:
 

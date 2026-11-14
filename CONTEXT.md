@@ -205,13 +205,15 @@ _Avoid_: image (bare), base
 
 **Kit**:
 A declarative overlay a sandbox is created with — a `spec.yaml` artifact contributing egress rules,
-published ports, and other capabilities. Operators declare kits in node config as name → reference; a
-caller names kits per sandbox and never supplies a reference. A kit name is a swarm-wide agreement the
-operator maintains, like a Workspace name. Kits are `kind: mixin` only: a node refuses to advertise a
-kit it inspected and found otherwise, though it still advertises one whose reference failed to load,
-since that may be temporary. Since sbx v0.51.0 a node admits only kit spec v3 kits, from a local
-directory, with capabilities `kit inspect` can show. A kit is chosen at creation and never added to a
-live sandbox. Adding a kit to a node means editing config and restarting it. Upstream marks `sbx kit`
+published ports, and other kit capabilities. A **kit capability** is a typed kit spec v3 declaration,
+`com.docker.sandbox/<name>@N` (e.g. `port@1`); it is unrelated to a node's capabilities under
+Placement constraint. Operators declare kits in node config as name → reference; a caller names kits
+per sandbox and never supplies a reference. A kit name is a swarm-wide agreement the operator
+maintains, like a Workspace name. Kits are `kind: mixin` only: a node refuses to advertise a kit it
+inspected and found otherwise, though it still advertises one whose reference failed to load, since
+that may be temporary. Since sbx v0.51.0 a node admits only kit spec v3 kits, from a local directory,
+with kit capabilities `kit inspect` can show. A kit is chosen at creation and never added to a live
+sandbox. Adding a kit to a node means editing config and restarting it. Upstream marks `sbx kit`
 EXPERIMENTAL.
 _Avoid_: plugin, extension, mixin (bare — that is a kit's *kind*), template (a kit is not a base image)
 

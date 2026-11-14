@@ -29,7 +29,7 @@ type KitInfo struct {
 	Kind          string // "mixin" | "sandbox"
 	HasResources  bool   // sandbox.resources is non-empty
 	HasRunOptions bool   // sandbox.command.default is non-empty
-	HasTemplate   bool   // sandbox.image is set: would swap the sandbox's base image
+	HasTemplate   bool   // sandbox.image is set, other than a v3 mixin's kit-source image: would swap the sandbox's base image
 	HasVolumes    bool   // volumes is non-empty: host mounts bypassing workspaceResolver's read-only guarantee (ADR-0015)
 	// HiddenCapability names a kit spec v3 capability that `kit inspect` does
 	// not report, so none of the checks above can see what it does.
