@@ -521,9 +521,10 @@ func TestSDKBackend_ExecInteractive(t *testing.T) {
 }
 
 // TestSDKBackend_CreateWithKit proves the whole kit path against a live daemon: a
-// configured mixin is admitted, resolved by name, and applied at create. The
-// environment variable read from inside the sandbox is the proof it was applied,
-// not merely accepted.
+// configured v3 mixin is admitted, resolved by name, and applied at create. The
+// kit's network allow taking effect for this sandbox is the proof it was
+// applied, not merely accepted; a host the kit does not name stays denied, so
+// the allow is the kit's and not a host-wide default.
 func TestSDKBackend_CreateWithKit(t *testing.T) {
 	ref, err := filepath.Abs("testdata/mixin-kit")
 	require.NoError(t, err)
@@ -553,9 +554,30 @@ func TestSDKBackend_CreateWithKit(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, kits, ref, "the recorded reference must be the absolute one")
 
-	out, err := b.Exec(ctx, sb.Name, []string{"printenv", "SWARM_KIT_TEST"}, ExecOpts{})
+	allowed, err := b.PolicyCheck(ctx, sb.Name, "swarm-kit-test.example.com")
 	require.NoError(t, err)
-	require.Equal(t, "1", strings.TrimSpace(string(out.Stdout)), "the kit's environment variable must be applied")
+	require.True(t, allowed.Allowed, "the kit's network allow must apply to the sandbox: %+v", allowed)
+	other, err := b.PolicyCheck(ctx, sb.Name, "swarm-kit-other.example.com")
+	require.NoError(t, err)
+	require.False(t, other.Allowed, "a host the kit does not name must stay denied: %+v", other)
+}
+
+// TestSDKBackend_RefusesAHiddenCapabilityKit proves the v3 admission gate
+// against real daemon output. `kit inspect --json` reports nothing for a
+// host-mount@1 capability (verified against sbx v0.51.0), so the kit would read
+// as an empty mixin; admit() must refuse it from the descriptor instead.
+func TestSDKBackend_RefusesAHiddenCapabilityKit(t *testing.T) {
+	dir := t.TempDir()
+	spec := "# syntax=docker/sandbox-kit:3\nschemaVersion: \"3\"\nkind: mixin\ncapabilities:\n  - type: com.docker.sandbox/host-mount@1\n    config:\n      path: /mnt/swarm-node-probe\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "spec.yaml"), []byte(spec), 0o644))
+
+	// mixin-kit differs only in its capability, so it being admitted pins the
+	// refusal on host-mount@1 rather than on some other check.
+	visible, err := filepath.Abs("testdata/mixin-kit")
+	require.NoError(t, err)
+
+	b := dialKits(t, noWorkspaces, map[string]string{"hidden": dir, "visible": visible})
+	require.Equal(t, []string{"visible"}, b.AdmittedKits(), "a kit with a capability inspect cannot show must not be advertised")
 }
 
 // TestSDKBackend_RefusesASandboxKindKit proves the admission gate against real
@@ -568,60 +590,6 @@ func TestSDKBackend_RefusesASandboxKindKit(t *testing.T) {
 
 	b := dialKits(t, noWorkspaces, map[string]string{"badkit": dir})
 	require.Empty(t, b.AdmittedKits(), "a sandbox-kind kit must not be advertised")
-}
-
-// TestSDKBackend_KitCredentialsNotInSecretList settles the credentials-in-
-// SecretList question the design doc (and this file, before this test existed)
-// left open. A `credentials` entry declares a NEED ({service, description,
-// required}) — there is no value/token/env field on it — so there is nothing
-// for the daemon to materialise into the secret store, at any scope. required:
-// true with no matching secret present must also not block the create; a
-// credentials block is informational, not enforced. Verified against sbx
-// v0.37.0.
-//
-// This fixture declares no environment.variables (unlike mixin-kit), so it has
-// no side effect to observe as proof the kit was actually applied — the test
-// checks h.Kits(ctx) for that BEFORE asserting SecretList is empty, so it reads
-// "the kit really was applied — and even so, no secret appeared" rather than a
-// tautology that would also pass against a daemon that silently no-ops --kit.
-func TestSDKBackend_KitCredentialsNotInSecretList(t *testing.T) {
-	ref, err := filepath.Abs("testdata/credential-kit")
-	require.NoError(t, err)
-
-	dir := t.TempDir()
-	b := dialKits(t, func(name string) (string, bool, bool) {
-		if name == "ws" {
-			return dir, false, true
-		}
-		return "", false, false
-	}, map[string]string{"credkit": ref})
-
-	require.Equal(t, []string{"credkit"}, b.AdmittedKits(), "a credentials block must not block admission")
-
-	sb := mkSandbox(t, b, CreateSpec{
-		Name:       "it-kit-cred",
-		Workspaces: []WorkspaceMount{{Name: "ws"}},
-		Kits:       []string{"credkit"},
-	})
-	ctx := context.Background()
-
-	// Proof of application, not just acceptance: the daemon records the kit list
-	// on the sandbox, as absolute references.
-	h, err := sdksandbox.Get(ctx, b.cl, sb.Name)
-	require.NoError(t, err)
-	kits, err := h.Kits(ctx)
-	require.NoError(t, err)
-	require.Contains(t, kits, ref, "the credentials kit must actually be applied to the sandbox")
-
-	scoped, err := b.SecretList(ctx, sb.Name)
-	require.NoError(t, err)
-	require.Empty(t, scoped.Stored, "a credentials entry declares a need, not a value; nothing to store")
-	require.Empty(t, scoped.Custom, "a credentials entry declares a need, not a value; nothing to store")
-
-	global, err := b.SecretList(ctx, "")
-	require.NoError(t, err)
-	require.Empty(t, global.Stored, "a credentials entry declares a need, not a value; nothing to store")
-	require.Empty(t, global.Custom, "a credentials entry declares a need, not a value; nothing to store")
 }
 
 // TestSDKBackend_KitPortsMatchLiveRead settles the Record.Ports-vs-live-read
@@ -642,7 +610,7 @@ func TestSDKBackend_KitPortsMatchLiveRead(t *testing.T) {
 		return "", false, false
 	}, map[string]string{"portkit": ref})
 
-	require.Equal(t, []string{"portkit"}, b.AdmittedKits(), "a publishedPorts block must not block admission")
+	require.Equal(t, []string{"portkit"}, b.AdmittedKits(), "a port@1 capability must not block admission")
 
 	st, err := store.Open(filepath.Join(t.TempDir(), "n.db"))
 	require.NoError(t, err)

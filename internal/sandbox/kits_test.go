@@ -5,11 +5,15 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -27,6 +31,7 @@ func TestAdmit(t *testing.T) {
 		{"a mixin with runOptions is refused", KitInfo{Kind: "mixin", HasRunOptions: true}, true},
 		{"a mixin with a template is refused", KitInfo{Kind: "mixin", HasTemplate: true}, true},
 		{"a mixin with volumes is refused", KitInfo{Kind: "mixin", HasVolumes: true}, true},
+		{"a mixin with a hidden capability is refused", KitInfo{Kind: "mixin", HiddenCapability: "com.docker.sandbox/host-mount@1"}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -228,6 +233,37 @@ func TestHasVolumes(t *testing.T) {
 			if got := hasVolumes(tc.raw); got != tc.want {
 				t.Fatalf("hasVolumes(%s): want %v, got %v", tc.raw, tc.want, got)
 			}
+		})
+	}
+}
+
+func TestHiddenCapability(t *testing.T) {
+	kit := func(t *testing.T, spec string) string {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "spec.yaml"), []byte(spec), 0o644))
+		return dir
+	}
+	const head = "# syntax=docker/sandbox-kit:3\nschemaVersion: \"3\"\nkind: mixin\n"
+	tests := []struct {
+		name string
+		ref  string
+		want string // "" = all visible; "*" = any non-empty reason
+	}{
+		{"no capabilities", kit(t, head), ""},
+		{"visible capabilities only", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n    config: {container: 1}\n  - type: com.docker.sandbox/network-policy@1\n"), ""},
+		{"host-mount is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n  - type: com.docker.sandbox/host-mount@1\n    config: {path: /x}\n"), "com.docker.sandbox/host-mount@1"},
+		{"a later version of a visible type is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/network-policy@2\n"), "com.docker.sandbox/network-policy@2"},
+		{"a non-directory reference fails closed", "docker.io/example/kit:1", "*"},
+		{"an unparseable descriptor fails closed", kit(t, head+"capabilities: {}\n"), "*"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := hiddenCapability(tc.ref)
+			if tc.want == "*" {
+				require.NotEmpty(t, got)
+				return
+			}
+			require.Equal(t, tc.want, got)
 		})
 	}
 }

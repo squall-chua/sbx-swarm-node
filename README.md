@@ -274,9 +274,11 @@ stateDiagram-v2
 
 - **Go 1.25+** (see [go.mod](go.mod)).
 - For `backend: sdk` — a running **`sbx` daemon** on the same host (this code
-  targets `sbx-go-sdk v0.1.12` / daemon `v0.42.1`, api `0.28.0`). The version is no
+  targets `sbx-go-sdk v0.2.0` / daemon `v0.51.0`, api `0.49.0`). The version is no
   longer enforced: a daemon on a different version logs a warning at boot and the
-  node keeps running. For everything else, `backend: fake` needs no daemon.
+  node keeps running. Older daemons are only partly compatible: the SDK now sends
+  v0.51.0 flags, for example `secret set-custom --value-stdin`, so setting a secret
+  fails on them. For everything else, `backend: fake` needs no daemon.
 - To rebuild the console: **Node.js + npm** (Nuxt 4). The repo ships a prebuilt
   `web/dist`, so this is only needed if you change the UI.
 
@@ -477,7 +479,14 @@ detached HEAD prevents git from refusing to fetch into the checked-out branch.
 
 A kit (`kits[]`) is inspected at boot and admitted only if it is a `kind: mixin`
 declaring nothing that could exceed the capacity this node admitted. A refused kit is
-logged and not advertised. Adding a kit means editing config and restarting the node,
+logged and not advertised.
+
+On sbx v0.51.0 a kit must be a **v3 kit** (`# syntax=docker/sandbox-kit:3` as the
+first line of `spec.yaml`, `schemaVersion: "3"`): the built-in agents are v3 kits, and
+the daemon refuses to combine one with a v1/v2 kit. A v3 kit is admitted only as a
+local directory, and only with capabilities `kit inspect` reports
+(`com.docker.sandbox/network-policy@1`, `port@1`); anything else, such as
+`host-mount@1`, is refused because the node cannot check it. Adding a kit means editing config and restarting the node,
 the same as a template or a workspace.
 
 **Environment / flags** (override the YAML):

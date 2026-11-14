@@ -5,9 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // kitInspectTimeout bounds each kit's boot-time inspection independently.
@@ -27,6 +31,51 @@ type KitInfo struct {
 	HasRunOptions bool   // sandbox.command.default is non-empty
 	HasTemplate   bool   // sandbox.image is set: would swap the sandbox's base image
 	HasVolumes    bool   // volumes is non-empty: host mounts bypassing workspaceResolver's read-only guarantee (ADR-0015)
+	// HiddenCapability names a kit spec v3 capability that `kit inspect` does
+	// not report, so none of the checks above can see what it does. It is also
+	// set when a v3 kit's descriptor cannot be read at all. Empty for v1/v2.
+	HiddenCapability string
+}
+
+// inspectVisibleCapabilities are the kit spec v3 capability types whose effect
+// `kit inspect --json` reports, so admit() judges them through the other
+// fields. Probed against sbx v0.51.0: network-policy@1 shows as
+// permissions.network, port@1 as ports, volume@1 as volumes (and so is refused
+// by HasVolumes). Anything else -- host-mount@1 shows nothing at all -- is
+// refused, including later versions of these types, until probed.
+var inspectVisibleCapabilities = map[string]bool{
+	"com.docker.sandbox/network-policy@1": true,
+	"com.docker.sandbox/port@1":           true,
+	"com.docker.sandbox/volume@1":         true,
+}
+
+// hiddenCapability returns the first capability in a v3 kit's descriptor that
+// inspect cannot show, or "" when every one is visible. Only a local directory
+// kit's spec.yaml can be read; any other reference (OCI, ZIP, git) fails
+// closed, as does a descriptor that will not read or parse.
+//
+// ponytail: refusing every non-directory v3 kit is the ceiling. Reading an OCI
+// kit's descriptor would need the image's layers; add that when a published v3
+// mixin is actually wanted.
+func hiddenCapability(ref string) string {
+	raw, err := os.ReadFile(filepath.Join(ref, "spec.yaml"))
+	if err != nil {
+		return "unreadable descriptor: " + err.Error()
+	}
+	var d struct {
+		Capabilities []struct {
+			Type string `yaml:"type"`
+		} `yaml:"capabilities"`
+	}
+	if err := yaml.Unmarshal(raw, &d); err != nil {
+		return "unparseable descriptor: " + err.Error()
+	}
+	for _, c := range d.Capabilities {
+		if !inspectVisibleCapabilities[c.Type] {
+			return c.Type
+		}
+	}
+	return ""
 }
 
 // admit reports why a kit must not be advertised, or nil when it may be.
@@ -43,6 +92,10 @@ type KitInfo struct {
 // outside workspaceResolver, bypassing the ADR-0015 read-only guarantee. The
 // rest (sourceURL, entrypoint, agentInstructions, build, security) carry no
 // capacity or isolation harm and are not checked.
+//
+// Kit spec v3 (sbx v0.51.0) declares behaviour as capabilities, and inspect
+// reports only some of them through those fields. HiddenCapability refuses a
+// v3 kit carrying any other, since nothing here could see what it does.
 func admit(i KitInfo) error {
 	if i.Kind != "mixin" {
 		return fmt.Errorf("kind is %q, want \"mixin\"", i.Kind)
@@ -58,6 +111,9 @@ func admit(i KitInfo) error {
 	}
 	if i.HasVolumes {
 		return fmt.Errorf("mixin declares volumes, which would mount host paths outside the workspace resolver")
+	}
+	if i.HiddenCapability != "" {
+		return fmt.Errorf("mixin declares a capability kit inspect cannot show, so it cannot be checked: %s", i.HiddenCapability)
 	}
 	return nil
 }
