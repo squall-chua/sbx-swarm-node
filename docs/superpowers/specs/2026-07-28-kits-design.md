@@ -10,7 +10,9 @@
 `sbx kit` is new in sbx v0.37.0. A kit is a declarative YAML artifact — `spec.yaml` plus an
 optional `files/` directory — that contributes configuration to a sandbox: environment
 variables, egress caps, install commands, and agent context. sbx-go-sdk v0.1.9 wraps the whole
-command, so nothing in this design needs new SDK work.
+command, so nothing in this design needs new SDK work. (Since sbx v0.51.0 the node admits only
+kit spec v3 kits, which declare behaviour as `capabilities` and have no `environment`,
+`credentials` or `ports` fields; see the update note under Tests.)
 
 A kit has two kinds. A `mixin` extends a sandbox. A `sandbox` kit supplies the base image
 instead. Upstream marks the whole command EXPERIMENTAL: "this command may change or be removed
@@ -166,6 +168,10 @@ Two kit fields matter to this design and their exact shape cost live probing to 
   The port field is `container` — **not** `port` or `containerPort`; both of those are
   rejected by the daemon's strict YAML decoder.
 
+Both shapes are kit spec v1/v2, which the node refuses since sbx v0.51.0. In v3, `credentials`
+has no equivalent, and a port is a `com.docker.sandbox/port@1` capability with
+`config.container`; `kit inspect --json` still reports it as a top-level `ports` list.
+
 ## Console
 
 A kit multi-select in `ProvisionModal`, fed by the same distinct-across-all-nodes computation
@@ -233,7 +239,10 @@ Unit:
 
 - Config validation: empty name, empty reference, duplicate name.
 - `admit()` as a table test: mixin passes; `kind: sandbox` rejected; non-empty `resources`
-  rejected; non-empty `runOptions` rejected.
+  rejected; non-empty `runOptions` rejected. Since sbx v0.51.0 also: a v1/v2 kit, a hidden
+  capability and an unreadable v3 descriptor rejected (`TestAdmit`); the capability check on a
+  `spec.yaml` (`TestHiddenCapability`); and the kit-source image exemption, v3 mixins with a hex
+  hash only (`TestKitInfoFrom`).
 - An `Inspect` failure leaves the kit advertised (the transient case).
 - Resolver: a known name maps to its reference; an unknown name is an error.
 - Create accepts a configured kit name and rejects an unknown one.
