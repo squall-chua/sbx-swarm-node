@@ -59,6 +59,21 @@ func TestPolicyService_SetSecretDoesNotLeakValue(t *testing.T) {
 	require.NotEqual(t, "shh", entries[0].Target)
 }
 
+func TestPolicyService_SetSecretRequiresHost(t *testing.T) {
+	svc, a := buildPolicySvc(t)
+	ctx := context.Background()
+
+	_, err := svc.SetSecret(ctx, &sbxv1.SetSecretRequest{Scope: "", Host: "", Env: "TOKEN", Value: "shh"})
+	require.Equal(t, codes.InvalidArgument, status.Code(err), "a hostless custom secret must be refused: %v", err)
+
+	resp, err := svc.ListSecrets(ctx, &sbxv1.ScopeRequest{Scope: ""})
+	require.NoError(t, err)
+	require.Empty(t, resp.Custom, "a refused secret must not reach the backend")
+	entries, err := a.List()
+	require.NoError(t, err)
+	require.Empty(t, entries, "a request refused before any work writes no audit entry")
+}
+
 func TestPolicyService_SetPolicyWritesAudit(t *testing.T) {
 	svc, a := buildPolicySvc(t)
 	ctx := context.Background()

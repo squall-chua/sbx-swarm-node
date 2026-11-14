@@ -10,7 +10,11 @@
 `sbx kit` is new in sbx v0.37.0. A kit is a declarative YAML artifact — `spec.yaml` plus an
 optional `files/` directory — that contributes configuration to a sandbox: environment
 variables, egress caps, install commands, and agent context. sbx-go-sdk v0.1.9 wraps the whole
-command, so nothing in this design needs new SDK work.
+command, so nothing in this design needs new SDK work. (Since sbx v0.51.0 the node admits only
+kit spec v3 kits, which declare behaviour as `capabilities` and have no `environment`,
+`credentials` or `ports` fields. The node admits only the `network-policy@1` and `port@1`
+capabilities, so the environment variables and install commands above describe v1/v2 kits;
+see the update note under Tests.)
 
 A kit has two kinds. A `mixin` extends a sandbox. A `sandbox` kit supplies the base image
 instead. Upstream marks the whole command EXPERIMENTAL: "this command may change or be removed
@@ -140,7 +144,9 @@ After a create whose spec named kits, the node calls `Ports()` once and stores t
 Without this the node reports two different answers. `ListPorts` reads the backend live, while
 the `Sandbox` message's `ports` field is built from `rec.Ports`. Today nothing can publish a
 port without the node recording it, so the two always agree; a kit declaring `publishedPorts`
-would be the first thing to break that.
+would be the first thing to break that. (Since sbx v0.51.0 that is a v3 kit with a
+`com.docker.sandbox/port@1` capability; `kit inspect` still reports it as `ports`, and the
+snapshot above is unchanged.)
 
 Two related visibility questions, for the record:
 
@@ -153,6 +159,9 @@ Two related visibility questions, for the record:
   v0.37.0 by `TestSDKBackend_KitCredentialsNotInSecretList`
   (`internal/sandbox/sdkbackend_integration_test.go`). Upstream is EXPERIMENTAL, so a future
   daemon version could change this — that is what the test is for.
+  **Retired (sbx v0.51.0):** kit spec v3 has no `credentials` field, and v1/v2 kits are now
+  refused, so the question no longer arises; the test and `testdata/credential-kit` were
+  removed.
 
 ### Kit schema notes (discovered by probing, undocumented upstream)
 
@@ -162,6 +171,10 @@ Two kit fields matter to this design and their exact shape cost live probing to 
 - `publishedPorts` is a top-level key, a **list**. Each entry: `{name, container, protocol}`.
   The port field is `container` — **not** `port` or `containerPort`; both of those are
   rejected by the daemon's strict YAML decoder.
+
+Both shapes are kit spec v1/v2, which the node refuses since sbx v0.51.0. In v3, `credentials`
+has no equivalent, and a port is a `com.docker.sandbox/port@1` capability with
+`config.container`; `kit inspect --json` still reports it as a top-level `ports` list.
 
 ## Console
 
@@ -192,7 +205,9 @@ edit needs a config reload, which the node does not have.
 - **`AddKit`.** It refuses any kit declaring `credentials`, `publishedPorts`, `volumes`,
   `commands.startup` or `commands.initFiles` — nearly everything worth adding. It recreates the
   container and auto-starts a stopped sandbox, which would flip status, `LastActivity`, and the
-  idle reaper behind the node's back. High risk, little gain.
+  idle reaper behind the node's back. High risk, little gain. (Since sbx v0.51.0 that field list
+  describes v1/v2 kits and is unverified for v3. `kit add` now also asks to approve any permission
+  the sandbox lacks, and refuses with no TTY, so the decision stands.)
 - **`Pack` / `Push` / `Pull`.** Authoring operations. They belong where the kit is written.
 - **An Inspect or Validate RPC.** The configured name is enough for the console.
 - **A kit catalog page.**
@@ -230,7 +245,10 @@ Unit:
 
 - Config validation: empty name, empty reference, duplicate name.
 - `admit()` as a table test: mixin passes; `kind: sandbox` rejected; non-empty `resources`
-  rejected; non-empty `runOptions` rejected.
+  rejected; non-empty `runOptions` rejected. Since sbx v0.51.0 also: a v1/v2 kit, a hidden
+  capability and an unreadable v3 descriptor rejected (`TestAdmit`); the capability check on a
+  `spec.yaml` (`TestHiddenCapability`); and the kit-source image exemption, v3 mixins with a hex
+  hash only (`TestKitInfoFrom`).
 - An `Inspect` failure leaves the kit advertised (the transient case).
 - Resolver: a known name maps to its reference; an unknown name is an error.
 - Create accepts a configured kit name and rejects an unknown one.
@@ -244,10 +262,13 @@ Integration, `//go:build integration` and env-gated, against a live daemon:
 
 - Create with a real mixin kit; assert `sb.Kits()` holds the absolute reference, and read the
   kit's environment variable from inside the sandbox — proof it was applied, not merely accepted.
+  (Since sbx v0.51.0 the fixture is a v3 kit with a `network-policy@1` allow, since v3 has no
+  `environment`; the proof is a policy check that allows the kit's host and denies another.)
 - Assert a `kind: sandbox` kit is refused and never advertised, against real daemon output.
 - `TestSDKBackend_KitCredentialsNotInSecretList`: a kit declaring `credentials` produces no
-  `SecretList` rows at either scope. Fixture: `testdata/credential-kit`.
-- `TestSDKBackend_KitPortsMatchLiveRead`: a kit declaring `publishedPorts` produces a
+  `SecretList` rows at either scope. Fixture: `testdata/credential-kit`. (Retired with sbx v0.51.0; see above.)
+- `TestSDKBackend_KitPortsMatchLiveRead`: a kit declaring `publishedPorts` (since sbx v0.51.0, a
+  v3 `port@1` capability) produces a
   `Manager.Create`-snapshotted `Record.Ports` that agrees exactly with a live `Ports()` read.
   Fixture: `testdata/ports-kit`; asserts on the container port only, never the ephemeral host
   port the daemon assigns.
@@ -256,7 +277,15 @@ These two were originally left as open questions the live test did not settle �
 needed a fixture declaring a real credential, the second a kit declaring `publishedPorts`,
 which would fight over host ports. Both concerns turned out to be unfounded once probed live,
 and the two tests above now cover them permanently; see "Kit schema notes" above for the
-answers and the schema details the probing turned up.
+answers and the schema details the probing turned up. (Since sbx v0.51.0 only the ports test
+remains; the credentials one was retired with v1/v2 kits.)
+
+**Update (sbx v0.51.0):** admission now refuses v1/v2 kits, which the daemon will not combine
+with its v3 built-in agents. For a v3 kit it reads the capabilities from `spec.yaml`, since
+`kit inspect` does not report them all, and refuses any but `network-policy@1`, `port@1` and
+`volume@1` (the last is then refused as a volume). A v3 kit that is not a local directory fails
+closed, since its descriptor cannot be read. `TestSDKBackend_RefusesAHiddenCapabilityKit`
+covers this live.
 
 ## Two sibling items, declined
 

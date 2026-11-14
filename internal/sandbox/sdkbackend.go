@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,7 +24,7 @@ import (
 // WorkspaceResolver maps a logical workspace name to a host path + ro flag.
 type WorkspaceResolver func(name string) (hostPath string, readOnly bool, ok bool)
 
-// SDKBackend implements Backend over sbx-go-sdk v0.1.11. Workspaces are resolved
+// SDKBackend implements Backend over sbx-go-sdk v0.2.0. Workspaces are resolved
 // to host paths via the resolver (config-provided). It is a thin translation
 // layer: lifecycle/exec/ports/files all resolve a *sandbox.Sandbox handle by
 // name and call the SDK, mapping the SDK's not-found sentinel to ErrNotFound.
@@ -77,7 +78,17 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 	if err != nil {
 		return KitInfo{}, err
 	}
-	return kitInfoFrom(info), nil
+	ki := kitInfoFrom(info)
+	if !isKitSpecV3(info) {
+		ki.LegacySchema = true
+		return ki, nil
+	}
+	hidden, err := hiddenCapability(ref)
+	if err != nil {
+		ki.DescriptorError = err.Error()
+	}
+	ki.HiddenCapability = hidden
+	return ki, nil
 }
 
 // kitInfoFrom reduces the SDK's kit report to the facts admit() checks.
@@ -107,10 +118,30 @@ func kitInfoFrom(info sdkkit.Info) KitInfo {
 		Kind:          info.Kind,
 		HasResources:  hasResources(sb.Resources),
 		HasRunOptions: len(sb.Command.Default) > 0,
-		HasTemplate:   sb.Image != "",
+		HasTemplate:   sb.Image != "" && !isKitSourceImage(info, sb.Image),
 		HasVolumes:    hasVolumes(info.Volumes),
 	}
 }
+
+// isKitSpecV3 reports whether a kit is kit spec v3.
+func isKitSpecV3(info sdkkit.Info) bool { return info.SchemaVersion == kitSpecV3 }
+
+// isKitSourceImage reports whether image is the one sbx v0.51.0 reports for a
+// kit spec v3 mixin built from local source ("sbx-kit-src:spec-<hex hash>"). It is
+// not a template: a live sandbox runs an image assembled from the agent kit
+// plus the mixin, on the agent's base, even when the kit ships a Dockerfile
+// with its own FROM. A v3 descriptor has no sandbox or image field, so a kit
+// cannot name this image itself. Only a v3 mixin gets the exemption: a v1/v2
+// kit or a sandbox kit naming such an image is still treated as swapping the
+// base.
+func isKitSourceImage(info sdkkit.Info, image string) bool {
+	return isKitSpecV3(info) && info.Kind == "mixin" && kitSourceImage.MatchString(image)
+}
+
+// kitSourceImage matches the kit-source image name. The hash was 12 hex
+// characters in every probe at sbx v0.51.0; the length is not pinned, since
+// nothing documents it.
+var kitSourceImage = regexp.MustCompile(`^sbx-kit-src:spec-[0-9a-f]+$`)
 
 // hasResources reports whether a kit's raw resources block declares anything.
 // The field is raw JSON, so its byte length is not a count: an absent field,
@@ -688,11 +719,12 @@ func (b *SDKBackend) SecretSet(ctx context.Context, scope string, s CustomSecret
 	err := sdksecret.SetCustom(ctx, b.cl, scope, sdksecret.CustomSecret{
 		Host:        s.Host,
 		Env:         s.Env,
-		Value:       s.Value, // passed to the CLI; never stored or logged here
+		Value:       s.Value, // sent to the CLI on stdin; never stored or logged here
 		Placeholder: s.Placeholder,
 	})
-	// The underlying sbx CLI echoes the full "--value <key>" argv in its error;
-	// scrub the raw value so it never reaches logs or the caller.
+	// Since sbx-go-sdk v0.2.0 the value goes on stdin, not argv, so the CLI's
+	// error should no longer echo it. Scrub anyway so it never reaches logs or
+	// the caller.
 	return scrubSecretValue(err, s.Value)
 }
 

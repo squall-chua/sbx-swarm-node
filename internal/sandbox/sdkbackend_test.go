@@ -121,6 +121,36 @@ func TestKitInfoFrom(t *testing.T) {
 			KitInfo{Kind: "mixin", HasVolumes: true},
 		},
 		{
+			"a v3 mixin's kit-source image is not a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-1b649ae1b0d0"}`)},
+			KitInfo{Kind: "mixin"},
+		},
+		{
+			"a v3 mixin naming another sbx-kit-src image is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:other"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
+			"a kit-source image without a hex hash is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
+			"a kit-source image with a non-hex hash is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-evil"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
+			"a v2 mixin naming a kit-source image is still a template",
+			sdkkit.Info{SchemaVersion: "2", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-1b649ae1b0d0"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
+			"a v3 mixin naming any other image is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"alpine:3.20"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
 			"an unparseable sandbox block fails closed",
 			sdkkit.Info{Kind: "mixin", Sandbox: []byte(`not json`)},
 			KitInfo{Kind: "mixin", HasResources: true},

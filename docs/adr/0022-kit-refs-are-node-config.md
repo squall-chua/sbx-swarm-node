@@ -33,3 +33,9 @@ create, and the CLI's own error text — which can contain the absolute path or 
 becomes `op.Error` (`internal/ops/ops.go`). `ListOperations` is classified as a read method
 (`internal/apiserver/authz.go`), so a `read-only` principal can see it. This is not new: the same
 class of disclosure already exists for git and workspace errors.
+
+Update (sbx v0.51.0): config still accepts any reference form, but admission now advertises only a
+kit spec v3 kit that is a local directory. The node reads a v3 kit's `spec.yaml` to check
+capabilities `kit inspect` does not report, and it cannot read that from a ZIP or OCI reference, so
+those fail closed. v1/v2 kits are refused because sbx v0.51.0 will not combine them with its v3
+built-in agents. The decision above, names over the API and references in config, is unchanged.

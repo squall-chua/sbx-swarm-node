@@ -1,13 +1,18 @@
-# A minimal mixin kit for the live create-with-kit test.
+# syntax=docker/sandbox-kit:3
 #
-# It must stay inside what admit() accepts and what `sbx create --kit` applies:
-# kind mixin, no resources, no runOptions. environment.variables is applied by
-# both create and add, so it is a safe payload to assert on.
-schemaVersion: "2"
+# A minimal v3 mixin for the live create-with-kit test. The `# syntax=` line
+# must stay first (see ../ports-kit/spec.yaml).
+#
+# It must stay inside what admit() accepts: kind mixin, no resources, no
+# command, and only capabilities `kit inspect` can show. v3 has no
+# `environment`, so the payload is a network allow, which inspect reports as
+# permissions.network.allow. A kit that widens permissions applies at create
+# (`--kit`); `kit add` would ask for approval and refuse without a TTY.
+schemaVersion: "3"
 kind: mixin
-name: swarm-node-test-kit
-version: 0.0.1
 description: Fixture kit for sbx-swarm-node integration tests.
-environment:
-  variables:
-    SWARM_KIT_TEST: "1"
+capabilities:
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow: ["swarm-kit-test.example.com"]

@@ -5,9 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // kitInspectTimeout bounds each kit's boot-time inspection independently.
@@ -25,8 +29,65 @@ type KitInfo struct {
 	Kind          string // "mixin" | "sandbox"
 	HasResources  bool   // sandbox.resources is non-empty
 	HasRunOptions bool   // sandbox.command.default is non-empty
-	HasTemplate   bool   // sandbox.image is set: would swap the sandbox's base image
+	HasTemplate   bool   // sandbox.image is set, other than a v3 mixin's kit-source image: would swap the sandbox's base image
 	HasVolumes    bool   // volumes is non-empty: host mounts bypassing workspaceResolver's read-only guarantee (ADR-0015)
+	// HiddenCapability names a kit spec v3 capability that `kit inspect` does
+	// not report, so none of the checks above can see what it does.
+	HiddenCapability string
+	// DescriptorError is why a kit spec v3 descriptor could not be read, which
+	// leaves its capabilities unknown.
+	DescriptorError string
+	// LegacySchema is set for a kit spec v1/v2 kit. sbx v0.51.0 runs the
+	// built-in agents from v3 kits and refuses to mix one with a v1/v2 kit, so
+	// every create using it would fail.
+	LegacySchema bool
+}
+
+// kitSpecV3 is the schemaVersion of kit spec v3, which sbx v0.51.0 requires.
+const kitSpecV3 = "3"
+
+// inspectVisibleCapabilities are the kit spec v3 capability types whose effect
+// `kit inspect --json` reports, so admit() judges them through the other
+// fields. Probed against sbx v0.51.0: network-policy@1 shows as
+// permissions.network, port@1 as ports, volume@1 as volumes (and so is refused
+// by HasVolumes). "Visible" means inspect reports it, not that admit() checks
+// it: network allows and ports carry no capacity or isolation harm and pass.
+// Anything else -- host-mount@1 shows nothing at all -- is refused, including
+// later versions of these types, until probed.
+var inspectVisibleCapabilities = map[string]bool{
+	"com.docker.sandbox/network-policy@1": true,
+	"com.docker.sandbox/port@1":           true,
+	"com.docker.sandbox/volume@1":         true,
+}
+
+// hiddenCapability returns the first capability in a v3 kit's descriptor that
+// inspect cannot show, or "" when every one is visible. Only a local directory
+// kit's spec.yaml can be read; any other reference (OCI, ZIP, git) returns an
+// error, as does a descriptor that will not read or parse, and admit() refuses
+// on it: fail closed.
+//
+// ponytail: refusing every non-directory v3 kit is the ceiling. Reading an OCI
+// kit's descriptor would need the image's layers; add that when a published v3
+// mixin is actually wanted.
+func hiddenCapability(ref string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(ref, "spec.yaml"))
+	if err != nil {
+		return "", err
+	}
+	var d struct {
+		Capabilities []struct {
+			Type string `yaml:"type"`
+		} `yaml:"capabilities"`
+	}
+	if err := yaml.Unmarshal(raw, &d); err != nil {
+		return "", err
+	}
+	for _, c := range d.Capabilities {
+		if !inspectVisibleCapabilities[c.Type] {
+			return c.Type, nil
+		}
+	}
+	return "", nil
 }
 
 // admit reports why a kit must not be advertised, or nil when it may be.
@@ -43,6 +104,13 @@ type KitInfo struct {
 // outside workspaceResolver, bypassing the ADR-0015 read-only guarantee. The
 // rest (sourceURL, entrypoint, agentInstructions, build, security) carry no
 // capacity or isolation harm and are not checked.
+//
+// Kit spec v3 (sbx v0.51.0) declares behaviour as capabilities, and inspect
+// reports only some of them through those fields. HiddenCapability refuses a
+// v3 kit carrying any other, since nothing here could see what it does, and
+// DescriptorError one whose capabilities could not be read. LegacySchema
+// refuses a v1/v2 kit, which sbx v0.51.0 will not combine with its v3
+// built-in agents.
 func admit(i KitInfo) error {
 	if i.Kind != "mixin" {
 		return fmt.Errorf("kind is %q, want \"mixin\"", i.Kind)
@@ -58,6 +126,15 @@ func admit(i KitInfo) error {
 	}
 	if i.HasVolumes {
 		return fmt.Errorf("mixin declares volumes, which would mount host paths outside the workspace resolver")
+	}
+	if i.LegacySchema {
+		return fmt.Errorf("kit is not kit spec v3; sbx v0.51.0 refuses to mix a v1/v2 kit with the v3 built-in agents")
+	}
+	if i.DescriptorError != "" {
+		return fmt.Errorf("kit spec v3 descriptor cannot be read, so its capabilities cannot be checked: %s", i.DescriptorError)
+	}
+	if i.HiddenCapability != "" {
+		return fmt.Errorf("mixin declares a capability kit inspect cannot show, so it cannot be checked: %s", i.HiddenCapability)
 	}
 	return nil
 }

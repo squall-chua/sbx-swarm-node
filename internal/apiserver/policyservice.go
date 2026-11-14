@@ -157,7 +157,13 @@ func (s *PolicyService) ListPolicy(ctx context.Context, r *sbxv1.ScopeRequest) (
 //
 // The value is passed through to the backend only and is never stored, logged,
 // or returned (spec §11).
+//
+// Host is required: since sbx v0.51.0 a custom secret with no destination host
+// substitutes nothing, so the daemon would accept it and it would never work.
 func (s *PolicyService) SetSecret(ctx context.Context, r *sbxv1.SetSecretRequest) (*sbxv1.Empty, error) {
+	if r.Host == "" {
+		return nil, status.Error(codes.InvalidArgument, "host must not be empty: a custom secret with no destination host is never injected")
+	}
 	name, err := s.scopeName(ctx, r.Scope)
 	if err != nil {
 		return nil, scopeStatusErr(err)
