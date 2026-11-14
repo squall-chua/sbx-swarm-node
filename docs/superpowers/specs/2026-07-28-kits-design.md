@@ -205,7 +205,9 @@ edit needs a config reload, which the node does not have.
 - **`AddKit`.** It refuses any kit declaring `credentials`, `publishedPorts`, `volumes`,
   `commands.startup` or `commands.initFiles` — nearly everything worth adding. It recreates the
   container and auto-starts a stopped sandbox, which would flip status, `LastActivity`, and the
-  idle reaper behind the node's back. High risk, little gain.
+  idle reaper behind the node's back. High risk, little gain. (Since sbx v0.51.0 that field list
+  describes v1/v2 kits and is unverified for v3. `kit add` now also asks to approve any permission
+  the sandbox lacks, and refuses with no TTY, so the decision stands.)
 - **`Pack` / `Push` / `Pull`.** Authoring operations. They belong where the kit is written.
 - **An Inspect or Validate RPC.** The configured name is enough for the console.
 - **A kit catalog page.**

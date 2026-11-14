@@ -83,11 +83,11 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 		ki.LegacySchema = true
 		return ki, nil
 	}
-	cp, err := hiddenCapability(ref)
+	hidden, err := hiddenCapability(ref)
 	if err != nil {
 		ki.DescriptorError = err.Error()
 	}
-	ki.HiddenCapability = cp
+	ki.HiddenCapability = hidden
 	return ki, nil
 }
 
