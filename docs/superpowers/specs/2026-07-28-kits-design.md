@@ -153,6 +153,9 @@ Two related visibility questions, for the record:
   v0.37.0 by `TestSDKBackend_KitCredentialsNotInSecretList`
   (`internal/sandbox/sdkbackend_integration_test.go`). Upstream is EXPERIMENTAL, so a future
   daemon version could change this — that is what the test is for.
+  **Retired (sbx v0.51.0):** kit spec v3 has no `credentials` field, and v1/v2 kits are now
+  refused, so the question no longer arises; the test and `testdata/credential-kit` were
+  removed.
 
 ### Kit schema notes (discovered by probing, undocumented upstream)
 
@@ -246,7 +249,7 @@ Integration, `//go:build integration` and env-gated, against a live daemon:
   kit's environment variable from inside the sandbox — proof it was applied, not merely accepted.
 - Assert a `kind: sandbox` kit is refused and never advertised, against real daemon output.
 - `TestSDKBackend_KitCredentialsNotInSecretList`: a kit declaring `credentials` produces no
-  `SecretList` rows at either scope. Fixture: `testdata/credential-kit`.
+  `SecretList` rows at either scope. Fixture: `testdata/credential-kit`. (Retired with sbx v0.51.0; see above.)
 - `TestSDKBackend_KitPortsMatchLiveRead`: a kit declaring `publishedPorts` produces a
   `Manager.Create`-snapshotted `Record.Ports` that agrees exactly with a live `Ports()` read.
   Fixture: `testdata/ports-kit`; asserts on the container port only, never the ephemeral host

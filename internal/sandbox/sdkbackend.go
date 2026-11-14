@@ -78,9 +78,15 @@ func (b *SDKBackend) inspectKit(ctx context.Context, ref string) (KitInfo, error
 		return KitInfo{}, err
 	}
 	ki := kitInfoFrom(info)
-	if info.SchemaVersion == "3" {
-		ki.HiddenCapability = hiddenCapability(ref)
+	if !isKitSpecV3(info) {
+		ki.LegacySchema = true
+		return ki, nil
 	}
+	cp, err := hiddenCapability(ref)
+	if err != nil {
+		ki.DescriptorError = err.Error()
+	}
+	ki.HiddenCapability = cp
 	return ki, nil
 }
 
@@ -116,13 +122,19 @@ func kitInfoFrom(info sdkkit.Info) KitInfo {
 	}
 }
 
+// isKitSpecV3 reports whether a kit is kit spec v3.
+func isKitSpecV3(info sdkkit.Info) bool { return info.SchemaVersion == kitSpecV3 }
+
 // isKitSourceImage reports whether image is the one sbx v0.51.0 reports for a
-// kit spec v3 mixin built from local source ("sbx-kit-src:spec-<hash>"). That
-// image carries the mixin's own layer, not a replacement base image, so it is
-// not a template. Only a v3 mixin gets the exemption: a v1/v2 kit or a sandbox
-// kit naming such an image is still treated as swapping the base.
+// kit spec v3 mixin built from local source ("sbx-kit-src:spec-<hash>"). It is
+// not a template: a live sandbox runs an image assembled from the agent kit
+// plus the mixin, on the agent's base, even when the kit ships a Dockerfile
+// with its own FROM. A v3 descriptor has no sandbox or image field, so a kit
+// cannot name this image itself. Only a v3 mixin gets the exemption: a v1/v2
+// kit or a sandbox kit naming such an image is still treated as swapping the
+// base.
 func isKitSourceImage(info sdkkit.Info, image string) bool {
-	return info.SchemaVersion == "3" && info.Kind == "mixin" && strings.HasPrefix(image, "sbx-kit-src:")
+	return isKitSpecV3(info) && info.Kind == "mixin" && strings.HasPrefix(image, "sbx-kit-src:spec-")
 }
 
 // hasResources reports whether a kit's raw resources block declares anything.

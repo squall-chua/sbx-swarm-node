@@ -126,6 +126,11 @@ func TestKitInfoFrom(t *testing.T) {
 			KitInfo{Kind: "mixin"},
 		},
 		{
+			"a v3 mixin naming another sbx-kit-src image is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:other"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
 			"a v2 mixin naming a kit-source image is still a template",
 			sdkkit.Info{SchemaVersion: "2", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-1b649ae1b0d0"}`)},
 			KitInfo{Kind: "mixin", HasTemplate: true},

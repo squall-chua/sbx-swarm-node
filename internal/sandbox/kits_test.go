@@ -12,8 +12,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -32,6 +30,8 @@ func TestAdmit(t *testing.T) {
 		{"a mixin with a template is refused", KitInfo{Kind: "mixin", HasTemplate: true}, true},
 		{"a mixin with volumes is refused", KitInfo{Kind: "mixin", HasVolumes: true}, true},
 		{"a mixin with a hidden capability is refused", KitInfo{Kind: "mixin", HiddenCapability: "com.docker.sandbox/host-mount@1"}, true},
+		{"a mixin with an unreadable v3 descriptor is refused", KitInfo{Kind: "mixin", DescriptorError: "open spec.yaml: no such file"}, true},
+		{"a v1/v2 mixin is refused", KitInfo{Kind: "mixin", LegacySchema: true}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -240,30 +240,35 @@ func TestHasVolumes(t *testing.T) {
 func TestHiddenCapability(t *testing.T) {
 	kit := func(t *testing.T, spec string) string {
 		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "spec.yaml"), []byte(spec), 0o644))
+		if err := os.WriteFile(filepath.Join(dir, "spec.yaml"), []byte(spec), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		return dir
 	}
 	const head = "# syntax=docker/sandbox-kit:3\nschemaVersion: \"3\"\nkind: mixin\n"
 	tests := []struct {
-		name string
-		ref  string
-		want string // "" = all visible; "*" = any non-empty reason
+		name    string
+		ref     string
+		wantCap string
+		wantErr bool
 	}{
-		{"no capabilities", kit(t, head), ""},
-		{"visible capabilities only", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n    config: {container: 1}\n  - type: com.docker.sandbox/network-policy@1\n"), ""},
-		{"host-mount is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n  - type: com.docker.sandbox/host-mount@1\n    config: {path: /x}\n"), "com.docker.sandbox/host-mount@1"},
-		{"a later version of a visible type is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/network-policy@2\n"), "com.docker.sandbox/network-policy@2"},
-		{"a non-directory reference fails closed", "docker.io/example/kit:1", "*"},
-		{"an unparseable descriptor fails closed", kit(t, head+"capabilities: {}\n"), "*"},
+		{"no capabilities", kit(t, head), "", false},
+		{"visible capabilities only", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n    config: {container: 1}\n  - type: com.docker.sandbox/network-policy@1\n  - type: com.docker.sandbox/volume@1\n"), "", false},
+		{"host-mount is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n  - type: com.docker.sandbox/host-mount@1\n    config: {path: /x}\n"), "com.docker.sandbox/host-mount@1", false},
+		{"a later version of a visible type is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/network-policy@2\n"), "com.docker.sandbox/network-policy@2", false},
+		{"a directory without spec.yaml is an error", t.TempDir(), "", true},
+		{"an OCI reference is an error", "docker.io/example/kit:1", "", true},
+		{"an unparseable descriptor is an error", kit(t, head+"capabilities: {}\n"), "", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := hiddenCapability(tc.ref)
-			if tc.want == "*" {
-				require.NotEmpty(t, got)
-				return
+			got, err := hiddenCapability(tc.ref)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
 			}
-			require.Equal(t, tc.want, got)
+			if got != tc.wantCap {
+				t.Fatalf("capability = %q, want %q", got, tc.wantCap)
+			}
 		})
 	}
 }

@@ -565,7 +565,8 @@ func TestSDKBackend_CreateWithKit(t *testing.T) {
 // TestSDKBackend_RefusesAHiddenCapabilityKit proves the v3 admission gate
 // against real daemon output. `kit inspect --json` reports nothing for a
 // host-mount@1 capability (verified against sbx v0.51.0), so the kit would read
-// as an empty mixin; admit() must refuse it from the descriptor instead.
+// as an empty mixin; admit() must refuse it from the descriptor instead. A
+// v1/v2 kit is refused too.
 func TestSDKBackend_RefusesAHiddenCapabilityKit(t *testing.T) {
 	dir := t.TempDir()
 	spec := "# syntax=docker/sandbox-kit:3\nschemaVersion: \"3\"\nkind: mixin\ncapabilities:\n  - type: com.docker.sandbox/host-mount@1\n    config:\n      path: /mnt/swarm-node-probe\n"
@@ -576,8 +577,14 @@ func TestSDKBackend_RefusesAHiddenCapabilityKit(t *testing.T) {
 	visible, err := filepath.Abs("testdata/mixin-kit")
 	require.NoError(t, err)
 
-	b := dialKits(t, noWorkspaces, map[string]string{"hidden": dir, "visible": visible})
-	require.Equal(t, []string{"visible"}, b.AdmittedKits(), "a kit with a capability inspect cannot show must not be advertised")
+	// A v2 mixin declaring nothing: sbx v0.51.0 would refuse it at every create
+	// beside the v3 built-in agents, so it must not be advertised either.
+	legacy := t.TempDir()
+	v2 := "schemaVersion: \"2\"\nkind: mixin\nname: swarm-node-legacy-kit\nversion: 0.0.1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "spec.yaml"), []byte(v2), 0o644))
+
+	b := dialKits(t, noWorkspaces, map[string]string{"hidden": dir, "visible": visible, "legacy": legacy})
+	require.Equal(t, []string{"visible"}, b.AdmittedKits(), "a hidden-capability kit and a v1/v2 kit must not be advertised")
 }
 
 // TestSDKBackend_RefusesASandboxKindKit proves the admission gate against real
