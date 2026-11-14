@@ -486,8 +486,9 @@ On sbx v0.51.0 a kit must be a **v3 kit** (`# syntax=docker/sandbox-kit:3` as th
 first line of `spec.yaml`, `schemaVersion: "3"`): the built-in agents are v3 kits, and
 the daemon refuses to combine one with a v1/v2 kit, so a v1/v2 kit is refused at boot.
 A v3 kit is admitted only as a local directory, and only with capabilities `kit
-inspect` reports (`com.docker.sandbox/network-policy@1`, `port@1`); anything else,
-such as `host-mount@1`, is refused because the node cannot check it.
+inspect` reports (`com.docker.sandbox/network-policy@1`, `port@1`). `volume@1` is
+reported too, but refused as a volume. Anything else, such as `host-mount@1`, is
+refused because the node cannot check it.
 
 **Environment / flags** (override the YAML):
 

@@ -247,10 +247,13 @@ Integration, `//go:build integration` and env-gated, against a live daemon:
 
 - Create with a real mixin kit; assert `sb.Kits()` holds the absolute reference, and read the
   kit's environment variable from inside the sandbox â€” proof it was applied, not merely accepted.
+  (Since sbx v0.51.0 the fixture is a v3 kit with a `network-policy@1` allow, since v3 has no
+  `environment`; the proof is a policy check that allows the kit's host and denies another.)
 - Assert a `kind: sandbox` kit is refused and never advertised, against real daemon output.
 - `TestSDKBackend_KitCredentialsNotInSecretList`: a kit declaring `credentials` produces no
   `SecretList` rows at either scope. Fixture: `testdata/credential-kit`. (Retired with sbx v0.51.0; see above.)
-- `TestSDKBackend_KitPortsMatchLiveRead`: a kit declaring `publishedPorts` produces a
+- `TestSDKBackend_KitPortsMatchLiveRead`: a kit declaring `publishedPorts` (since sbx v0.51.0, a
+  v3 `port@1` capability) produces a
   `Manager.Create`-snapshotted `Record.Ports` that agrees exactly with a live `Ports()` read.
   Fixture: `testdata/ports-kit`; asserts on the container port only, never the ephemeral host
   port the daemon assigns.
@@ -259,7 +262,15 @@ These two were originally left as open questions the live test did not settle â€
 needed a fixture declaring a real credential, the second a kit declaring `publishedPorts`,
 which would fight over host ports. Both concerns turned out to be unfounded once probed live,
 and the two tests above now cover them permanently; see "Kit schema notes" above for the
-answers and the schema details the probing turned up.
+answers and the schema details the probing turned up. (Since sbx v0.51.0 only the ports test
+remains; the credentials one was retired with v1/v2 kits.)
+
+**Update (sbx v0.51.0):** admission now refuses v1/v2 kits, which the daemon will not combine
+with its v3 built-in agents. For a v3 kit it reads the capabilities from `spec.yaml`, since
+`kit inspect` does not report them all, and refuses any but `network-policy@1`, `port@1` and
+`volume@1` (the last is then refused as a volume). A v3 kit that is not a local directory fails
+closed, since its descriptor cannot be read. `TestSDKBackend_RefusesAHiddenCapabilityKit`
+covers this live.
 
 ## Two sibling items, declined
 

@@ -107,8 +107,10 @@ func hiddenCapability(ref string) (string, error) {
 //
 // Kit spec v3 (sbx v0.51.0) declares behaviour as capabilities, and inspect
 // reports only some of them through those fields. HiddenCapability refuses a
-// v3 kit carrying any other, since nothing here could see what it does, and a
-// v1/v2 kit, which sbx v0.51.0 will not combine with its v3 built-in agents.
+// v3 kit carrying any other, since nothing here could see what it does, and
+// DescriptorError one whose capabilities could not be read. LegacySchema
+// refuses a v1/v2 kit, which sbx v0.51.0 will not combine with its v3
+// built-in agents.
 func admit(i KitInfo) error {
 	if i.Kind != "mixin" {
 		return fmt.Errorf("kind is %q, want \"mixin\"", i.Kind)

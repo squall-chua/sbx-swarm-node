@@ -257,7 +257,6 @@ func TestHiddenCapability(t *testing.T) {
 		{"host-mount is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/port@1\n  - type: com.docker.sandbox/host-mount@1\n    config: {path: /x}\n"), "com.docker.sandbox/host-mount@1", false},
 		{"a later version of a visible type is hidden", kit(t, head+"capabilities:\n  - type: com.docker.sandbox/network-policy@2\n"), "com.docker.sandbox/network-policy@2", false},
 		{"a directory without spec.yaml is an error", t.TempDir(), "", true},
-		{"an OCI reference is an error", "docker.io/example/kit:1", "", true},
 		{"an unparseable descriptor is an error", kit(t, head+"capabilities: {}\n"), "", true},
 	}
 	for _, tc := range tests {

@@ -131,6 +131,16 @@ func TestKitInfoFrom(t *testing.T) {
 			KitInfo{Kind: "mixin", HasTemplate: true},
 		},
 		{
+			"a kit-source image without a hex hash is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
+			"a kit-source image with a non-hex hash is a template",
+			sdkkit.Info{SchemaVersion: "3", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-evil"}`)},
+			KitInfo{Kind: "mixin", HasTemplate: true},
+		},
+		{
 			"a v2 mixin naming a kit-source image is still a template",
 			sdkkit.Info{SchemaVersion: "2", Kind: "mixin", Sandbox: []byte(`{"image":"sbx-kit-src:spec-1b649ae1b0d0"}`)},
 			KitInfo{Kind: "mixin", HasTemplate: true},

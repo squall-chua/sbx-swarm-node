@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -126,7 +127,7 @@ func kitInfoFrom(info sdkkit.Info) KitInfo {
 func isKitSpecV3(info sdkkit.Info) bool { return info.SchemaVersion == kitSpecV3 }
 
 // isKitSourceImage reports whether image is the one sbx v0.51.0 reports for a
-// kit spec v3 mixin built from local source ("sbx-kit-src:spec-<hash>"). It is
+// kit spec v3 mixin built from local source ("sbx-kit-src:spec-<hex hash>"). It is
 // not a template: a live sandbox runs an image assembled from the agent kit
 // plus the mixin, on the agent's base, even when the kit ships a Dockerfile
 // with its own FROM. A v3 descriptor has no sandbox or image field, so a kit
@@ -134,8 +135,13 @@ func isKitSpecV3(info sdkkit.Info) bool { return info.SchemaVersion == kitSpecV3
 // kit or a sandbox kit naming such an image is still treated as swapping the
 // base.
 func isKitSourceImage(info sdkkit.Info, image string) bool {
-	return isKitSpecV3(info) && info.Kind == "mixin" && strings.HasPrefix(image, "sbx-kit-src:spec-")
+	return isKitSpecV3(info) && info.Kind == "mixin" && kitSourceImage.MatchString(image)
 }
+
+// kitSourceImage matches the kit-source image name. The hash was 12 hex
+// characters in every probe at sbx v0.51.0; the length is not pinned, since
+// nothing documents it.
+var kitSourceImage = regexp.MustCompile(`^sbx-kit-src:spec-[0-9a-f]+$`)
 
 // hasResources reports whether a kit's raw resources block declares anything.
 // The field is raw JSON, so its byte length is not a count: an absent field,
